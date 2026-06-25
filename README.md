@@ -112,25 +112,52 @@
 
 ### 开发环境
 
+#### 1. 预装工具（开发前必须安装）
+
+| 工具 | 说明 | 安装方式 |
+|------|------|----------|
+| **Node.js** | >= 16，前端构建环境 | [官网下载](https://nodejs.org/) |
+| **Visual Studio Build Tools** | C++ 编译工具链（Tauri/Rust 编译依赖） | 安装时勾选 **"使用 C++ 的桌面开发"** 工作负载 |
+| **WebView2** | Windows 11 自带；Windows 10 需[手动安装](https://developer.microsoft.com/microsoft-edge/webview2/) | 系统自带或官网下载 |
+| **Git** | 版本控制 | [官网下载](https://git-scm.com/) |
+
+> **重要**: Visual Studio Build Tools 是 Tauri 项目编译的**必须依赖**，缺少会导致 Rust 编译失败。不需要安装完整版 Visual Studio，只需 [Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) 即可。
+
+#### 2. 安装 Rust 工具链
+
 ```bash
-# 1. 克隆仓库
+# 下载并运行 rustup 安装器
+# https://rustup.rs/ 或执行项目中的 rustup-init.exe
+
+# 验证安装
+rustc --version
+cargo --version
+```
+
+#### 3. 克隆 & 运行
+
+```bash
+# 克隆仓库
 git clone https://github.com/libliam/litobox.git
 cd litobox
 
-# 2. 安装依赖
+# 安装依赖
 npm install
 
-# 3. 启动开发模式
+# 启动开发模式
 npm run tauri dev
 ```
 
-### 环境要求
+### 完整环境清单
 
-| 依赖 | 版本 |
-|------|------|
-| Node.js | >= 16 |
-| Rust | >= 1.75（通过 [rustup](https://rustup.rs/) 安装） |
-| Windows | >= 10 |
+| 依赖 | 版本 | 说明 |
+|------|------|------|
+| Windows | >= 10 | 运行系统 |
+| Node.js | >= 16 | 前端构建 |
+| Rust | >= 1.75 | Tauri 底层编译 |
+| VS Build Tools | 2019/2022 | C++ 编译工具链 |
+| WebView2 | 最新版 | Web 视图渲染引擎 |
+| Git | 任意版本 | 版本控制 |
 
 ---
 
