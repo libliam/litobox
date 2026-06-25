@@ -1,0 +1,173 @@
+import { defineStore } from 'pinia'
+import { ref } from 'vue'
+
+export interface ToolboxConfig {
+  theme: 'auto' | 'dark' | 'light'
+  jsonIndent: 2 | 4
+  hotkey: string
+  lastTool: string
+  favorites: string[]
+  shortcuts: Record<string, string>
+}
+
+export interface HistoryRecord {
+  tool: string
+  action: string
+  timestamp: string
+  inputPreview: string
+  outputPreview: string
+}
+
+export interface ToolItem {
+  id: string
+  name: string
+  icon: string
+  iconSvg: string
+  description: string
+  keywords: string[]
+  category?: string
+}
+
+export const TOOL_LIST: ToolItem[] = [
+  { id: 'home', name: '首页', icon: '🏠', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 01-1 1H4a1 1 0 01-1-1V9.5z"/><polyline points="9 21 9 14 15 14 15 21"/></svg>`, description: '搜索工具、最近使用、常用推荐', keywords: ['首页', '搜索', '主页'] },
+  { id: 'json', name: 'JSON工具', icon: '{ }', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H6a2 2 0 00-2 2v4a2 2 0 01-2 2 2 2 0 012 2v4a2 2 0 002 2h2"/><path d="M16 3h2a2 2 0 012 2v4a2 2 0 002 2 2 2 0 00-2 2v4a2 2 0 01-2 2h-2"/></svg>`, description: 'JSON格式化、压缩、校验、兼容解析', keywords: ['json', '格式化', '压缩', '校验'], category: 'text' },
+  { id: 'string', name: '字符串工具', icon: 'Aa', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h16v3"/><path d="M12 4v16"/><path d="M8 20h8"/><path d="M17 14l-3-3 3-3"/></svg>`, description: '空格处理、拼接分割、大小写转换、文本清理、批量处理', keywords: ['字符串', '空格', '大小写', '文本', '批量'], category: 'text' },
+  { id: 'markdown', name: 'Markdown', icon: 'MD', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M7 15V9l2.5 3L12 9v6"/><path d="M17 9v6"/><path d="M15 12h4"/></svg>`, description: 'Markdown 实时预览、HTML 互转、导出、统计', keywords: ['markdown', 'md', '预览', 'html', '转换', '统计'], category: 'text' },
+  { id: 'wordCount', name: '字数统计', icon: 'ABC', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/><path d="M16 16l-2-4-2 4"/><path d="M14 13h-4"/></svg>`, description: '字符数、单词数、行数、阅读时间估算', keywords: ['字数', '统计', '字符', '单词', '行数'], category: 'text' },
+  { id: 'diff', name: '文本对比', icon: '≠', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/><path d="M9 3v18M15 3v18"/></svg>`, description: '文本/代码对比，支持行级和字符级差异高亮', keywords: ['对比', 'diff', '差异', '代码对比'], category: 'text' },
+  { id: 'dedup', name: '文本去重', icon: '≡', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h12M4 18h8"/><circle cx="20" cy="12" r="1" fill="currentColor"/><circle cx="16" cy="18" r="1" fill="currentColor"/></svg>`, description: '按行去重，支持首次/末次保留', keywords: ['去重', '重复', 'dedup', '清理'], category: 'text' },
+  { id: 'regex', name: '正则测试', icon: '.*', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M8 12h8"/><path d="M12 8v8"/></svg>`, description: '正则表达式测试、匹配、替换', keywords: ['正则', 'regex', '匹配', '替换'], category: 'text' },
+  { id: 'encode', name: '编码工具', icon: 'En', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/><path d="M16 16l-2-4-2 4"/></svg>`, description: 'Base64、URL、HTML实体、Unicode编解码', keywords: ['编码', 'base64', 'url', 'unicode'], category: 'dev' },
+  { id: 'hash', name: '哈希计算', icon: '#', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16M4 15h16"/><path d="M10 3l-2 18M16 3l-2 18"/></svg>`, description: 'MD5/SHA-1/SHA-256/SHA-512哈希计算', keywords: ['hash', 'md5', 'sha', '哈希', '摘要'], category: 'dev' },
+  { id: 'jwt', name: 'JWT解析', icon: 'JWT', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>`, description: '解析 JWT token，查看 Header/Payload', keywords: ['jwt', 'token', '解析', '认证'], category: 'dev' },
+  { id: 'time', name: '时间工具', icon: '🕐', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>`, description: '时间戳转换、日期计算、相对时间', keywords: ['时间', 'timestamp', '日期', '转换'], category: 'dev' },
+  { id: 'cron', name: 'Cron表达式', icon: '⏰', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>`, description: '可视化生成 Cron 表达式，支持5/6字段格式', keywords: ['cron', '定时', '调度', '表达式'], category: 'dev' },
+  { id: 'url', name: 'URL工具', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>`, description: 'URL解析、编码、参数提取', keywords: ['url', '链接', '解析', '参数'], category: 'dev' },
+  { id: 'baseConverter', name: '进制转换', icon: '0x', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>`, description: '二进制、八进制、十进制、十六进制互转', keywords: ['进制', '转换', 'binary', 'hex', 'octal'], category: 'dev' },
+  { id: 'uuid', name: 'UUID生成', icon: 'UUID', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>`, description: 'UUID v4 生成', keywords: ['uuid', 'guid', '生成', '唯一标识'], category: 'dev' },
+  { id: 'color', name: '颜色工具', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="8" cy="9" r="1.5" fill="currentColor"/><circle cx="12" cy="7" r="1.5" fill="currentColor"/><circle cx="16" cy="9" r="1.5" fill="currentColor"/><circle cx="8" cy="13" r="1.5" fill="currentColor"/><circle cx="16" cy="13" r="1.5" fill="currentColor"/><circle cx="12" cy="17" r="1.5" fill="currentColor"/></svg>`, description: '颜色选择器、格式转换、色板生成、对比度检查、渐变生成', keywords: ['颜色', 'color', '拾色器', '色板', '对比度', '渐变', 'hex', 'rgb', 'hsl'], category: 'dev' },
+  { id: 'css', name: 'CSS工具', icon: 'CSS', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12l-3 9H9z"/><path d="M9 12l-2 9h10l-2-9"/></svg>`, description: '颜色转换、单位换算、CSS压缩/格式化', keywords: ['css', '颜色', '单位', '压缩'], category: 'dev' },
+  { id: 'js', name: 'JS工具', icon: 'JS', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M10 12l2 2 4-4"/></svg>`, description: 'JS沙箱运行、格式化、压缩、JSON提取', keywords: ['js', 'javascript', '沙箱', '格式化', '压缩'], category: 'dev' },
+  { id: 'sql', name: 'SQL工具', icon: 'SQL', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M4 9h16"/><path d="M9 4v16"/></svg>`, description: '字符串列表转SQL IN查询条件', keywords: ['sql', 'in', '查询', '转换'], category: 'dev' },
+  { id: 'xmlYaml', name: 'XML/YAML', icon: 'XML', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H6a2 2 0 00-2 2v4"/><path d="M16 3h2a2 2 0 012 2v4"/><path d="M14 17l-3 3-3-3"/><path d="M4 21h16"/></svg>`, description: 'XML/YAML格式化、校验、JSON互转', keywords: ['xml', 'yaml', '格式化', '校验', '转换'], category: 'dev' },
+  { id: 'csv', name: 'CSV工具', icon: 'CSV', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M4 9h16"/><path d="M9 4v16"/></svg>`, description: 'CSV解析、表格预览、导出JSON/SQL', keywords: ['csv', '表格', '解析', '导出'], category: 'dev' },
+  { id: 'pdf', name: 'PDF工具', icon: 'PDF', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 15v-2a2 2 0 014 0v2"/><path d="M9 13h4"/></svg>`, description: 'PDF转图片、图片转PDF、文本提取、合并拆分', keywords: ['pdf', '转换', '合并', '拆分', '提取'], category: 'utility' },
+  { id: 'http', name: 'HTTP 请求', icon: '🌐', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M5 5h14l-7 7 7 7H5"/></svg>`, description: 'HTTP 请求测试，支持 GET/POST/PUT/DELETE，绕过 CORS 限制', keywords: ['http', '请求', 'api', 'get', 'post', 'put', 'delete', 'cors'], category: 'dev' },
+  { id: 'password', name: '密码工具', icon: '🔑', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/><circle cx="12" cy="16" r="1"/></svg>`, description: '随机密码生成、API Key 生成、密码强度检测', keywords: ['密码', 'password', '随机', '生成', '强度', 'api key', 'token'], category: 'security' },
+  { id: 'qr', name: '二维码', icon: 'QR', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="8" height="8" rx="1"/><rect x="14" y="2" width="8" height="8" rx="1"/><rect x="2" y="14" width="8" height="8" rx="1"/><rect x="14" y="14" width="4" height="4"/><rect x="20" y="14" width="2" height="2"/><rect x="14" y="20" width="2" height="2"/><rect x="20" y="20" width="2" height="2"/></svg>`, description: '二维码生成与解码，支持文本/URL转二维码、图片解码', keywords: ['二维码', 'qr', 'qrcode', '生成', '解码', '扫码'], category: 'utility' },
+  { id: 'image', name: '图片工具', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>`, description: '图片压缩、尺寸缩放、转Base64', keywords: ['图片', '压缩', '缩放', 'base64', 'image'], category: 'utility' },
+  { id: 'ocr', name: 'OCR识别', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>`, description: '图片文字识别，支持上传和剪贴板粘贴', keywords: ['ocr', '文字识别', '图片', '识别'], category: 'utility' },
+  { id: 'mockData', name: '随机数据', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/><circle cx="8" cy="8" r="1" fill="currentColor"/><circle cx="16" cy="8" r="1" fill="currentColor"/><circle cx="8" cy="16" r="1" fill="currentColor"/><circle cx="16" cy="16" r="1" fill="currentColor"/></svg>`, description: '姓名、身份证、手机号等随机生成', keywords: ['随机', '假数据', 'mock', '测试数据'], category: 'utility' },
+  { id: 'fileprocessing', name: '文件处理', icon: '📁', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>`, description: '批量文本处理、文件编码转换', keywords: ['文件', '编码', '转换', '批量', '替换'], category: 'utility' },
+  { id: 'clipboard', name: '剪贴板', icon: '📋', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><path d="M9 14l2 2 4-4"/></svg>`, description: '系统剪贴板历史记录', keywords: ['剪贴板', '复制', '历史', 'clipboard'] },
+  { id: 'snippet', name: '代码片段', icon: '<>', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>`, description: '代码片段管理，支持分类、搜索、导入导出', keywords: ['代码', '片段', 'snippet', '管理', '收藏', '模板'], category: 'utility' },
+  { id: 'history', name: '历史记录', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/><path d="M3 12a9 9 0 0115.36-6.36L21 3"/></svg>`, description: '查看和清空操作历史', keywords: ['历史', '记录', '操作'] }
+]
+
+const STORAGE_KEY_CONFIG = 'toolbox_config'
+const STORAGE_KEY_HISTORY = 'toolbox_history'
+const STORAGE_KEY_RECENT = 'toolbox_recent'
+const MAX_HISTORY = 100
+const MAX_RECENT = 8
+
+export const useToolboxStore = defineStore('toolbox', () => {
+  const config = ref<ToolboxConfig>({
+    theme: 'auto',
+    jsonIndent: 2,
+    hotkey: 'Ctrl+Alt+T',
+    lastTool: 'home',
+    favorites: ['json', 'string', 'encode'],
+    shortcuts: {
+      json: 'CmdOrCtrl+Alt+J',
+      string: 'CmdOrCtrl+Alt+S',
+      devtools: 'CmdOrCtrl+Alt+D',
+      fileprocessing: 'CmdOrCtrl+Alt+F'
+    }
+  })
+
+  const history = ref<HistoryRecord[]>([])
+  const recentTools = ref<string[]>([])
+
+  // 加载本地存储
+  const loadFromStorage = () => {
+    try {
+      const savedConfig = localStorage.getItem(STORAGE_KEY_CONFIG)
+      if (savedConfig) {
+        config.value = { ...config.value, ...JSON.parse(savedConfig) }
+      }
+      
+      const savedHistory = localStorage.getItem(STORAGE_KEY_HISTORY)
+      if (savedHistory) {
+        history.value = JSON.parse(savedHistory)
+      }
+
+      const savedRecent = localStorage.getItem(STORAGE_KEY_RECENT)
+      if (savedRecent) {
+        recentTools.value = JSON.parse(savedRecent)
+      }
+    } catch (error) {
+      console.error('加载本地配置失败:', error)
+    }
+  }
+
+  // 保存配置
+  const saveConfig = (newConfig: Partial<ToolboxConfig>) => {
+    config.value = { ...config.value, ...newConfig }
+    localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify(config.value))
+  }
+
+  // 添加历史记录
+  const addHistory = (record: Omit<HistoryRecord, 'timestamp'>) => {
+    const newRecord = {
+      ...record,
+      timestamp: new Date().toISOString()
+    }
+    history.value.unshift(newRecord)
+    if (history.value.length > MAX_HISTORY) {
+      history.value = history.value.slice(0, MAX_HISTORY)
+    }
+    localStorage.setItem(STORAGE_KEY_HISTORY, JSON.stringify(history.value))
+  }
+
+  // 清空历史
+  const clearHistory = () => {
+    history.value = []
+    localStorage.removeItem(STORAGE_KEY_HISTORY)
+  }
+
+  // 记录最近使用的工具
+  const addRecentTool = (toolId: string) => {
+    if (toolId === 'home') return
+    recentTools.value = recentTools.value.filter(id => id !== toolId)
+    recentTools.value.unshift(toolId)
+    if (recentTools.value.length > MAX_RECENT) {
+      recentTools.value = recentTools.value.slice(0, MAX_RECENT)
+    }
+    localStorage.setItem(STORAGE_KEY_RECENT, JSON.stringify(recentTools.value))
+  }
+
+  // 切换收藏
+  const toggleFavorite = (toolId: string) => {
+    const idx = config.value.favorites.indexOf(toolId)
+    if (idx > -1) {
+      config.value.favorites.splice(idx, 1)
+    } else {
+      config.value.favorites.push(toolId)
+    }
+    saveConfig({ favorites: config.value.favorites })
+  }
+
+  // 初始化加载
+  loadFromStorage()
+
+  return {
+    config,
+    history,
+    recentTools,
+    saveConfig,
+    addHistory,
+    clearHistory,
+    addRecentTool,
+    toggleFavorite
+  }
+})

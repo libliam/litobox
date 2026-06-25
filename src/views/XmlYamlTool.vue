@@ -1,0 +1,382 @@
+<template>
+  <div class="tool-container">
+    <el-tabs v-model="activeTab" class="xml-yaml-tabs">
+      <!-- XML Tab -->
+      <el-tab-pane label="XML 工具" name="xml">
+        <div class="tool-card sticky-card">
+          <div class="card-header">
+            <div class="header-left">
+              <span class="card-title">操作</span>
+              <el-tooltip placement="bottom" effect="dark">
+                <template #content>
+                  <div class="tooltip-content">
+                    <p>• 格式化：美化 XML 缩进</p>
+                    <p>• 压缩：移除多余空白</p>
+                    <p>• 校验：检查 XML 语法</p>
+                    <p>• XML↔JSON 互转</p>
+                  </div>
+                </template>
+                <el-icon class="hint-icon"><QuestionFilled /></el-icon>
+              </el-tooltip>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="action-grid">
+              <div class="action-group">
+                <div class="group-label">缩进</div>
+                <el-radio-group v-model="xmlIndent" size="small">
+                  <el-radio-button :label="2">2空格</el-radio-button>
+                  <el-radio-button :label="4">4空格</el-radio-button>
+                </el-radio-group>
+              </div>
+              <div class="action-group">
+                <div class="group-label">执行</div>
+                <div class="group-buttons">
+                  <el-button type="primary" size="small" @click="handleXmlFormat">格式化</el-button>
+                  <el-button size="small" @click="handleXmlCompress">压缩</el-button>
+                  <el-button type="warning" size="small" @click="handleXmlValidate">校验</el-button>
+                </div>
+              </div>
+              <div class="action-group">
+                <div class="group-label">转换</div>
+                <div class="group-buttons">
+                  <el-button size="small" @click="handleXmlToJson">XML→JSON</el-button>
+                  <el-button size="small" @click="handleJsonToXml">JSON→XML</el-button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tool-card">
+          <div class="card-header">
+            <span class="card-title">输入</span>
+            <div class="card-actions">
+              <el-button size="small" @click="handleClear">清空</el-button>
+              <el-button size="small" @click="handlePaste">粘贴</el-button>
+            </div>
+          </div>
+          <div class="card-body">
+            <el-input v-model="xmlInput" type="textarea" :rows="8" placeholder="请输入 XML 或 JSON 内容..." resize="vertical" />
+          </div>
+        </div>
+
+        <div class="tool-card">
+          <div class="card-header">
+            <span class="card-title">输出</span>
+            <el-button size="small" @click="handleCopy">复制</el-button>
+          </div>
+          <div class="card-body">
+            <el-input :model-value="xmlOutput" type="textarea" :rows="8" readonly resize="vertical" :class="{ 'error': xmlIsError }" />
+            <div v-if="xmlError" class="error-message">{{ xmlError }}</div>
+          </div>
+        </div>
+      </el-tab-pane>
+
+      <!-- YAML Tab -->
+      <el-tab-pane label="YAML 工具" name="yaml">
+        <div class="tool-card sticky-card">
+          <div class="card-header">
+            <div class="header-left">
+              <span class="card-title">操作</span>
+              <el-tooltip placement="bottom" effect="dark">
+                <template #content>
+                  <div class="tooltip-content">
+                    <p>• 格式化：标准化 YAML 格式</p>
+                    <p>• 校验：检查 YAML 语法</p>
+                    <p>• YAML↔JSON 互转</p>
+                  </div>
+                </template>
+                <el-icon class="hint-icon"><QuestionFilled /></el-icon>
+              </el-tooltip>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="action-grid">
+              <div class="action-group">
+                <div class="group-label">执行</div>
+                <div class="group-buttons">
+                  <el-button type="primary" size="small" @click="handleYamlFormat">格式化</el-button>
+                  <el-button type="warning" size="small" @click="handleYamlValidate">校验</el-button>
+                </div>
+              </div>
+              <div class="action-group">
+                <div class="group-label">转换</div>
+                <div class="group-buttons">
+                  <el-button size="small" @click="handleYamlToJson">YAML→JSON</el-button>
+                  <el-button size="small" @click="handleJsonToYaml">JSON→YAML</el-button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tool-card">
+          <div class="card-header">
+            <span class="card-title">输入</span>
+            <div class="card-actions">
+              <el-button size="small" @click="handleYamlClear">清空</el-button>
+              <el-button size="small" @click="handleYamlPaste">粘贴</el-button>
+            </div>
+          </div>
+          <div class="card-body">
+            <el-input v-model="yamlInput" type="textarea" :rows="8" placeholder="请输入 YAML 或 JSON 内容..." resize="vertical" />
+          </div>
+        </div>
+
+        <div class="tool-card">
+          <div class="card-header">
+            <span class="card-title">输出</span>
+            <el-button size="small" @click="handleYamlCopy">复制</el-button>
+          </div>
+          <div class="card-body">
+            <el-input :model-value="yamlOutput" type="textarea" :rows="8" readonly resize="vertical" :class="{ 'error': yamlIsError }" />
+            <div v-if="yamlError" class="error-message">{{ yamlError }}</div>
+          </div>
+        </div>
+      </el-tab-pane>
+    </el-tabs>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref } from 'vue'
+import { ElMessage } from 'element-plus'
+import { QuestionFilled } from '@element-plus/icons-vue'
+import {
+  formatXml, validateXml, xmlToJson, jsonToXml,
+  parseYaml, jsonToYaml
+} from '@/utils/xmlYamlUtils'
+import { useToolboxStore } from '@/store'
+
+const store = useToolboxStore()
+
+const activeTab = ref('xml')
+
+// XML 状态
+const xmlInput = ref('')
+const xmlOutput = ref('')
+const xmlError = ref('')
+const xmlIsError = ref(false)
+const xmlIndent = ref(2)
+
+// YAML 状态
+const yamlInput = ref('')
+const yamlOutput = ref('')
+const yamlError = ref('')
+const yamlIsError = ref(false)
+
+// XML 操作
+const handleXmlFormat = () => {
+  try {
+    const result = formatXml(xmlInput.value, xmlIndent.value)
+    xmlOutput.value = result
+    xmlError.value = ''
+    xmlIsError.value = false
+    ElMessage.success('格式化完成')
+  } catch (e: any) {
+    xmlError.value = e.message
+    xmlIsError.value = true
+    ElMessage.error('格式化失败')
+  }
+}
+
+const handleXmlCompress = () => {
+  try {
+    xmlOutput.value = xmlInput.value.replace(/\s+/g, ' ').trim()
+    xmlError.value = ''
+    xmlIsError.value = false
+    ElMessage.success('压缩完成')
+  } catch (e: any) {
+    xmlError.value = e.message
+    xmlIsError.value = true
+  }
+}
+
+const handleXmlValidate = () => {
+  const result = validateXml(xmlInput.value)
+  if (result.valid) {
+    xmlOutput.value = '✓ XML 格式正确'
+    xmlError.value = ''
+    xmlIsError.value = false
+    ElMessage.success('XML 校验通过')
+  } else {
+    xmlOutput.value = ''
+    xmlError.value = '✗ ' + result.error
+    xmlIsError.value = true
+    ElMessage.error('XML 校验失败')
+  }
+}
+
+const handleXmlToJson = () => {
+  try {
+    xmlOutput.value = xmlToJson(xmlInput.value)
+    xmlError.value = ''
+    xmlIsError.value = false
+    ElMessage.success('XML→JSON 转换完成')
+    store.addHistory({ tool: 'xmlYaml', action: 'XML→JSON', inputPreview: xmlInput.value.slice(0, 50), outputPreview: xmlOutput.value.slice(0, 50) })
+  } catch (e: any) {
+    xmlError.value = e.message
+    xmlIsError.value = true
+    ElMessage.error('转换失败')
+  }
+}
+
+const handleJsonToXml = () => {
+  try {
+    xmlOutput.value = jsonToXml(xmlInput.value)
+    xmlError.value = ''
+    xmlIsError.value = false
+    ElMessage.success('JSON→XML 转换完成')
+  } catch (e: any) {
+    xmlError.value = e.message
+    xmlIsError.value = true
+    ElMessage.error('转换失败')
+  }
+}
+
+const handleClear = () => { xmlInput.value = ''; xmlOutput.value = ''; xmlError.value = '' }
+const handlePaste = async () => { try { xmlInput.value = await navigator.clipboard.readText() } catch { ElMessage.warning('无法读取剪贴板') } }
+const handleCopy = () => { navigator.clipboard.writeText(xmlOutput.value || xmlError.value); ElMessage.success('已复制') }
+
+// YAML 操作
+const handleYamlFormat = () => {
+  try {
+    const parsed = parseYaml(yamlInput.value)
+    yamlOutput.value = jsonToYaml(JSON.stringify(parsed))
+    yamlError.value = ''
+    yamlIsError.value = false
+    ElMessage.success('格式化完成')
+  } catch (e: any) {
+    yamlError.value = e.message
+    yamlIsError.value = true
+    ElMessage.error('格式化失败')
+  }
+}
+
+const handleYamlValidate = () => {
+  try {
+    parseYaml(yamlInput.value)
+    yamlOutput.value = '✓ YAML 格式正确'
+    yamlError.value = ''
+    yamlIsError.value = false
+    ElMessage.success('YAML 校验通过')
+  } catch (e: any) {
+    yamlOutput.value = ''
+    yamlError.value = '✗ ' + e.message
+    yamlIsError.value = true
+    ElMessage.error('YAML 校验失败')
+  }
+}
+
+const handleYamlToJson = () => {
+  try {
+    const parsed = parseYaml(yamlInput.value)
+    yamlOutput.value = JSON.stringify(parsed, null, 2)
+    yamlError.value = ''
+    yamlIsError.value = false
+    ElMessage.success('YAML→JSON 转换完成')
+    store.addHistory({ tool: 'xmlYaml', action: 'YAML→JSON', inputPreview: yamlInput.value.slice(0, 50), outputPreview: yamlOutput.value.slice(0, 50) })
+  } catch (e: any) {
+    yamlError.value = e.message
+    yamlIsError.value = true
+    ElMessage.error('转换失败')
+  }
+}
+
+const handleJsonToYaml = () => {
+  try {
+    yamlOutput.value = jsonToYaml(yamlInput.value)
+    yamlError.value = ''
+    yamlIsError.value = false
+    ElMessage.success('JSON→YAML 转换完成')
+  } catch (e: any) {
+    yamlError.value = e.message
+    yamlIsError.value = true
+    ElMessage.error('转换失败')
+  }
+}
+
+const handleYamlClear = () => { yamlInput.value = ''; yamlOutput.value = ''; yamlError.value = '' }
+const handleYamlPaste = async () => { try { yamlInput.value = await navigator.clipboard.readText() } catch { ElMessage.warning('无法读取剪贴板') } }
+const handleYamlCopy = () => { navigator.clipboard.writeText(yamlOutput.value || yamlError.value); ElMessage.success('已复制') }
+</script>
+
+<style scoped>
+.tool-container {
+  height: 100vh;
+  overflow-y: auto;
+  padding: 20px;
+  background: var(--bg-primary);
+}
+
+/* Tab 样式 - 滚动置顶 */
+.xml-yaml-tabs :deep(.el-tabs__header) {
+  margin-bottom: 16px;
+  padding-left: 8px;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--bg-primary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+.xml-yaml-tabs :deep(.el-tabs__nav-wrap) {
+  padding-left: 4px;
+}
+
+.tool-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  margin-bottom: 16px;
+  overflow: hidden;
+  transition: border-color 0.3s;
+}
+.tool-card:last-child { margin-bottom: 0; }
+.tool-card:hover { border-color: rgba(0, 212, 255, 0.3); }
+
+.sticky-card {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  background: rgba(0, 0, 0, 0.2);
+  border-bottom: 1px solid var(--border-color);
+}
+.card-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--accent-cyan);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.card-actions { display: flex; align-items: center; gap: 6px; }
+.header-left { display: flex; align-items: center; gap: 8px; }
+.card-body { padding: 16px 20px; }
+
+.hint-icon {
+  font-size: 15px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 0.2s;
+  flex-shrink: 0;
+}
+.hint-icon:hover { color: var(--accent-cyan); }
+.tooltip-content { max-width: 320px; line-height: 1.6; }
+.tooltip-content p { margin: 2px 0; }
+
+.action-grid { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+.action-group { display: flex; align-items: center; gap: 8px; }
+.group-label { color: var(--text-secondary); font-size: 13px; white-space: nowrap; }
+.group-buttons { display: flex; gap: 6px; }
+
+.error-message { margin-top: 8px; padding: 8px 12px; background: rgba(239, 68, 68, 0.1); border: 1px solid var(--accent-red); border-radius: 4px; color: var(--accent-red); font-size: 13px; line-height: 1.5; }
+:deep(.el-textarea.error .el-textarea__inner) { border-color: var(--accent-red); box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.1); }
+</style>

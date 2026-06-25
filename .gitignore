@@ -1,0 +1,51 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Tauri build output
+src-tauri/target/
+src-tauri/gen/
+
+# IDE
+.vscode/settings.json
+.vscode/*.code-workspace
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Rust
+src-tauri/Cargo.lock
+*.pdb
+*.d
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+
+# Runtime data
+*.sqlite
+*.db
+
+# Installers
+rustup-init.exe

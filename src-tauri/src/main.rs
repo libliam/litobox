@@ -1,0 +1,90 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+mod clipboard;
+mod file_encoding;
+mod file_saver;
+mod js_executor;
+mod http_cmd;
+
+use tauri::{Manager, Emitter};
+use tauri_plugin_dialog::{DialogExt, MessageDialogBuilder, MessageDialogButtons, MessageDialogKind};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
+
+fn main() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .invoke_handler(tauri::generate_handler![
+            clipboard::start_clipboard_monitor,
+            clipboard::stop_clipboard_monitor,
+            clipboard::is_monitoring,
+            clipboard::copy_to_clipboard,
+            file_encoding::read_file_with_encoding,
+            file_encoding::convert_file_encoding,
+            file_encoding::detect_file_encoding,
+            file_encoding::batch_read_txt_files,
+            file_encoding::batch_replace_in_files,
+            file_encoding::batch_convert_encoding,
+            file_saver::save_file_with_dialog,
+            js_executor::execute_js,
+            http_cmd::send_http_request,
+        ])
+        .setup(|app| {
+            let handle = app.handle().clone();
+            
+            // 关闭按钮二次确认
+            let main_window = app.get_webview_window("main").unwrap();
+            main_window.clone().on_window_event(move |event| {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let window = main_window.clone();
+                    MessageDialogBuilder::new(
+                        window.dialog().clone(),
+                        "退出确认",
+                        "确定要退出栗的百宝箱吗？",
+                    )
+                    .buttons(MessageDialogButtons::YesNo)
+                    .kind(MessageDialogKind::Warning)
+                    .show(move |confirmed| {
+                        if confirmed {
+                            std::process::exit(0);
+                        }
+                    });
+                }
+            });
+            
+            let shortcuts = [
+                ("json", "CmdOrCtrl+Alt+J"),
+                ("string", "CmdOrCtrl+Alt+S"),
+                ("encode", "CmdOrCtrl+Alt+E"),
+                ("regex", "CmdOrCtrl+Alt+R"),
+                ("base", "CmdOrCtrl+Alt+B"),
+                ("uuid", "CmdOrCtrl+Alt+U"),
+                ("batch", "CmdOrCtrl+Alt+T"),
+                ("fileEncoding", "CmdOrCtrl+Alt+F"),
+            ];
+            
+            let manager = app.global_shortcut();
+            
+            for (tool_id, shortcut_str) in shortcuts {
+                let shortcut: Shortcut = shortcut_str.parse().unwrap();
+                let tool = tool_id.to_string();
+                let h = handle.clone();
+                
+                manager.on_shortcut(shortcut, move |_app, _sc, event| {
+                    if let tauri_plugin_global_shortcut::ShortcutState::Pressed = event.state {
+                        if let Some(window) = h.get_webview_window("main") {
+                            let _ = window.emit("global-shortcut-triggered", &tool);
+                        }
+                    }
+                }).unwrap_or_else(|e| {
+                    eprintln!("注册快捷键 {} 失败: {}", shortcut_str, e);
+                });
+            }
+            
+            Ok(())
+        })
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}

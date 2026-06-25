@@ -1,0 +1,302 @@
+:root {
+  --bg-primary: #0a0e17;
+  --bg-secondary: #111827;
+  --bg-card: #1a2332;
+  --bg-input: #0d1520;
+  --text-primary: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --border-color: #1e3a5f;
+  --border-active: #00d4ff;
+  --accent-cyan: #00d4ff;
+  --accent-blue: #3b82f6;
+  --accent-purple: #8b5cf6;
+  --accent-green: #10b981;
+  --accent-orange: #f59e0b;
+  --accent-red: #ef4444;
+  --glow-cyan: 0 0 15px rgba(0, 212, 255, 0.3);
+  --glow-blue: 0 0 15px rgba(59, 130, 246, 0.3);
+  --hover-bg: #1e293b;
+}
+
+/* 浅色科技风 */
+html.light {
+  --bg-primary: #f0f4f8;
+  --bg-secondary: #ffffff;
+  --bg-card: #ffffff;
+  --bg-input: #f8fafc;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+  --border-color: #cbd5e1;
+  --border-active: #0891b2;
+  --accent-cyan: #0891b2;
+  --accent-blue: #2563eb;
+  --accent-purple: #7c3aed;
+  --accent-green: #059669;
+  --accent-orange: #d97706;
+  --accent-red: #dc2626;
+  --glow-cyan: 0 0 10px rgba(8, 145, 178, 0.15);
+  --glow-blue: 0 0 10px rgba(37, 99, 235, 0.15);
+  --hover-bg: #f1f5f9;
+}
+
+html.light body {
+  background-image: 
+    radial-gradient(ellipse at 20% 50%, rgba(8, 145, 178, 0.04) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 20%, rgba(124, 58, 237, 0.04) 0%, transparent 50%);
+}
+
+html.light .el-textarea__inner {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+}
+html.light .el-textarea__inner:focus {
+  box-shadow: 0 0 0 3px rgba(8, 145, 178, 0.1) !important;
+}
+
+html.light .el-button--primary {
+  box-shadow: 0 2px 8px rgba(8, 145, 178, 0.25);
+}
+html.light .el-button--primary:hover {
+  box-shadow: 0 4px 12px rgba(8, 145, 178, 0.35);
+}
+
+html.light .el-radio-button__orig-radio:checked + .el-radio-button__inner {
+  box-shadow: 0 2px 6px rgba(8, 145, 178, 0.2);
+}
+
+html.light .el-tabs__active-bar {
+  box-shadow: 0 0 6px rgba(8, 145, 178, 0.3);
+}
+
+html.light .tool-card {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+html.light .tool-card:hover {
+  box-shadow: 0 4px 12px rgba(8, 145, 178, 0.1);
+}
+
+html.light .card-header {
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+html.light .error :deep(.el-textarea__inner) {
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1) !important;
+}
+
+html.dark {
+  --bg-primary: #0a0e17;
+  --bg-secondary: #111827;
+  --bg-card: #1a2332;
+  --bg-input: #0d1520;
+  --text-primary: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --border-color: #1e3a5f;
+  --border-active: #00d4ff;
+  --accent-cyan: #00d4ff;
+  --accent-blue: #3b82f6;
+  --accent-purple: #8b5cf6;
+  --accent-green: #10b981;
+  --accent-orange: #f59e0b;
+  --accent-red: #ef4444;
+  --glow-cyan: 0 0 15px rgba(0, 212, 255, 0.3);
+  --glow-blue: 0 0 15px rgba(59, 130, 246, 0.3);
+  --hover-bg: #1e293b;
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  transition: background-color 0.3s, color 0.3s;
+  background-image: 
+    radial-gradient(ellipse at 20% 50%, rgba(0, 212, 255, 0.03) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 20%, rgba(139, 92, 246, 0.03) 0%, transparent 50%);
+}
+
+/* 全局滚动条 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-cyan);
+}
+
+/* Element Plus 覆盖 */
+.el-textarea__inner {
+  background-color: var(--bg-input) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-color) !important;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace !important;
+  font-size: 13px !important;
+  line-height: 1.6 !important;
+}
+.el-textarea__inner:focus {
+  border-color: var(--accent-cyan) !important;
+  box-shadow: var(--glow-cyan) !important;
+}
+.el-textarea__inner::placeholder {
+  color: var(--text-muted) !important;
+}
+
+.el-input__inner {
+  background-color: var(--bg-input) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-color) !important;
+}
+.el-input__inner:focus {
+  border-color: var(--accent-cyan) !important;
+}
+
+.el-button {
+  font-weight: 500 !important;
+  letter-spacing: 0.5px;
+  border-radius: 4px !important;
+}
+.el-button--primary {
+  background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue)) !important;
+  border: none !important;
+  color: #fff !important;
+  box-shadow: var(--glow-cyan);
+}
+.el-button--primary:hover {
+  box-shadow: 0 0 20px rgba(0, 212, 255, 0.5);
+}
+.el-button--success {
+  background: linear-gradient(135deg, var(--accent-green), #059669) !important;
+  border: none !important;
+  color: #fff !important;
+}
+.el-button--warning {
+  background: linear-gradient(135deg, var(--accent-orange), #d97706) !important;
+  border: none !important;
+  color: #fff !important;
+}
+.el-button--default {
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-color) !important;
+  color: var(--text-primary) !important;
+}
+.el-button--default:hover {
+  border-color: var(--accent-cyan) !important;
+  color: var(--accent-cyan) !important;
+}
+
+.el-tabs--border-card {
+  background: var(--bg-secondary) !important;
+  border: 1px solid var(--border-color) !important;
+}
+.el-tabs__header {
+  background: var(--bg-card) !important;
+  border-bottom: 1px solid var(--border-color) !important;
+}
+.el-tabs__item {
+  color: var(--text-secondary) !important;
+  font-weight: 500;
+}
+.el-tabs__item:hover {
+  color: var(--accent-cyan) !important;
+}
+.el-tabs__item.is-active {
+  color: var(--accent-cyan) !important;
+  background: var(--bg-secondary) !important;
+}
+.el-tabs__active-bar {
+  background-color: var(--accent-cyan) !important;
+  box-shadow: 0 0 8px rgba(0, 212, 255, 0.5);
+}
+
+.el-radio-button__inner {
+  background: var(--bg-card) !important;
+  border-color: var(--border-color) !important;
+  color: var(--text-primary) !important;
+  font-weight: 500 !important;
+}
+.el-radio-button.is-active .el-radio-button__inner {
+  background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue)) !important;
+  border-color: var(--accent-cyan) !important;
+  color: #fff !important;
+  box-shadow: var(--glow-cyan);
+}
+
+.el-divider__text {
+  background: var(--bg-secondary) !important;
+  color: var(--text-secondary) !important;
+}
+.el-divider--horizontal {
+  border-top: 1px solid var(--border-color) !important;
+}
+
+.el-select .el-input__wrapper {
+  background-color: var(--bg-card) !important;
+  border-color: var(--border-color) !important;
+}
+.el-select .el-input__wrapper:hover {
+  border-color: var(--accent-cyan) !important;
+}
+.el-select-dropdown {
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-color) !important;
+}
+.el-select-dropdown__item {
+  color: var(--text-primary) !important;
+}
+.el-select-dropdown__item:hover {
+  background: var(--hover-bg) !important;
+  color: var(--accent-cyan) !important;
+}
+.el-select-dropdown__item.is-selected {
+  color: var(--accent-cyan) !important;
+}
+
+/* Message 提示 */
+.el-message {
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-color) !important;
+  color: var(--text-primary) !important;
+}
+.el-message--success {
+  border-color: var(--accent-green) !important;
+}
+.el-message--warning {
+  border-color: var(--accent-orange) !important;
+}
+.el-message--error {
+  border-color: var(--accent-red) !important;
+}
+
+/* 原生输入框样式（用于首页搜索框） */
+input.search-input {
+  background: transparent !important;
+  color: var(--text-primary) !important;
+  border: none !important;
+  outline: none !important;
+  font-size: 14px;
+  font-family: inherit;
+  -webkit-appearance: none;
+}
+input.search-input::placeholder {
+  color: var(--text-muted) !important;
+}
+
+/* 强制深色模式下的输入框样式 */
+html.dark input.search-input {
+  background: transparent !important;
+  color: var(--text-primary) !important;
+  -webkit-text-fill-color: var(--text-primary) !important;
+}
+
+input.search-input:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 1000px var(--bg-input) inset !important;
+  -webkit-text-fill-color: var(--text-primary) !important;
+  caret-color: var(--text-primary);
+}
