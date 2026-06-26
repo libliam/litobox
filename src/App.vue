@@ -38,6 +38,7 @@
         <SnippetTool v-else-if="activeTool === 'snippet'" />
         <HttpTool v-else-if="activeTool === 'http'" />
         <HistoryView v-else-if="activeTool === 'history'" />
+        <WorkflowView v-else-if="activeTool === 'workflow'" />
       </main>
       
       <div class="app-footer">
@@ -86,6 +87,7 @@ import SnippetTool from '@/views/SnippetTool.vue'
 import HttpTool from '@/views/HttpTool.vue'
 import PdfTool from '@/views/PdfTool.vue'
 import HistoryView from '@/views/HistoryView.vue'
+import WorkflowView from '@/views/WorkflowView.vue'
 
 const store = useToolboxStore()
 const activeTool = ref(store.config.lastTool)

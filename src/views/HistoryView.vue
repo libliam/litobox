@@ -16,7 +16,10 @@
             </template>
           </el-input>
           <el-button size="small" @click="handleRefresh">刷新</el-button>
+          <el-button size="small" @click="handleExport">导出备份</el-button>
+          <el-button size="small" @click="triggerImport">导入恢复</el-button>
           <el-button size="small" type="danger" @click="handleClear">清空历史</el-button>
+          <input ref="importInput" type="file" accept=".json" style="display:none" @change="handleImportFile" />
         </div>
       </div>
       <div class="card-body">
@@ -55,12 +58,14 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
 import { useToolboxStore } from '@/store'
+import * as db from '@/utils/dbClient'
 
 const store = useToolboxStore()
 const history = computed(() => store.history)
+const importInput = ref<HTMLInputElement | null>(null)
 
 // 搜索关键词
 const searchQuery = ref('')
@@ -137,6 +142,71 @@ const handleClear = async () => {
     ElMessage.success('历史已清空')
   } catch {
     // 用户取消
+  }
+}
+
+// 导出备份
+const handleExport = async () => {
+  const loading = ElLoading.service({
+    lock: true,
+    text: '正在导出数据...',
+    background: 'rgba(0, 0, 0, 0.7)',
+  })
+  try {
+    const data = await db.exportAll()
+    const blob = new Blob([data], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    const date = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+    a.href = url
+    a.download = `litobox-backup-${date}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+    ElMessage.success('导出成功')
+  } catch (e: any) {
+    ElMessage.error('导出失败: ' + (e.message || e))
+  } finally {
+    loading.close()
+  }
+}
+
+// 触发文件选择
+const triggerImport = () => {
+  importInput.value?.click()
+}
+
+// 处理导入文件
+const handleImportFile = async (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+
+  try {
+    await ElMessageBox.confirm(
+      '导入将覆盖现有数据，确定继续？',
+      '确认导入',
+      { type: 'warning' }
+    )
+  } catch {
+    input.value = ''
+    return
+  }
+
+  const loading = ElLoading.service({
+    lock: true,
+    text: '正在导入数据...',
+    background: 'rgba(0, 0, 0, 0.7)',
+  })
+  try {
+    const text = await file.text()
+    await db.importAll(text)
+    ElMessage.success('导入成功，页面将刷新')
+    setTimeout(() => window.location.reload(), 1000)
+  } catch (e: any) {
+    ElMessage.error('导入失败: ' + (e.message || e))
+  } finally {
+    loading.close()
+    input.value = ''
   }
 }
 </script>

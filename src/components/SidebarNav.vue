@@ -156,16 +156,16 @@ onMounted(async () => {
   }
 })
 
-// 固定工具（首页、剪贴板、历史）
+// 固定工具（首页、剪贴板、历史、工作流）
 const fixedTools = computed(() => {
-  return TOOL_LIST.filter(t => t.id === 'home' || t.id === 'clipboard' || t.id === 'history')
+  return TOOL_LIST.filter(t => t.id === 'home' || t.id === 'clipboard' || t.id === 'history' || t.id === 'workflow')
 })
 
 // 收藏工具（排除固定工具）
 const favoritedTools = computed(() => {
   const favorites = store.config.favorites
   return TOOL_LIST.filter(t =>
-    t.id !== 'home' && t.id !== 'clipboard' && t.id !== 'history' && favorites.includes(t.id)
+    t.id !== 'home' && t.id !== 'clipboard' && t.id !== 'history' && t.id !== 'workflow' && favorites.includes(t.id)
   )
 })
 
@@ -173,7 +173,7 @@ const favoritedTools = computed(() => {
 const categorizedTools = computed(() => {
   const favorites = store.config.favorites
   const categorized = TOOL_LIST.filter(t =>
-    t.category && t.id !== 'home' && t.id !== 'clipboard' && t.id !== 'history' && !favorites.includes(t.id)
+    t.category && t.id !== 'home' && t.id !== 'clipboard' && t.id !== 'history' && t.id !== 'workflow' && !favorites.includes(t.id)
   )
 
   const categoryMap = new Map<string, typeof TOOL_LIST>()
