@@ -31,12 +31,12 @@
             :key="wf.id"
             class="workflow-item"
             :class="{ active: selectedWorkflow?.id === wf.id }"
-            @click="handleSelectWorkflow(wf)"
           >
             <div class="workflow-item-header">
               <span class="workflow-item-name">{{ wf.name }}</span>
               <div class="workflow-item-actions">
                 <el-button size="small" type="primary" @click.stop="handleRunWorkflow(wf)">执行</el-button>
+                <el-button size="small" @click.stop="handleEditWorkflow(wf)">编辑</el-button>
                 <el-button size="small" type="danger" @click.stop="handleDeleteWorkflow(wf)">删除</el-button>
               </div>
             </div>
@@ -103,8 +103,9 @@
                   />
                 </el-select>
                 <el-select v-model="step.input" placeholder="输入来源" size="small" style="width: 120px">
+                  <el-option v-if="index === 0" label="执行输入" value="exec_input" />
+                  <el-option v-if="index > 0" label="上一步输出" value="prev_output" />
                   <el-option label="手动输入" value="manual" />
-                  <el-option v-if="index > 0" label="上一步输出" :value="'prev_output'" />
                   <el-option label="变量池" value="variable" />
                 </el-select>
                 <el-input
@@ -112,15 +113,22 @@
                   v-model="step.manualInput"
                   placeholder="输入内容"
                   size="small"
-                  style="flex: 1;"
+                  class="step-manual-input"
                 />
-                <el-input
+                <el-select
                   v-else-if="step.input === 'variable'"
                   v-model="step.variableName"
-                  placeholder="变量名"
+                  placeholder="选择变量"
                   size="small"
-                  style="width: 120px;"
-                />
+                  class="step-var-input"
+                >
+                  <el-option
+                    v-for="v in variables"
+                    :key="v.id"
+                    :label="v.name"
+                    :value="v.name"
+                  />
+                </el-select>
               </div>
             </div>
             <el-button
@@ -145,6 +153,7 @@
           <el-button size="small" @click="handleClearExecInput">清空</el-button>
           <el-button size="small" @click="handlePasteExecInput">粘贴</el-button>
           <el-button type="primary" size="small" @click="handleExecute">执行</el-button>
+          <el-button size="small" @click="handleCloseExec">关闭</el-button>
         </div>
       </div>
       <div class="card-body">
@@ -159,10 +168,13 @@
     </div>
 
     <!-- 执行输出 -->
-    <div v-if="executingWorkflow" class="tool-card">
+    <div v-if="executingWorkflow && (execLoading || execOutput || execError)" class="tool-card">
       <div class="card-header">
         <span class="card-title">执行结果</span>
-        <el-button size="small" @click="handleCopyExecOutput">复制</el-button>
+        <div class="card-actions">
+          <el-button size="small" @click="handleCopyExecOutput">复制</el-button>
+          <el-button size="small" @click="handleCloseExec">关闭</el-button>
+        </div>
       </div>
       <div class="card-body">
         <div v-if="execLoading" class="exec-progress">
@@ -281,7 +293,10 @@ interface WorkflowWithSteps extends db.Workflow {
 
 // 工具操作映射
 const TOOL_ACTIONS: Record<string, string[]> = {
-  string: ['转大写', '转小写', '去除首尾空格', '去除空行', '行号排序', '去重', '反转', 'Base64编码', 'Base64解码'],
+  string: [
+    '转大写', '转小写', '去除首尾空格', '去除空行', '行号排序', '去重', '反转',
+    '转驼峰命名', '转下划线命名', '转短横线命名', 'Base64编码', 'Base64解码',
+  ],
   json: ['格式化', '压缩', '校验', '转义', '去转义'],
   encode: ['Base64编码', 'Base64解码', 'URL编码', 'URL解码', 'Unicode编码', 'Unicode解码'],
   regex: ['正则匹配', '正则替换'],
@@ -338,8 +353,13 @@ function handleNewWorkflow() {
   selectedWorkflow.value = null
 }
 
-// 选择工作流
+// 选择工作流（仅高亮，不进入编辑）
 function handleSelectWorkflow(wf: db.Workflow) {
+  selectedWorkflow.value = wf
+}
+
+// 编辑工作流
+function handleEditWorkflow(wf: db.Workflow) {
   selectedWorkflow.value = wf
   editingWorkflow.value = { ...wf }
   editingSteps.value = parseSteps(wf.steps_json)
@@ -353,10 +373,11 @@ function handleCancelEdit() {
 
 // 添加步骤
 function handleAddStep() {
+  const isFirst = editingSteps.value.length === 0
   editingSteps.value.push({
     tool: '',
     action: '',
-    input: 'manual',
+    input: isFirst ? 'exec_input' : 'prev_output',
     manualInput: '',
     variableName: '',
   })
@@ -413,6 +434,8 @@ async function handleDeleteWorkflow(wf: db.Workflow) {
 // 执行工作流
 function handleRunWorkflow(wf: db.Workflow) {
   selectedWorkflow.value = wf
+  editingWorkflow.value = null
+  editingSteps.value = []
   executingWorkflow.value = {
     ...wf,
     steps: parseSteps(wf.steps_json),
@@ -428,6 +451,17 @@ function handleRunWorkflow(wf: db.Workflow) {
 // 清空执行输入
 function handleClearExecInput() {
   execInput.value = ''
+}
+
+// 关闭执行面板
+function handleCloseExec() {
+  executingWorkflow.value = null
+  execInput.value = ''
+  execOutput.value = ''
+  execError.value = ''
+  execLoading.value = false
+  execProgress.value = 0
+  execCurrentStep.value = 0
 }
 
 // 粘贴执行输入
@@ -483,6 +517,12 @@ async function handleExecute() {
         }
       } else if (step.input === 'manual') {
         input = step.manualInput || currentInput
+      } else if (step.input === 'exec_input') {
+        // 第一步使用执行输入框的内容
+        input = execInput.value || currentInput
+      } else if (step.input === 'prev_output') {
+        // 后续步骤使用上一步输出
+        input = currentInput
       }
 
       // 执行操作
@@ -520,6 +560,20 @@ async function executeStep(tool: string, action: string, input: string): Promise
   }
 }
 
+// 安全 Base64 解码（处理任意字节，避免 URI malformed 错误）
+function safeBase64Decode(base64: string): string {
+  try {
+    const binary = atob(base64)
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i)
+    }
+    return new TextDecoder('utf-8', { fatal: false }).decode(bytes)
+  } catch {
+    return atob(base64)
+  }
+}
+
 // 字符串处理
 function executeStringAction(action: string, input: string): string {
   switch (action) {
@@ -530,8 +584,11 @@ function executeStringAction(action: string, input: string): string {
     case '行号排序': return input.split('\n').sort().join('\n')
     case '去重': return [...new Set(input.split('\n'))].join('\n')
     case '反转': return input.split('\n').reverse().join('\n')
+    case '转驼峰命名': return input.replace(/[-_\s]+(.)?/g, (_, c) => c ? c.toUpperCase() : '')
+    case '转下划线命名': return input.replace(/([A-Z])/g, '_$1').replace(/^_/, '').toLowerCase()
+    case '转短横线命名': return input.replace(/([A-Z])/g, '-$1').replace(/^-/, '').toLowerCase()
     case 'Base64编码': return btoa(unescape(encodeURIComponent(input)))
-    case 'Base64解码': return decodeURIComponent(escape(atob(input)))
+    case 'Base64解码': return safeBase64Decode(input)
     default: return input
   }
 }
@@ -558,7 +615,7 @@ function executeJsonAction(action: string, input: string): string {
 function executeEncodeAction(action: string, input: string): string {
   switch (action) {
     case 'Base64编码': return btoa(unescape(encodeURIComponent(input)))
-    case 'Base64解码': return decodeURIComponent(escape(atob(input)))
+    case 'Base64解码': return safeBase64Decode(input)
     case 'URL编码': return encodeURIComponent(input)
     case 'URL解码': return decodeURIComponent(input)
     case 'Unicode编码': return input.split('').map(c => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0')).join('')
@@ -571,7 +628,7 @@ function executeEncodeAction(action: string, input: string): string {
 function executeBase64Action(action: string, input: string): string {
   switch (action) {
     case '编码': return btoa(unescape(encodeURIComponent(input)))
-    case '解码': return decodeURIComponent(escape(atob(input)))
+    case '解码': return safeBase64Decode(input)
     default: return input
   }
 }
@@ -642,14 +699,61 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* 工具卡片 */
+.tool-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  margin-bottom: 16px;
+  overflow: hidden;
+  transition: border-color 0.3s;
+}
+.tool-card:last-child { margin-bottom: 0; }
+.tool-card:hover { border-color: rgba(0, 212, 255, 0.3); }
+
+/* 标题栏 */
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  background: rgba(0, 0, 0, 0.2);
+  border-bottom: 1px solid var(--border-color);
+  gap: 12px;
+}
+.card-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--accent-cyan);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+.card-body { padding: 16px 20px; }
+
+/* 操作按钮 */
+.card-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.action-grid { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+.action-group { display: flex; align-items: center; gap: 8px; }
+.group-label { color: var(--text-secondary); font-size: 13px; white-space: nowrap; }
+.group-buttons { display: flex; gap: 6px; }
+
+/* 提示图标 */
+.hint-icon { font-size: 15px; color: var(--text-secondary); cursor: pointer; transition: color 0.2s; flex-shrink: 0; }
+.hint-icon:hover { color: var(--accent-cyan); }
+.header-left { display: flex; align-items: center; gap: 8px; }
+.tooltip-content { max-width: 320px; line-height: 1.6; }
+.tooltip-content p { margin: 2px 0; }
+.tooltip-content code { background: rgba(0, 212, 255, 0.1); padding: 1px 4px; border-radius: 3px; font-size: 12px; }
+
 /* 工作流列表 */
 .workflow-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 .workflow-item {
-  padding: 12px 16px;
+  padding: 16px;
   background: var(--bg-input);
   border: 1px solid var(--border-color);
   border-radius: 6px;
@@ -667,7 +771,7 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 4px;
+  margin-bottom: 8px;
 }
 .workflow-item-name {
   font-weight: 600;
@@ -676,16 +780,16 @@ onMounted(() => {
 }
 .workflow-item-actions {
   display: flex;
-  gap: 4px;
+  gap: 8px;
 }
 .workflow-item-desc {
   font-size: 13px;
   color: var(--text-secondary);
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 .workflow-item-steps {
   display: flex;
-  gap: 4px;
+  gap: 6px;
   flex-wrap: wrap;
 }
 .step-badge {
@@ -703,14 +807,18 @@ onMounted(() => {
 .form-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
+  gap: 12px;
+  margin-bottom: 12px;
 }
 .form-row label {
   font-size: 13px;
   color: var(--text-secondary);
   white-space: nowrap;
   min-width: 60px;
+  text-align: right;
+}
+.form-row .el-input {
+  flex: 1;
 }
 
 /* 步骤编辑器 */
@@ -721,28 +829,28 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
 }
 .step-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
+  gap: 12px;
+  padding: 12px;
   background: var(--bg-input);
   border: 1px solid var(--border-color);
   border-radius: 6px;
-  margin-bottom: 8px;
+  margin-bottom: 12px;
 }
 .step-number {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--accent-cyan);
   color: var(--bg-card);
   border-radius: 50%;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   flex-shrink: 0;
 }
@@ -752,9 +860,16 @@ onMounted(() => {
 }
 .step-row {
   display: flex;
-  gap: 8px;
+  gap: 12px;
   align-items: center;
   flex-wrap: wrap;
+}
+.step-manual-input {
+  flex: 1;
+  min-width: 200px;
+}
+.step-var-input {
+  width: 140px;
 }
 
 /* 执行进度 */
@@ -771,13 +886,13 @@ onMounted(() => {
 .variable-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 .variable-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 12px;
+  padding: 10px 14px;
   background: var(--bg-input);
   border: 1px solid var(--border-color);
   border-radius: 6px;
@@ -785,7 +900,7 @@ onMounted(() => {
 .variable-info {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   flex: 1;
   min-width: 0;
 }
@@ -805,8 +920,8 @@ onMounted(() => {
 }
 .variable-source {
   font-size: 11px;
-  padding: 1px 6px;
-  border-radius: 3px;
+  padding: 2px 8px;
+  border-radius: 4px;
   flex-shrink: 0;
 }
 .variable-source.auto {
@@ -819,8 +934,9 @@ onMounted(() => {
 }
 .variable-actions {
   display: flex;
-  gap: 4px;
+  gap: 6px;
   flex-shrink: 0;
+  margin-left: 12px;
 }
 
 /* 空状态 */
@@ -841,5 +957,13 @@ onMounted(() => {
   color: var(--accent-red);
   font-size: 13px;
   line-height: 1.5;
+}
+
+/* 对话框表单 */
+:deep(.el-dialog__body) {
+  padding: 20px;
+}
+:deep(.el-dialog__footer) {
+  padding: 12px 20px;
 }
 </style>
