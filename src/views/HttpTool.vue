@@ -110,6 +110,7 @@
         <span class="card-title">响应</span>
         <div class="card-actions">
           <el-tabs v-model="responseTab" size="small" class="response-tabs" @tab-click="">
+            <el-tab-pane label="Request" name="request" />
             <el-tab-pane label="Body" name="body" />
             <el-tab-pane label="Headers" name="headers" />
           </el-tabs>
@@ -128,6 +129,23 @@
             <span class="response-meta">
               {{ responseTime }}ms · {{ formatSize(responseSize) }}
             </span>
+          </div>
+          <!-- Request -->
+          <div v-if="responseTab === 'request' && requestDetail">
+            <div class="request-detail-section">
+              <div class="request-detail-line"><span class="detail-label">Method:</span> {{ requestDetail.method }}</div>
+              <div class="request-detail-line"><span class="detail-label">URL:</span> {{ requestDetail.url }}</div>
+              <div v-if="Object.keys(requestDetail.headers).length" class="request-detail-block">
+                <div class="detail-label" style="margin-bottom:4px">Headers:</div>
+                <div v-for="(v, k) in requestDetail.headers" :key="k" class="request-detail-line indent">
+                  <span class="detail-key">{{ k }}:</span> {{ v }}
+                </div>
+              </div>
+              <div v-if="requestDetail.body" class="request-detail-block">
+                <div class="detail-label" style="margin-bottom:4px">Body ({{ requestDetail.bodyType }}):</div>
+                <pre class="request-detail-pre">{{ requestDetail.body }}</pre>
+              </div>
+            </div>
           </div>
           <!-- Body -->
           <div v-if="responseTab === 'body'">
@@ -148,7 +166,28 @@
             </div>
           </div>
         </div>
-        <div v-else-if="errorMsg" class="error-message">{{ errorMsg }}</div>
+        <div v-else-if="errorMsg">
+          <!-- 错误时的请求信息 -->
+          <div v-if="requestDetail" class="request-detail-section" style="margin-bottom:12px">
+            <div class="request-detail-line"><span class="detail-label">Method:</span> {{ requestDetail.method }}</div>
+            <div class="request-detail-line"><span class="detail-label">URL:</span> {{ requestDetail.url }}</div>
+            <div v-if="Object.keys(requestDetail.headers).length" class="request-detail-block">
+              <div class="detail-label" style="margin-bottom:4px">Headers:</div>
+              <div v-for="(v, k) in requestDetail.headers" :key="k" class="request-detail-line indent">
+                <span class="detail-key">{{ k }}:</span> {{ v }}
+              </div>
+            </div>
+            <div v-if="requestDetail.body" class="request-detail-block">
+              <div class="detail-label" style="margin-bottom:4px">Body ({{ requestDetail.bodyType }}):</div>
+              <pre class="request-detail-pre">{{ requestDetail.body }}</pre>
+            </div>
+          </div>
+          <div class="error-message">
+            <div class="error-title">请求失败</div>
+            <div class="error-text">{{ errorMsg }}</div>
+          </div>
+          <div v-if="errorDetail" class="error-detail">{{ errorDetail }}</div>
+        </div>
         <div v-else class="stats-empty">发送请求后查看响应</div>
       </div>
     </div>
@@ -298,6 +337,8 @@ const responseBody = ref('')
 const responseTime = ref(0)
 const responseSize = ref(0)
 const errorMsg = ref('')
+const errorDetail = ref('')
+const requestDetail = ref<{ method: string; url: string; headers: Record<string, string>; body: string | null; bodyType: string } | null>(null)
 
 const statusClass = computed(() => {
   if (responseStatus.value < 300) return 'status-success'
@@ -533,7 +574,11 @@ const handleSend = async () => {
 
   loading.value = true
   errorMsg.value = ''
+  errorDetail.value = ''
   responseStatus.value = 0
+
+  // 保存实际请求信息
+  requestDetail.value = { method: method.value, url: resolvedUrl, headers: resolvedHeaders, body: resolvedBody, bodyType: bodyType.value }
 
   try {
     const result = await invoke('send_http_request', {
@@ -584,6 +629,10 @@ const handleSend = async () => {
     } catch { /* 历史保存失败不影响主流程 */ }
   } catch (e: any) {
     errorMsg.value = e.message || '请求失败'
+    errorDetail.value = ''
+    if (e.code) errorDetail.value += `错误码: ${e.code}\n`
+    if (e.url) errorDetail.value += `请求地址: ${e.url}\n`
+    if (e.cause) errorDetail.value += `原因: ${e.cause}\n`
     ElMessage.error('请求失败')
   } finally {
     loading.value = false
@@ -828,13 +877,10 @@ onMounted(() => {
 
 /* ===== 错误/空状态 ===== */
 .error-message {
-  padding: 8px 12px;
-  background: rgba(239, 68, 68, 0.1);
+  padding: 12px;
+  background: rgba(239, 68, 68, 0.08);
   border: 1px solid var(--accent-red);
   border-radius: 4px;
-  color: var(--accent-red);
-  font-size: 13px;
-  line-height: 1.5;
 }
 
 .stats-empty {
@@ -842,6 +888,31 @@ onMounted(() => {
   padding: 40px 0;
   color: var(--text-muted);
   font-style: italic;
+}
+
+.error-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--accent-red);
+  margin-bottom: 6px;
+}
+
+.error-text {
+  font-size: 13px;
+  color: #fca5a5;
+  line-height: 1.5;
+}
+
+.error-detail {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  white-space: pre-wrap;
+  line-height: 1.5;
 }
 
 /* ===== 动作栏 ===== */
@@ -1046,5 +1117,49 @@ onMounted(() => {
   color: var(--text-muted);
   margin-top: 4px;
   line-height: 1.4;
+}
+
+/* ===== 请求详情 ===== */
+.request-detail-section {
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.request-detail-line {
+  padding: 4px 0;
+  word-break: break-all;
+}
+
+.request-detail-line.indent {
+  padding-left: 16px;
+}
+
+.detail-label {
+  color: var(--accent-cyan);
+  font-weight: 500;
+}
+
+.detail-key {
+  color: var(--accent-cyan);
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+.request-detail-block {
+  margin-top: 8px;
+}
+
+.request-detail-pre {
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+  max-height: 300px;
+  overflow-y: auto;
 }
 </style>
