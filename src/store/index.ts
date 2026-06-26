@@ -119,10 +119,7 @@ export const useToolboxStore = defineStore('toolbox', () => {
   // 从 SQLite 加载最近工具
   const loadRecentFromDB = async () => {
     try {
-      const configStr = await db.getConfig('recent')
-      if (configStr) {
-        recentTools.value = JSON.parse(configStr)
-      }
+      recentTools.value = await db.listRecentTools(MAX_RECENT)
     } catch (error) {
       console.error('加载最近工具失败:', error)
     }
@@ -181,7 +178,7 @@ export const useToolboxStore = defineStore('toolbox', () => {
     if (recentTools.value.length > MAX_RECENT) {
       recentTools.value = recentTools.value.slice(0, MAX_RECENT)
     }
-    await db.setConfig('recent', JSON.stringify(recentTools.value))
+    await db.addRecentTool(toolId)
   }
 
   // 切换收藏

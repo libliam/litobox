@@ -143,6 +143,7 @@ import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { QuestionFilled, Search } from '@element-plus/icons-vue'
 import { useToolboxStore } from '@/store'
+import * as db from '@/utils/dbClient'
 import { saveFileWithDialog } from '@/utils/fileSaver'
 
 const store = useToolboxStore()
@@ -157,8 +158,6 @@ interface Snippet {
   createdAt: number
   updatedAt: number
 }
-
-const STORAGE_KEY = 'litobox_snippets'
 
 const snippets = ref<Snippet[]>([])
 const selectedId = ref<string | null>(null)
@@ -188,19 +187,21 @@ const filteredSnippets = computed(() => {
 })
 
 // ============ 持久化 ============
-const loadSnippets = () => {
+const loadSnippets = async () => {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) {
-      snippets.value = JSON.parse(raw)
-    }
+    const rows = await db.listSnippets()
+    snippets.value = rows.map(r => ({
+      id: r.id,
+      title: r.title,
+      lang: r.lang,
+      content: r.content,
+      note: r.note,
+      createdAt: new Date(r.created_at).getTime(),
+      updatedAt: new Date(r.updated_at).getTime(),
+    }))
   } catch {
     snippets.value = []
   }
-}
-
-const saveSnippets = () => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(snippets.value))
 }
 
 onMounted(() => {
@@ -217,21 +218,32 @@ const selectSnippet = (snippet: Snippet) => {
   editNote.value = snippet.note
 }
 
-const handleNew = () => {
+const handleNew = async () => {
+  const now = Date.now()
+  const id = now.toString(36) + Math.random().toString(36).slice(2, 7)
   const newSnippet: Snippet = {
-    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+    id,
     title: '未命名片段',
     lang: 'JavaScript',
     content: '',
     note: '',
-    createdAt: Date.now(),
-    updatedAt: Date.now()
+    createdAt: now,
+    updatedAt: now
   }
-  snippets.value.unshift(newSnippet)
-  saveSnippets()
-  selectSnippet(newSnippet)
-  isEditing.value = true
-  ElMessage.success('已创建新片段')
+  try {
+    await db.saveSnippet({
+      id, title: newSnippet.title, lang: newSnippet.lang,
+      content: newSnippet.content, note: newSnippet.note,
+      created_at: new Date(now).toISOString(),
+      updated_at: new Date(now).toISOString(),
+    })
+    snippets.value.unshift(newSnippet)
+    selectSnippet(newSnippet)
+    isEditing.value = true
+    ElMessage.success('已创建新片段')
+  } catch {
+    ElMessage.error('创建失败')
+  }
 }
 
 const startEdit = () => {
@@ -248,7 +260,7 @@ const cancelEdit = () => {
   isEditing.value = false
 }
 
-const handleSave = () => {
+const handleSave = async () => {
   if (!editTitle.value.trim()) {
     ElMessage.warning('标题不能为空')
     return
@@ -264,10 +276,19 @@ const handleSave = () => {
     snippet.content = editContent.value
     snippet.note = editNote.value
     snippet.updatedAt = Date.now()
-    saveSnippets()
-    isEditing.value = false
-    ElMessage.success('保存成功')
-    store.addHistory({ tool: 'snippet', action: 'save', inputPreview: snippet.title, outputPreview: snippet.lang })
+    try {
+      await db.saveSnippet({
+        id: snippet.id, title: snippet.title, lang: snippet.lang,
+        content: snippet.content, note: snippet.note,
+        created_at: new Date(snippet.createdAt).toISOString(),
+        updated_at: new Date(snippet.updatedAt).toISOString(),
+      })
+      isEditing.value = false
+      ElMessage.success('保存成功')
+      store.addHistory({ tool: 'snippet', action: 'save', inputPreview: snippet.title, outputPreview: snippet.lang })
+    } catch {
+      ElMessage.error('保存失败')
+    }
   }
 }
 
@@ -278,8 +299,10 @@ const handleDelete = async () => {
       cancelButtonText: '取消',
       type: 'warning'
     })
-    snippets.value = snippets.value.filter(s => s.id !== selectedId.value)
-    saveSnippets()
+    const id = selectedId.value
+    if (!id) return
+    await db.deleteSnippet(id)
+    snippets.value = snippets.value.filter(s => s.id !== id)
     selectedId.value = null
     ElMessage.success('已删除')
   } catch {
@@ -312,38 +335,43 @@ const handleImport = () => {
   fileInput.value?.click()
 }
 
-const handleFileImport = (e: Event) => {
+const handleFileImport = async (e: Event) => {
   const file = (e.target as HTMLInputElement).files?.[0]
   if (!file) return
 
   const reader = new FileReader()
-  reader.onload = (ev) => {
+  reader.onload = async (ev) => {
     try {
       const imported = JSON.parse(ev.target?.result as string) as Snippet[]
       if (!Array.isArray(imported)) {
         ElMessage.error('无效的导入文件格式')
         return
       }
-      // 合并：跳过 ID 重复的片段
       let added = 0
       for (const s of imported) {
         if (s.title && s.content) {
           const exists = snippets.value.some(existing => existing.id === s.id)
           if (!exists) {
-            snippets.value.unshift({
-              id: s.id || Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
-              title: s.title,
-              lang: s.lang || 'Other',
-              content: s.content,
-              note: s.note || '',
-              createdAt: s.createdAt || Date.now(),
-              updatedAt: s.updatedAt || Date.now()
-            })
-            added++
+            const now = Date.now()
+            const id = s.id || now.toString(36) + Math.random().toString(36).slice(2, 7)
+            const snippet: Snippet = {
+              id, title: s.title, lang: s.lang || 'Other',
+              content: s.content, note: s.note || '',
+              createdAt: s.createdAt || now, updatedAt: s.updatedAt || now
+            }
+            try {
+              await db.saveSnippet({
+                id: snippet.id, title: snippet.title, lang: snippet.lang,
+                content: snippet.content, note: snippet.note,
+                created_at: new Date(snippet.createdAt).toISOString(),
+                updated_at: new Date(snippet.updatedAt).toISOString(),
+              })
+              snippets.value.unshift(snippet)
+              added++
+            } catch { /* 跳过冲突 */ }
           }
         }
       }
-      saveSnippets()
       ElMessage.success(`成功导入 ${added} 个片段`)
       store.addHistory({ tool: 'snippet', action: 'import', inputPreview: `${added} snippets`, outputPreview: 'imported' })
     } catch {
@@ -351,7 +379,6 @@ const handleFileImport = (e: Event) => {
     }
   }
   reader.readAsText(file)
-  // 重置 file input 以便重复导入同一文件
   if (fileInput.value) fileInput.value.value = ''
 }
 </script>

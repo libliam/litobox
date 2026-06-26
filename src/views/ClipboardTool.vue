@@ -37,6 +37,7 @@
             type="text"
             class="search-input"
             placeholder="搜索剪贴板内容..."
+            @input="handleSearch()"
           />
           <span class="record-count">共 {{ filteredRecords.length }} 条</span>
         </div>
@@ -76,65 +77,69 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { QuestionFilled } from '@element-plus/icons-vue'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, UnlistenFn } from '@tauri-apps/api/event'
+import * as db from '@/utils/dbClient'
 
 interface ClipboardRecord {
+  id?: number
   text: string
   timestamp: number
 }
 
-const STORAGE_KEY = 'clipboard_history'
 const MAX_RECORDS = 1000
-const MAX_STORAGE_SIZE = 3 * 1024 * 1024
 
 const isMonitoring = ref(true)
 const records = ref<ClipboardRecord[]>([])
 const searchQuery = ref('')
 let unlisten: UnlistenFn | null = null
+let searchTimer: ReturnType<typeof setTimeout> | null = null
 
-const filteredRecords = computed(() => {
-  if (!searchQuery.value.trim()) return records.value
-  const query = searchQuery.value.toLowerCase()
-  return records.value.filter(r => r.text.toLowerCase().includes(query))
-})
+const filteredRecords = computed(() => records.value)
 
-const loadRecords = () => {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY)
-    if (saved) {
-      records.value = JSON.parse(saved)
+const handleSearch = () => {
+  const val = searchQuery.value
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(async () => {
+    if (!val.trim()) {
+      await loadRecords()
+      return
     }
+    try {
+      const rows = await db.searchClipboardHistory(val, MAX_RECORDS)
+      records.value = rows.map(r => ({
+        id: r.id,
+        text: r.text,
+        timestamp: new Date(r.timestamp).getTime(),
+      }))
+    } catch {
+      records.value = []
+    }
+  }, 300)
+}
+
+const loadRecords = async () => {
+  try {
+    const rows = await db.listClipboardHistory(MAX_RECORDS, 0)
+    records.value = rows.map(r => ({
+      id: r.id,
+      text: r.text,
+      timestamp: new Date(r.timestamp).getTime(),
+    }))
   } catch {
     records.value = []
   }
 }
 
-const saveRecords = (newRecords: ClipboardRecord[]) => {
-  let data = newRecords
-
-  // 按条数裁剪
-  while (data.length > MAX_RECORDS) {
-    data = data.slice(0, -1)
-  }
-
-  // 按大小裁剪
-  const json = JSON.stringify(data)
-  const size = new Blob([json]).size
-  if (size > MAX_STORAGE_SIZE) {
-    while (new Blob([JSON.stringify(data)]).size > MAX_STORAGE_SIZE && data.length > 0) {
-      data = data.slice(0, -1)
-    }
-  }
-
-  records.value = data
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
-}
-
-const addRecord = (text: string) => {
-  // 去重：如果与最新一条相同则跳过
+const addRecord = async (text: string) => {
   if (records.value.length > 0 && records.value[0].text === text) return
-
-  const newRecords = [{ text, timestamp: Date.now() }, ...records.value]
-  saveRecords(newRecords)
+  try {
+    await db.addClipboardRecord(text)
+  } catch {
+    // ignore
+  }
+  records.value.unshift({ text, timestamp: Date.now() })
+  if (records.value.length > MAX_RECORDS) {
+    records.value = records.value.slice(0, MAX_RECORDS)
+  }
 }
 
 const handleToggleMonitor = async () => {
@@ -156,14 +161,17 @@ const handleCopy = async (text: string) => {
   }
 }
 
-const handleDelete = (idx: number) => {
-  const filtered = filteredRecords.value
-  const record = filtered[idx]
-  const realIdx = records.value.indexOf(record)
-  if (realIdx > -1) {
-    records.value.splice(realIdx, 1)
-    saveRecords([...records.value])
+const handleDelete = async (idx: number) => {
+  const record = records.value[idx]
+  if (!record) return
+  if (record.id) {
+    try {
+      await db.deleteClipboardRecord(record.id)
+    } catch {
+      // ignore
+    }
   }
+  records.value.splice(idx, 1)
 }
 
 const handleClear = async () => {
@@ -174,7 +182,7 @@ const handleClear = async () => {
       type: 'warning'
     })
     records.value = []
-    localStorage.removeItem(STORAGE_KEY)
+    await db.clearClipboardHistory()
     ElMessage.success('已清空')
   } catch {
     // 用户取消

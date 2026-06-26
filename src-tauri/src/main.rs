@@ -48,6 +48,19 @@ fn main() {
             db::cmd_db_import_all,
             db::cmd_db_check_migrated,
             db::cmd_db_migrate_from_localstorage,
+            db::cmd_db_list_snippets,
+            db::cmd_db_save_snippet,
+            db::cmd_db_delete_snippet,
+            db::cmd_db_list_recent_tools,
+            db::cmd_db_add_recent_tool,
+            db::cmd_db_list_ocr_history,
+            db::cmd_db_add_ocr_history,
+            db::cmd_db_clear_ocr_history,
+            db::cmd_db_list_clipboard_history,
+            db::cmd_db_search_clipboard_history,
+            db::cmd_db_add_clipboard_record,
+            db::cmd_db_delete_clipboard_record,
+            db::cmd_db_clear_clipboard_history,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

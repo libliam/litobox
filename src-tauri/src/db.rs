@@ -45,7 +45,6 @@ pub struct HistoryRecord {
     pub output_preview: String,
     pub created_at: Option<String>,
 }
-
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Workflow {
     pub id: String,
@@ -64,6 +63,13 @@ pub struct PoolVariable {
     pub source: String,
     pub created_at: String,
     pub last_used_at: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ClipboardRecord {
+    pub id: Option<i64>,
+    pub text: String,
+    pub timestamp: String,
 }
 
 fn init_tables(conn: &Connection) -> Result<()> {
@@ -105,16 +111,38 @@ fn init_tables(conn: &Connection) -> Result<()> {
         CREATE TABLE IF NOT EXISTS snippets (
             id TEXT PRIMARY KEY,
             title TEXT NOT NULL,
+            lang TEXT NOT NULL DEFAULT '',
             content TEXT NOT NULL,
-            category TEXT,
+            note TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE TABLE IF NOT EXISTS ocr_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            thumbnail TEXT NOT NULL,
+            original_url TEXT NOT NULL DEFAULT '',
+            text TEXT NOT NULL,
+            time TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE TABLE IF NOT EXISTS clipboard_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            text TEXT NOT NULL,
+            timestamp TEXT NOT NULL DEFAULT (datetime('now'))
         );
         CREATE TABLE IF NOT EXISTS migration_status (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
         );
     "#)?;
+
+    // 迁移：旧版 snippets 表有 category 列但无 lang/note 列
+    if let Err(_) = conn.execute("ALTER TABLE snippets ADD COLUMN lang TEXT NOT NULL DEFAULT ''", []) {
+        // 列已存在，忽略
+    }
+    if let Err(_) = conn.execute("ALTER TABLE snippets ADD COLUMN note TEXT NOT NULL DEFAULT ''", []) {
+        // 列已存在，忽略
+    }
+
     Ok(())
 }
 
@@ -130,6 +158,207 @@ pub fn db_get_config(key: String) -> Result<String, String> {
             .optional()
             .map_err(|e| e.to_string())?;
         Ok(result.unwrap_or_default())
+    })
+}
+
+// ========== 代码片段 CRUD ==========
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Snippet {
+    pub id: String,
+    pub title: String,
+    pub lang: String,
+    pub content: String,
+    pub note: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+pub fn db_list_snippets() -> Result<Vec<Snippet>, String> {
+    with_conn(|conn| {
+        let mut stmt = conn
+            .prepare("SELECT id, title, lang, content, note, created_at, updated_at FROM snippets ORDER BY updated_at DESC")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(Snippet {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    lang: row.get(2)?,
+                    content: row.get(3)?,
+                    note: row.get(4)?,
+                    created_at: row.get(5)?,
+                    updated_at: row.get(6)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())
+    })
+}
+
+pub fn db_save_snippet(snippet: Snippet) -> Result<(), String> {
+    with_conn(|conn| {
+        conn.execute(
+            "INSERT INTO snippets (id, title, lang, content, note, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(id) DO UPDATE SET
+                 title = ?2, lang = ?3, content = ?4, note = ?5, updated_at = ?7",
+            params![
+                snippet.id, snippet.title, snippet.lang,
+                snippet.content, snippet.note,
+                snippet.created_at, snippet.updated_at
+            ],
+        ).map_err(|e| e.to_string())?;
+        Ok(())
+    })
+}
+
+pub fn db_delete_snippet(id: String) -> Result<(), String> {
+    with_conn(|conn| {
+        conn.execute("DELETE FROM snippets WHERE id = ?1", params![id])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    })
+}
+
+// ========== 最近工具 CRUD ==========
+
+pub fn db_list_recent_tools(limit: i64) -> Result<Vec<String>, String> {
+    with_conn(|conn| {
+        let mut stmt = conn
+            .prepare("SELECT tool_id FROM recent_tools ORDER BY last_used_at DESC LIMIT ?1")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![limit], |row| row.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())
+    })
+}
+
+pub fn db_add_recent_tool(tool_id: String) -> Result<(), String> {
+    with_conn(|conn| {
+        conn.execute(
+            "INSERT INTO recent_tools (tool_id, last_used_at) VALUES (?1, datetime('now'))
+             ON CONFLICT(tool_id) DO UPDATE SET last_used_at = datetime('now')",
+            params![tool_id],
+        ).map_err(|e| e.to_string())?;
+        Ok(())
+    })
+}
+
+// ========== OCR 历史 CRUD ==========
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct OcrHistoryRecord {
+    pub id: Option<i64>,
+    pub thumbnail: String,
+    pub original_url: String,
+    pub text: String,
+    pub time: String,
+}
+
+pub fn db_list_ocr_history(limit: i64) -> Result<Vec<OcrHistoryRecord>, String> {
+    with_conn(|conn| {
+        let mut stmt = conn
+            .prepare("SELECT id, thumbnail, original_url, text, time FROM ocr_history ORDER BY id DESC LIMIT ?1")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![limit], |row| {
+                Ok(OcrHistoryRecord {
+                    id: Some(row.get(0)?),
+                    thumbnail: row.get(1)?,
+                    original_url: row.get(2)?,
+                    text: row.get(3)?,
+                    time: row.get(4)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())
+    })
+}
+
+pub fn db_add_ocr_history(record: OcrHistoryRecord) -> Result<(), String> {
+    with_conn(|conn| {
+        conn.execute(
+            "INSERT INTO ocr_history (thumbnail, original_url, text, time) VALUES (?1, ?2, ?3, ?4)",
+            params![record.thumbnail, record.original_url, record.text, record.time],
+        ).map_err(|e| e.to_string())?;
+        Ok(())
+    })
+}
+
+pub fn db_clear_ocr_history() -> Result<(), String> {
+    with_conn(|conn| {
+        conn.execute("DELETE FROM ocr_history", []).map_err(|e| e.to_string())?;
+        Ok(())
+    })
+}
+
+// ========== 剪贴板历史 CRUD ==========
+
+pub fn db_list_clipboard_history(limit: i64, offset: i64) -> Result<Vec<ClipboardRecord>, String> {
+    with_conn(|conn| {
+        let mut stmt = conn
+            .prepare("SELECT id, text, timestamp FROM clipboard_history ORDER BY id DESC LIMIT ?1 OFFSET ?2")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![limit, offset], |row| {
+                Ok(ClipboardRecord {
+                    id: Some(row.get(0)?),
+                    text: row.get(1)?,
+                    timestamp: row.get(2)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())
+    })
+}
+
+pub fn db_search_clipboard_history(query: String, limit: i64) -> Result<Vec<ClipboardRecord>, String> {
+    with_conn(|conn| {
+        let mut stmt = conn
+            .prepare("SELECT id, text, timestamp FROM clipboard_history WHERE text LIKE '%' || ?1 || '%' ORDER BY id DESC LIMIT ?2")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![query, limit], |row| {
+                Ok(ClipboardRecord {
+                    id: Some(row.get(0)?),
+                    text: row.get(1)?,
+                    timestamp: row.get(2)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())
+    })
+}
+
+pub fn db_add_clipboard_record(text: String) -> Result<(), String> {
+    with_conn(|conn| {
+        conn.execute(
+            "INSERT INTO clipboard_history (text, timestamp) VALUES (?1, datetime('now'))",
+            params![text],
+        ).map_err(|e| e.to_string())?;
+        Ok(())
+    })
+}
+
+pub fn db_delete_clipboard_record(id: i64) -> Result<(), String> {
+    with_conn(|conn| {
+        conn.execute("DELETE FROM clipboard_history WHERE id = ?1", params![id])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    })
+}
+
+pub fn db_clear_clipboard_history() -> Result<(), String> {
+    with_conn(|conn| {
+        conn.execute("DELETE FROM clipboard_history", []).map_err(|e| e.to_string())?;
+        Ok(())
     })
 }
 
@@ -414,6 +643,25 @@ pub fn db_export_all() -> Result<String, String> {
             .collect();
         export.insert("recent_tools", serde_json::Value::Array(recent));
 
+        // 导出代码片段
+        let mut stmt = conn.prepare("SELECT id, title, lang, content, note, created_at, updated_at FROM snippets ORDER BY updated_at DESC")
+            .map_err(|e| e.to_string())?;
+        let snippets: Vec<serde_json::Value> = stmt
+            .query_map([], |row| {
+                Ok(serde_json::json!({
+                    "id": row.get::<_, String>(0)?,
+                    "title": row.get::<_, String>(1)?,
+                    "lang": row.get::<_, String>(2)?,
+                    "content": row.get::<_, String>(3)?,
+                    "note": row.get::<_, String>(4)?,
+                    "created_at": row.get::<_, String>(5)?,
+                    "updated_at": row.get::<_, String>(6)?,
+                }))
+            }).map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+        export.insert("snippets", serde_json::Value::Array(snippets));
+
         serde_json::to_string(&export).map_err(|e| e.to_string())
     })
 }
@@ -496,6 +744,25 @@ pub fn db_import_all(data: String) -> Result<(), String> {
                 conn.execute(
                     "INSERT INTO recent_tools (tool_id, last_used_at) VALUES (?1, ?2)",
                     params![tool_id, last_used_at],
+                ).map_err(|e| e.to_string())?;
+            }
+        }
+
+        // 导入代码片段（清空后重新导入）
+        conn.execute("DELETE FROM snippets", []).map_err(|e| e.to_string())?;
+        if let Some(snippets) = export.get("snippets").and_then(|v| v.as_array()) {
+            for s in snippets {
+                let id = s.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                let title = s.get("title").and_then(|v| v.as_str()).unwrap_or("");
+                let lang = s.get("lang").and_then(|v| v.as_str()).unwrap_or("");
+                let content = s.get("content").and_then(|v| v.as_str()).unwrap_or("");
+                let note = s.get("note").and_then(|v| v.as_str()).unwrap_or("");
+                let created_at = s.get("created_at").and_then(|v| v.as_str()).unwrap_or("");
+                let updated_at = s.get("updated_at").and_then(|v| v.as_str()).unwrap_or("");
+                conn.execute(
+                    "INSERT INTO snippets (id, title, lang, content, note, created_at, updated_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    params![id, title, lang, content, note, created_at, updated_at],
                 ).map_err(|e| e.to_string())?;
             }
         }
@@ -659,4 +926,77 @@ pub fn cmd_db_check_migrated() -> Result<bool, String> {
 #[tauri::command]
 pub fn cmd_db_migrate_from_localstorage(data: String) -> Result<(), String> {
     db_migrate_from_localstorage(data)
+}
+
+// ========== 代码片段 Tauri 命令 ==========
+
+#[tauri::command]
+pub fn cmd_db_list_snippets() -> Result<Vec<Snippet>, String> {
+    db_list_snippets()
+}
+
+#[tauri::command]
+pub fn cmd_db_save_snippet(snippet: Snippet) -> Result<(), String> {
+    db_save_snippet(snippet)
+}
+
+#[tauri::command]
+pub fn cmd_db_delete_snippet(id: String) -> Result<(), String> {
+    db_delete_snippet(id)
+}
+
+// ========== 最近工具 Tauri 命令 ==========
+
+#[tauri::command]
+pub fn cmd_db_list_recent_tools(limit: i64) -> Result<Vec<String>, String> {
+    db_list_recent_tools(limit)
+}
+
+#[tauri::command]
+pub fn cmd_db_add_recent_tool(tool_id: String) -> Result<(), String> {
+    db_add_recent_tool(tool_id)
+}
+
+// ========== OCR 历史 Tauri 命令 ==========
+
+#[tauri::command]
+pub fn cmd_db_list_ocr_history(limit: i64) -> Result<Vec<OcrHistoryRecord>, String> {
+    db_list_ocr_history(limit)
+}
+
+#[tauri::command]
+pub fn cmd_db_add_ocr_history(thumbnail: String, original_url: String, text: String, time: String) -> Result<(), String> {
+    db_add_ocr_history(OcrHistoryRecord { id: None, thumbnail, original_url, text, time })
+}
+
+#[tauri::command]
+pub fn cmd_db_clear_ocr_history() -> Result<(), String> {
+    db_clear_ocr_history()
+}
+
+// ========== 剪贴板历史 Tauri 命令 ==========
+
+#[tauri::command]
+pub fn cmd_db_list_clipboard_history(limit: i64, offset: i64) -> Result<Vec<ClipboardRecord>, String> {
+    db_list_clipboard_history(limit, offset)
+}
+
+#[tauri::command]
+pub fn cmd_db_search_clipboard_history(query: String, limit: i64) -> Result<Vec<ClipboardRecord>, String> {
+    db_search_clipboard_history(query, limit)
+}
+
+#[tauri::command]
+pub fn cmd_db_add_clipboard_record(text: String) -> Result<(), String> {
+    db_add_clipboard_record(text)
+}
+
+#[tauri::command]
+pub fn cmd_db_delete_clipboard_record(id: i64) -> Result<(), String> {
+    db_delete_clipboard_record(id)
+}
+
+#[tauri::command]
+pub fn cmd_db_clear_clipboard_history() -> Result<(), String> {
+    db_clear_clipboard_history()
 }

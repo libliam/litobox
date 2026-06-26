@@ -448,6 +448,7 @@ import { ElMessage } from 'element-plus'
 import { QuestionFilled, Close } from '@element-plus/icons-vue'
 import { recognizeImage, cleanText, exportAsTxt, destroyOcr, batchRecognize, getMergedResult, type BatchImage, recognizeTable, toCsv, recognizeMarkdown, exportAsMd } from '@/utils/ocrUtils'
 import { saveFileWithDialog } from '@/utils/fileSaver'
+import * as db from '@/utils/dbClient'
 import { useToolboxStore } from '@/store'
 
 interface OcrHistoryRecord {
@@ -533,24 +534,26 @@ const markdownHtmlPreview = computed(() => {
 })
 
 // 加载历史记录
-const loadHistory = () => {
+const loadHistory = async () => {
   try {
-    const saved = localStorage.getItem('ocr_history')
-    if (saved) {
-      const parsed = JSON.parse(saved)
-      ocrHistory.length = 0
-      ocrHistory.push(...parsed.slice(0, 10))
-    }
+    const rows = await db.listOcrHistory(10)
+    ocrHistory.length = 0
+    ocrHistory.push(...rows.map(r => ({
+      thumbnail: r.thumbnail,
+      originalUrl: r.original_url,
+      text: r.text,
+      time: r.time,
+    })))
   } catch {
     // ignore
   }
 }
 
 // 保存历史记录
-const saveHistory = (thumbnail: string, originalUrl: string, text: string) => {
-  const record: OcrHistoryRecord = {
+const saveHistory = async (thumbnail: string, originalUrl: string, text: string) => {
+  const record = {
     thumbnail,
-    originalUrl,
+    original_url: originalUrl,
     text,
     time: new Date().toLocaleString('zh-CN', {
       month: '2-digit',
@@ -559,11 +562,20 @@ const saveHistory = (thumbnail: string, originalUrl: string, text: string) => {
       minute: '2-digit'
     })
   }
-  ocrHistory.unshift(record)
+  try {
+    await db.addOcrHistory(record.thumbnail, record.original_url, record.text, record.time)
+  } catch {
+    // ignore
+  }
+  ocrHistory.unshift({
+    thumbnail: record.thumbnail,
+    originalUrl: record.original_url,
+    text: record.text,
+    time: record.time,
+  })
   if (ocrHistory.length > 10) {
     ocrHistory.pop()
   }
-  localStorage.setItem('ocr_history', JSON.stringify(ocrHistory))
 }
 
 // 触发文件选择
@@ -649,6 +661,11 @@ const handleGlobalPaste = (e: ClipboardEvent) => {
 
 // 处理图片
 const processImage = async (blob: Blob | File) => {
+  if (isRecognizing.value) {
+    ElMessage.warning('正在识别中，请稍候')
+    return
+  }
+
   error.value = ''
 
   // 保存原始图片URL
@@ -659,6 +676,8 @@ const processImage = async (blob: Blob | File) => {
   // 生成缩略图
   const thumbnail = await generateThumbnail(blob)
 
+  isRecognizing.value = true
+
   // 懒加载模型
   if (!isModelReady.value) {
     isModelLoading.value = true
@@ -668,19 +687,19 @@ const processImage = async (blob: Blob | File) => {
     } catch (e: any) {
       error.value = e.message || '模型加载失败'
       isModelLoading.value = false
+      isRecognizing.value = false
       return
     }
     isModelLoading.value = false
   }
 
   // 执行识别
-  isRecognizing.value = true
   try {
     const text = await recognizeImage(blob)
     resultText.value = text
 
     // 保存历史记录
-    saveHistory(thumbnail, originalImageUrl.value, text)
+    await saveHistory(thumbnail, originalImageUrl.value, text)
 
     // 添加到全局历史
     store.addHistory({
@@ -700,9 +719,14 @@ const processImage = async (blob: Blob | File) => {
 
 // 批量识别
 const handleBatchRecognize = async () => {
+  if (isRecognizing.value) {
+    ElMessage.warning('正在识别中，请稍候')
+    return
+  }
   if (batchImages.value.length === 0) return
 
   error.value = ''
+  isRecognizing.value = true
 
   // 确保模型已加载
   if (!isModelReady.value) {
@@ -713,12 +737,13 @@ const handleBatchRecognize = async () => {
     } catch (e: any) {
       error.value = e.message || '模型加载失败'
       isModelLoading.value = false
+      isRecognizing.value = false
       return
     }
     isModelLoading.value = false
   }
 
-  // 并行识别所有图片
+  // 串行识别所有图片
   try {
     await batchRecognize(batchImages.value, (_completed, _total) => {
       // 进度更新，Vue会自动响应
@@ -738,6 +763,8 @@ const handleBatchRecognize = async () => {
     ElMessage.success(`批量识别完成，成功${successImages.length}张`)
   } catch (e: any) {
     error.value = e.message || '批量识别失败'
+  } finally {
+    isRecognizing.value = false
   }
 }
 
@@ -860,9 +887,13 @@ const handleLoadHistory = (record: OcrHistoryRecord) => {
 }
 
 // 清空历史
-const handleClearHistory = () => {
+const handleClearHistory = async () => {
   ocrHistory.length = 0
-  localStorage.removeItem('ocr_history')
+  try {
+    await db.clearOcrHistory()
+  } catch {
+    // ignore
+  }
   ElMessage.success('识别历史已清空')
 }
 
@@ -1034,8 +1065,8 @@ const handleExportMarkdown = async () => {
   await exportAsMd(markdownMdText.value, 'markdown-result.md')
 }
 
-onMounted(() => {
-  loadHistory()
+onMounted(async () => {
+  await loadHistory()
   document.addEventListener('paste', handleGlobalPaste)
 })
 
