@@ -363,10 +363,6 @@ function handleNewWorkflow() {
 }
 
 // 选择工作流（仅高亮，不进入编辑）
-function handleSelectWorkflow(wf: db.Workflow) {
-  selectedWorkflow.value = wf
-}
-
 // 编辑工作流
 function handleEditWorkflow(wf: db.Workflow) {
   selectedWorkflow.value = wf
