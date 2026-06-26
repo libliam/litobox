@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import * as db from '@/utils/dbClient'
 
 export interface ToolboxConfig {
   theme: 'auto' | 'dark' | 'light'
@@ -64,9 +65,6 @@ export const TOOL_LIST: ToolItem[] = [
   { id: 'history', name: '历史记录', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/><path d="M3 12a9 9 0 0115.36-6.36L21 3"/></svg>`, description: '查看和清空操作历史', keywords: ['历史', '记录', '操作'] }
 ]
 
-const STORAGE_KEY_CONFIG = 'toolbox_config'
-const STORAGE_KEY_HISTORY = 'toolbox_history'
-const STORAGE_KEY_RECENT = 'toolbox_recent'
 const MAX_HISTORY = 100
 const MAX_RECENT = 8
 
@@ -88,77 +86,116 @@ export const useToolboxStore = defineStore('toolbox', () => {
   const history = ref<HistoryRecord[]>([])
   const recentTools = ref<string[]>([])
 
-  // 加载本地存储
-  const loadFromStorage = () => {
+  // 从 SQLite 加载配置
+  const loadConfigFromDB = async () => {
     try {
-      const savedConfig = localStorage.getItem(STORAGE_KEY_CONFIG)
+      const savedConfig = await db.getConfig('main')
       if (savedConfig) {
-        config.value = { ...config.value, ...JSON.parse(savedConfig) }
-      }
-      
-      const savedHistory = localStorage.getItem(STORAGE_KEY_HISTORY)
-      if (savedHistory) {
-        history.value = JSON.parse(savedHistory)
-      }
-
-      const savedRecent = localStorage.getItem(STORAGE_KEY_RECENT)
-      if (savedRecent) {
-        recentTools.value = JSON.parse(savedRecent)
+        const parsed = JSON.parse(savedConfig)
+        config.value = { ...config.value, ...parsed }
       }
     } catch (error) {
-      console.error('加载本地配置失败:', error)
+      console.error('加载配置失败:', error)
     }
   }
 
-  // 保存配置
-  const saveConfig = (newConfig: Partial<ToolboxConfig>) => {
-    config.value = { ...config.value, ...newConfig }
-    localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify(config.value))
+  // 从 SQLite 加载历史
+  const loadHistoryFromDB = async () => {
+    try {
+      const records = await db.getHistory(MAX_HISTORY, 0)
+      history.value = records.map(r => ({
+        tool: r.tool,
+        action: r.action,
+        timestamp: r.created_at || new Date().toISOString(),
+        inputPreview: r.input_preview,
+        outputPreview: r.output_preview,
+      }))
+    } catch (error) {
+      console.error('加载历史失败:', error)
+    }
   }
 
-  // 添加历史记录
-  const addHistory = (record: Omit<HistoryRecord, 'timestamp'>) => {
+  // 从 SQLite 加载最近工具
+  const loadRecentFromDB = async () => {
+    try {
+      const configStr = await db.getConfig('recent')
+      if (configStr) {
+        recentTools.value = JSON.parse(configStr)
+      }
+    } catch (error) {
+      console.error('加载最近工具失败:', error)
+    }
+  }
+
+  // 初始化加载
+  const loadFromDB = async () => {
+    await Promise.all([
+      loadConfigFromDB(),
+      loadHistoryFromDB(),
+      loadRecentFromDB(),
+    ])
+  }
+
+  // 保存配置到 SQLite
+  const saveConfig = async (newConfig: Partial<ToolboxConfig>) => {
+    config.value = { ...config.value, ...newConfig }
+    await db.setConfig('main', JSON.stringify(config.value))
+  }
+
+  // 添加历史记录到 SQLite
+  const addHistory = async (record: Omit<HistoryRecord, 'timestamp'>) => {
     const newRecord = {
       ...record,
       timestamp: new Date().toISOString()
     }
+    // 同步更新本地状态
     history.value.unshift(newRecord)
     if (history.value.length > MAX_HISTORY) {
       history.value = history.value.slice(0, MAX_HISTORY)
     }
-    localStorage.setItem(STORAGE_KEY_HISTORY, JSON.stringify(history.value))
+    // 保存到 SQLite
+    try {
+      await db.addHistory({
+        tool: newRecord.tool,
+        action: newRecord.action,
+        input_preview: newRecord.inputPreview,
+        output_preview: newRecord.outputPreview,
+      })
+    } catch (error) {
+      console.error('保存历史失败:', error)
+    }
   }
 
-  // 清空历史
-  const clearHistory = () => {
+  // 清空历史（SQLite + 本地状态）
+  const clearHistory = async () => {
     history.value = []
-    localStorage.removeItem(STORAGE_KEY_HISTORY)
+    await db.clearHistory()
   }
 
   // 记录最近使用的工具
-  const addRecentTool = (toolId: string) => {
+  const addRecentTool = async (toolId: string) => {
     if (toolId === 'home') return
     recentTools.value = recentTools.value.filter(id => id !== toolId)
     recentTools.value.unshift(toolId)
     if (recentTools.value.length > MAX_RECENT) {
       recentTools.value = recentTools.value.slice(0, MAX_RECENT)
     }
-    localStorage.setItem(STORAGE_KEY_RECENT, JSON.stringify(recentTools.value))
+    await db.setConfig('recent', JSON.stringify(recentTools.value))
   }
 
   // 切换收藏
-  const toggleFavorite = (toolId: string) => {
+  const toggleFavorite = async (toolId: string) => {
     const idx = config.value.favorites.indexOf(toolId)
     if (idx > -1) {
       config.value.favorites.splice(idx, 1)
     } else {
       config.value.favorites.push(toolId)
     }
-    saveConfig({ favorites: config.value.favorites })
+    await saveConfig({ favorites: config.value.favorites })
   }
 
   // 初始化加载
-  loadFromStorage()
+  loadFromDB()
 
   return {
     config,
