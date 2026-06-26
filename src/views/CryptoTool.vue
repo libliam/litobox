@@ -24,6 +24,7 @@
           </el-tooltip>
         </div>
         <div class="card-actions">
+          <VariablePicker @select="handleInsertVariable" />
           <el-button size="small" @click="handleClear">清空</el-button>
           <el-button size="small" @click="handlePaste">粘贴</el-button>
         </div>
@@ -246,6 +247,7 @@ import { ElMessage } from 'element-plus'
 import { QuestionFilled } from '@element-plus/icons-vue'
 import * as crypto from '@/utils/cryptoUtils'
 import { useToolboxStore } from '@/store'
+import VariablePicker from '@/components/VariablePicker.vue'
 
 const store = useToolboxStore()
 const activeTab = ref('hash')
@@ -306,6 +308,13 @@ const handlePaste = async () => {
   } catch {
     ElMessage.warning('无法读取剪贴板')
   }
+}
+
+const handleInsertVariable = (value: string) => {
+  if (activeTab.value === 'hash') hashInput.value = value
+  else if (activeTab.value === 'hmac') hmacInput.value = value
+  else if (activeTab.value === 'aes') aesInput.value = value
+  else if (activeTab.value === 'rsa') rsaInput.value = value
 }
 
 const handleCopy = async (text: string) => {

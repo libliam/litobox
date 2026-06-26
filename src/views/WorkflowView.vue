@@ -257,6 +257,15 @@ import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { QuestionFilled } from '@element-plus/icons-vue'
 import * as db from '@/utils/dbClient'
+// 复用已有工具函数
+import {
+  toUpperCase, toLowerCase, toCamelCase, toSnakeCase,
+  removeEmptyLines, removeDuplicates, reverseLines, sortLines,
+  trimLeadingTrailing,
+} from '@/utils/stringUtils'
+import { formatJson, compressJson, validateJson } from '@/utils/jsonUtils'
+import { urlEncode, urlDecode, base64Encode, base64Decode } from '@/utils/encodeUtils'
+import { convertToSqlIn } from '@/utils/sqlUtils'
 
 // 工作流列表
 const workflows = ref<db.Workflow[]>([])
@@ -295,10 +304,10 @@ interface WorkflowWithSteps extends db.Workflow {
 const TOOL_ACTIONS: Record<string, string[]> = {
   string: [
     '转大写', '转小写', '去除首尾空格', '去除空行', '行号排序', '去重', '反转',
-    '转驼峰命名', '转下划线命名', '转短横线命名', 'Base64编码', 'Base64解码',
+    '转驼峰命名', '转下划线命名', 'Base64编码', 'Base64解码',
   ],
-  json: ['格式化', '压缩', '校验', '转义', '去转义'],
-  encode: ['Base64编码', 'Base64解码', 'URL编码', 'URL解码', 'Unicode编码', 'Unicode解码'],
+  json: ['格式化', '压缩', '校验'],
+  encode: ['Base64编码', 'Base64解码', 'URL编码', 'URL解码'],
   regex: ['正则匹配', '正则替换'],
   sql: ['转SQL IN', '转SQL VALUES'],
   base64: ['编码', '解码'],
@@ -560,91 +569,77 @@ async function executeStep(tool: string, action: string, input: string): Promise
   }
 }
 
-// 安全 Base64 解码（处理任意字节，避免 URI malformed 错误）
-function safeBase64Decode(base64: string): string {
-  try {
-    const binary = atob(base64)
-    const bytes = new Uint8Array(binary.length)
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i)
-    }
-    return new TextDecoder('utf-8', { fatal: false }).decode(bytes)
-  } catch {
-    return atob(base64)
-  }
-}
-
-// 字符串处理
+// 字符串处理 — 复用 stringUtils
 function executeStringAction(action: string, input: string): string {
   switch (action) {
-    case '转大写': return input.toUpperCase()
-    case '转小写': return input.toLowerCase()
-    case '去除首尾空格': return input.split('\n').map(line => line.trim()).join('\n')
-    case '去除空行': return input.split('\n').filter(line => line.trim()).join('\n')
-    case '行号排序': return input.split('\n').sort().join('\n')
-    case '去重': return [...new Set(input.split('\n'))].join('\n')
-    case '反转': return input.split('\n').reverse().join('\n')
-    case '转驼峰命名': return input.replace(/[-_\s]+(.)?/g, (_, c) => c ? c.toUpperCase() : '')
-    case '转下划线命名': return input.replace(/([A-Z])/g, '_$1').replace(/^_/, '').toLowerCase()
-    case '转短横线命名': return input.replace(/([A-Z])/g, '-$1').replace(/^-/, '').toLowerCase()
-    case 'Base64编码': return btoa(unescape(encodeURIComponent(input)))
-    case 'Base64解码': return safeBase64Decode(input)
+    case '转大写': return toUpperCase(input)
+    case '转小写': return toLowerCase(input)
+    case '去除首尾空格': return trimLeadingTrailing(input)
+    case '去除空行': return removeEmptyLines(input)
+    case '行号排序': return sortLines(input)
+    case '去重': return removeDuplicates(input)
+    case '反转': return reverseLines(input)
+    case '转驼峰命名': return toCamelCase(input)
+    case '转下划线命名': return toSnakeCase(input)
+    case 'Base64编码': return base64Encode(input)
+    case 'Base64解码': return base64Decode(input)
     default: return input
   }
 }
 
-// JSON处理
+// JSON处理 — 复用 jsonUtils
 function executeJsonAction(action: string, input: string): string {
-  try {
-    const obj = JSON.parse(input)
-    switch (action) {
-      case '格式化': return JSON.stringify(obj, null, 2)
-      case '压缩': return JSON.stringify(obj)
-      case '校验': return 'JSON 格式正确'
-      case '转义': return JSON.stringify(input)
-      case '去转义': return JSON.parse(input)
-      default: return input
+  switch (action) {
+    case '格式化': {
+      const r = formatJson(input)
+      return r.success ? r.data! : r.error!
     }
-  } catch (e: any) {
-    if (action === '校验') return 'JSON 格式错误: ' + e.message
-    throw new Error('JSON 处理失败: ' + e.message)
+    case '压缩': {
+      const r = compressJson(input)
+      return r.success ? r.data! : r.error!
+    }
+    case '校验': {
+      const r = validateJson(input)
+      return r.success ? 'JSON 格式正确' : r.error!
+    }
+    default: return input
   }
 }
 
-// 编码转换
+// 编码转换 — 复用 encodeUtils
 function executeEncodeAction(action: string, input: string): string {
   switch (action) {
-    case 'Base64编码': return btoa(unescape(encodeURIComponent(input)))
-    case 'Base64解码': return safeBase64Decode(input)
-    case 'URL编码': return encodeURIComponent(input)
-    case 'URL解码': return decodeURIComponent(input)
-    case 'Unicode编码': return input.split('').map(c => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0')).join('')
-    case 'Unicode解码': return input.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    case 'Base64编码': return base64Encode(input)
+    case 'Base64解码': return base64Decode(input)
+    case 'URL编码': return urlEncode(input)
+    case 'URL解码': return urlDecode(input)
     default: return input
   }
 }
 
-// Base64编解码
+// Base64编解码 — 复用 encodeUtils
 function executeBase64Action(action: string, input: string): string {
   switch (action) {
-    case '编码': return btoa(unescape(encodeURIComponent(input)))
-    case '解码': return safeBase64Decode(input)
+    case '编码': return base64Encode(input)
+    case '解码': return base64Decode(input)
     default: return input
   }
 }
 
-// 正则处理
+// 正则处理 — 复用 regexUtils
 function executeRegexAction(_action: string, input: string): string {
-  // 简化实现：实际使用时需要用户配置正则表达式
+  // 工作流中暂不支持正则（需要额外配置 pattern/flags）
   return input
 }
 
-// SQL处理
+// SQL处理 — 复用 sqlUtils
 function executeSqlAction(action: string, input: string): string {
-  const items = input.split('\n').map(s => s.trim()).filter(Boolean)
   switch (action) {
-    case '转SQL IN': return '(' + items.map(s => `'${s}'`).join(', ') + ')'
-    case '转SQL VALUES': return items.map(s => `('${s}')`).join(',\n')
+    case '转SQL IN': return convertToSqlIn(input, 'single')
+    case '转SQL VALUES': {
+      const items = input.split('\n').map(s => s.trim()).filter(Boolean)
+      return items.map(s => `('${s}')`).join(',\n')
+    }
     default: return input
   }
 }

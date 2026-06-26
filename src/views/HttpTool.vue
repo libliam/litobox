@@ -67,6 +67,7 @@
             <el-option label="Form" value="form" />
             <el-option label="Text" value="text" />
           </el-select>
+          <VariablePicker @select="handleInsertVariable" />
           <el-button size="small" @click="handleClearBody">清空</el-button>
           <el-button size="small" @click="handlePasteBody">粘贴</el-button>
         </div>
@@ -139,6 +140,7 @@ import { ElMessage } from 'element-plus'
 import { QuestionFilled, Delete, Loading } from '@element-plus/icons-vue'
 import { invoke } from '@tauri-apps/api/core'
 import { useToolboxStore } from '@/store'
+import VariablePicker from '@/components/VariablePicker.vue'
 
 const store = useToolboxStore()
 
@@ -199,6 +201,10 @@ const handlePasteBody = async () => {
   } catch {
     ElMessage.warning('无法读取剪贴板')
   }
+}
+
+const handleInsertVariable = (value: string) => {
+  body.value = value
 }
 
 // ============ 发送请求 ============

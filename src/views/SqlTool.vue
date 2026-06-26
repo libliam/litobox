@@ -43,6 +43,7 @@
           <div class="card-header">
             <span class="card-title">输入</span>
             <div class="card-actions">
+              <VariablePicker @select="handleInsertVariable" />
               <el-button size="small" @click="handleClear">清空</el-button>
               <el-button size="small" @click="handlePaste">粘贴</el-button>
             </div>
@@ -77,6 +78,7 @@
           <div class="card-header">
             <span class="card-title">输入</span>
             <div class="card-actions">
+              <VariablePicker @select="handleInsertVariable" />
               <el-button size="small" @click="handleClear">清空</el-button>
               <el-button size="small" @click="handlePaste">粘贴</el-button>
             </div>
@@ -110,6 +112,7 @@
           <div class="card-header">
             <span class="card-title">输入</span>
             <div class="card-actions">
+              <VariablePicker @select="handleInsertVariable" />
               <el-button size="small" @click="handleClear">清空</el-button>
               <el-button size="small" @click="handlePaste">粘贴</el-button>
             </div>
@@ -166,6 +169,7 @@
           <div class="card-header">
             <span class="card-title">输入 (JSON数组)</span>
             <div class="card-actions">
+              <VariablePicker @select="handleInsertVariable" />
               <el-button size="small" @click="handleClear">清空</el-button>
               <el-button size="small" @click="handlePaste">粘贴</el-button>
             </div>
@@ -260,6 +264,7 @@
           <div class="card-header">
             <span class="card-title">输入</span>
             <div class="card-actions">
+              <VariablePicker @select="handleInsertVariable" />
               <el-button size="small" @click="handleClear">清空</el-button>
               <el-button size="small" @click="handlePaste">粘贴</el-button>
             </div>
@@ -356,6 +361,7 @@
           <div class="card-header">
             <span class="card-title">输入</span>
             <div class="card-actions">
+              <VariablePicker @select="handleInsertVariable" />
               <el-button size="small" @click="handlePaste">粘贴</el-button>
             </div>
           </div>
@@ -449,6 +455,7 @@ import { parseMybatisLog } from '@/utils/mybatisLogParser'
 import { convertToSqlIn, type QuoteType } from '@/utils/sqlUtils'
 import { extractSqlFromJava } from '@/utils/javaSqlExtractor'
 import { useToolboxStore } from '@/store'
+import VariablePicker from '@/components/VariablePicker.vue'
 
 const store = useToolboxStore()
 
@@ -542,6 +549,11 @@ const handlePaste = async () => {
   } catch {
     ElMessage.error('粘贴失败，请手动粘贴')
   }
+}
+
+const handleInsertVariable = (value: string) => {
+  currentInput.value = value
+  autoExecute()
 }
 
 const handleCopy = async () => {

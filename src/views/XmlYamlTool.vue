@@ -52,6 +52,7 @@
           <div class="card-header">
             <span class="card-title">输入</span>
             <div class="card-actions">
+              <VariablePicker @select="handleInsertVariable" />
               <el-button size="small" @click="handleClear">清空</el-button>
               <el-button size="small" @click="handlePaste">粘贴</el-button>
             </div>
@@ -115,6 +116,7 @@
           <div class="card-header">
             <span class="card-title">输入</span>
             <div class="card-actions">
+              <VariablePicker @select="handleInsertVariable" />
               <el-button size="small" @click="handleYamlClear">清空</el-button>
               <el-button size="small" @click="handleYamlPaste">粘贴</el-button>
             </div>
@@ -143,11 +145,9 @@
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { QuestionFilled } from '@element-plus/icons-vue'
-import {
-  formatXml, validateXml, xmlToJson, jsonToXml,
-  parseYaml, jsonToYaml
-} from '@/utils/xmlYamlUtils'
+import { formatXml, validateXml, xmlToJson, jsonToXml, parseYaml, jsonToYaml } from '@/utils/xmlYamlUtils'
 import { useToolboxStore } from '@/store'
+import VariablePicker from '@/components/VariablePicker.vue'
 
 const store = useToolboxStore()
 
@@ -237,6 +237,7 @@ const handleJsonToXml = () => {
 
 const handleClear = () => { xmlInput.value = ''; xmlOutput.value = ''; xmlError.value = '' }
 const handlePaste = async () => { try { xmlInput.value = await navigator.clipboard.readText() } catch { ElMessage.warning('无法读取剪贴板') } }
+const handleInsertVariable = (value: string) => { xmlInput.value = value }
 const handleCopy = () => { navigator.clipboard.writeText(xmlOutput.value || xmlError.value); ElMessage.success('已复制') }
 
 // YAML 操作

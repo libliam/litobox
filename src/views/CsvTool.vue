@@ -50,6 +50,7 @@
       <div class="card-header">
         <span class="card-title">输入 (CSV文本)</span>
         <div class="card-actions">
+          <VariablePicker @select="handleInsertVariable" />
           <el-button size="small" @click="handleClear">清空</el-button>
           <el-button size="small" @click="handlePaste">粘贴</el-button>
         </div>
@@ -104,6 +105,7 @@ import { ElMessage } from 'element-plus'
 import { QuestionFilled } from '@element-plus/icons-vue'
 import { parseCsv, csvToJson, csvToSql, type CsvData } from '@/utils/csvUtils'
 import { useToolboxStore } from '@/store'
+import VariablePicker from '@/components/VariablePicker.vue'
 
 const store = useToolboxStore()
 
@@ -184,6 +186,10 @@ const handlePaste = async () => {
   } catch {
     ElMessage.warning('无法读取剪贴板')
   }
+}
+
+const handleInsertVariable = (value: string) => {
+  input.value = value
 }
 
 const handleFileImport = () => {

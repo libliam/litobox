@@ -49,6 +49,7 @@
         <div class="card-header">
           <span class="card-title">原始文本</span>
           <div class="card-actions">
+            <VariablePicker @select="handleInsertVariableLeft" />
             <el-button size="small" @click="handleClearLeft">清空</el-button>
             <el-button size="small" @click="handlePasteLeft">粘贴</el-button>
           </div>
@@ -67,6 +68,7 @@
         <div class="card-header">
           <span class="card-title">修改后文本</span>
           <div class="card-actions">
+            <VariablePicker @select="handleInsertVariableRight" />
             <el-button size="small" @click="handleClearRight">清空</el-button>
             <el-button size="small" @click="handlePasteRight">粘贴</el-button>
           </div>
@@ -151,6 +153,7 @@ import { ElMessage } from 'element-plus'
 import { QuestionFilled } from '@element-plus/icons-vue'
 import { computeLineDiff, computeCharDiff, DiffLine } from '@/utils/diffUtils'
 import { useToolboxStore } from '@/store'
+import VariablePicker from '@/components/VariablePicker.vue'
 
 const store = useToolboxStore()
 
@@ -213,12 +216,20 @@ const handlePasteLeft = async () => {
   }
 }
 
+const handleInsertVariableLeft = (value: string) => {
+  leftText.value = value
+}
+
 const handlePasteRight = async () => {
   try {
     rightText.value = await navigator.clipboard.readText()
   } catch {
     ElMessage.warning('无法读取剪贴板')
   }
+}
+
+const handleInsertVariableRight = (value: string) => {
+  rightText.value = value
 }
 
 const getLineClass = (line: DiffLine, side: 'left' | 'right') => {

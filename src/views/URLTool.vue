@@ -10,6 +10,7 @@
       <div class="card-header">
         <span class="card-title">输入 URL</span>
         <div class="card-actions">
+          <VariablePicker @select="handleInsertVariable" />
           <el-button size="small" @click="handleClear">清空</el-button>
           <el-button size="small" @click="handlePaste">粘贴</el-button>
         </div>
@@ -96,6 +97,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
+import VariablePicker from '@/components/VariablePicker.vue'
 
 const activeTab = ref('parse')
 
@@ -175,6 +177,11 @@ const handlePaste = async () => {
   } catch {
     ElMessage.warning('无法读取剪贴板')
   }
+}
+
+const handleInsertVariable = (value: string) => {
+  urlInput.value = value
+  handleUrlParse()
 }
 
 const handleCopy = async (text: string) => {
