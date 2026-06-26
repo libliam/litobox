@@ -151,8 +151,8 @@ export async function listOcrHistory(limit: number = 10): Promise<OcrHistoryReco
   return invoke('cmd_db_list_ocr_history', { limit });
 }
 
-export async function addOcrHistory(thumbnail: string, original_url: string, text: string, time: string): Promise<void> {
-  return invoke('cmd_db_add_ocr_history', { thumbnail, original_url, text, time });
+export async function addOcrHistory(thumbnail: string, originalUrl: string, text: string, time: string): Promise<void> {
+  return invoke('cmd_db_add_ocr_history', { thumbnail, originalUrl, text, time });
 }
 
 export async function clearOcrHistory(): Promise<void> {
