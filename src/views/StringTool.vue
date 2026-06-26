@@ -28,7 +28,9 @@
                 <el-button size="small" @click="applyTransform(stringUtils.toLowerCase)">全小写</el-button>
                 <el-button size="small" @click="applyTransform(stringUtils.toTitleCase)">首字母大写</el-button>
                 <el-button size="small" @click="applyTransform(stringUtils.toCamelCase)">转驼峰</el-button>
+                <el-button size="small" @click="applyTransform(stringUtils.toPascalCase)">转大驼峰</el-button>
                 <el-button size="small" @click="applyTransform(stringUtils.toSnakeCase)">转下划线</el-button>
+                <el-button size="small" @click="applyTransform(stringUtils.toKebabCase)">转短横线</el-button>
               </div>
             </div>
             <div class="action-group">
@@ -38,6 +40,9 @@
                 <el-button size="small" @click="applyTransform(stringUtils.removeNewlines)">去除换行</el-button>
                 <el-button size="small" @click="applyTransform(stringUtils.removeTabs)">去除制表符</el-button>
                 <el-button size="small" @click="applyTransform(stringUtils.removeEmptyLines)">删除空行</el-button>
+                <el-button size="small" @click="applyTransform(stringUtils.reverseString)">反转字符串</el-button>
+                <el-button size="small" @click="applyTransform(stringUtils.toFullWidth)">转全角</el-button>
+                <el-button size="small" @click="applyTransform(stringUtils.toHalfWidth)">转半角</el-button>
               </div>
             </div>
           </div>
@@ -48,6 +53,7 @@
         <div class="card-header">
           <span class="card-title">输入</span>
           <div class="card-actions">
+            <VariablePicker @select="handleInsertVariable" />
             <el-button size="small" @click="handleClear">清空</el-button>
             <el-button size="small" @click="handlePaste">粘贴</el-button>
           </div>
@@ -107,6 +113,10 @@
               <el-button size="small" @click="applyBatch('toUpperCase')">转大写</el-button>
               <el-button size="small" @click="applyBatch('toLowerCase')">转小写</el-button>
               <el-button size="small" @click="applyBatch('capitalize')">首字母大写</el-button>
+              <el-button size="small" @click="applyBatch('toCamelCase')">转驼峰</el-button>
+              <el-button size="small" @click="applyBatch('toPascalCase')">转大驼峰</el-button>
+              <el-button size="small" @click="applyBatch('toSnakeCase')">转下划线</el-button>
+              <el-button size="small" @click="applyBatch('toKebabCase')">转短横线</el-button>
             </div>
             <div class="action-group">
               <span class="group-label">空格处理</span>
@@ -119,6 +129,9 @@
               <el-button size="small" @click="applyBatch('removeDuplicates')">去重</el-button>
               <el-button size="small" @click="applyBatch('reverseLines')">行反转</el-button>
               <el-button size="small" @click="applyBatch('sortLines')">行排序</el-button>
+              <el-button size="small" @click="applyBatch('reverseString')">反转字符串</el-button>
+              <el-button size="small" @click="applyBatch('toFullWidth')">转全角</el-button>
+              <el-button size="small" @click="applyBatch('toHalfWidth')">转半角</el-button>
             </div>
           </div>
         </div>
@@ -172,6 +185,7 @@ import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import * as stringUtils from '@/utils/stringUtils'
 import { useToolboxStore } from '@/store'
+import VariablePicker from '@/components/VariablePicker.vue'
 
 const store = useToolboxStore()
 const activeTab = ref('string')
@@ -189,12 +203,19 @@ const operationMap: Record<string, (text: string) => string> = {
   toUpperCase: stringUtils.toUpperCase,
   toLowerCase: stringUtils.toLowerCase,
   capitalize: stringUtils.capitalize,
+  toCamelCase: stringUtils.toCamelCase,
+  toPascalCase: stringUtils.toPascalCase,
+  toSnakeCase: stringUtils.toSnakeCase,
+  toKebabCase: stringUtils.toKebabCase,
   trimAllSpaces: stringUtils.removeAllSpaces,
   normalizeSpaces: stringUtils.normalizeSpaces,
   removeEmptyLines: stringUtils.removeEmptyLines,
   removeDuplicates: stringUtils.removeDuplicates,
   reverseLines: stringUtils.reverseLines,
-  sortLines: stringUtils.sortLines
+  sortLines: stringUtils.sortLines,
+  reverseString: stringUtils.reverseString,
+  toFullWidth: stringUtils.toFullWidth,
+  toHalfWidth: stringUtils.toHalfWidth
 }
 
 const handleTabClick = () => {
@@ -229,6 +250,10 @@ const handlePaste = async () => {
   } catch {
     ElMessage.warning('无法读取剪贴板')
   }
+}
+
+const handleInsertVariable = (value: string) => {
+  inputValue.value = value
 }
 
 const handleCopy = async () => {

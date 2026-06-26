@@ -46,6 +46,7 @@
           <div class="card-header">
             <span class="card-title">测试文本</span>
             <div class="card-actions">
+              <VariablePicker @select="handleInsertVariable" />
               <el-button size="small" @click="handleClear">清空</el-button>
               <el-button size="small" @click="handlePaste">粘贴</el-button>
             </div>
@@ -188,6 +189,7 @@ import { ElMessage } from 'element-plus'
 import { QuestionFilled } from '@element-plus/icons-vue'
 import { testRegex, type RegexMatch } from '@/utils/regexUtils'
 import { useToolboxStore } from '@/store'
+import VariablePicker from '@/components/VariablePicker.vue'
 
 const store = useToolboxStore()
 
@@ -289,6 +291,10 @@ const handlePaste = async () => {
   } catch {
     ElMessage.warning('无法读取剪贴板')
   }
+}
+
+const handleInsertVariable = (value: string) => {
+  testText.value = value
 }
 
 const handleCopyReplaced = async () => {

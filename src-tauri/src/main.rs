@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod clipboard;
+mod db;
 mod file_encoding;
 mod file_saver;
 mod js_executor;
@@ -29,6 +30,47 @@ fn main() {
             file_saver::save_file_with_dialog,
             js_executor::execute_js,
             http_cmd::send_http_request,
+            // 数据库命令
+            db::cmd_db_get_config,
+            db::cmd_db_set_config,
+            db::cmd_db_add_history,
+            db::cmd_db_get_history,
+            db::cmd_db_clear_history,
+            db::cmd_db_search_history,
+            db::cmd_db_list_workflows,
+            db::cmd_db_save_workflow,
+            db::cmd_db_delete_workflow,
+            db::cmd_db_list_variables,
+            db::cmd_db_set_variable,
+            db::cmd_db_delete_variable,
+            db::cmd_db_get_variable,
+            db::cmd_db_export_all,
+            db::cmd_db_import_all,
+            db::cmd_db_check_migrated,
+            db::cmd_db_migrate_from_localstorage,
+            db::cmd_db_list_snippets,
+            db::cmd_db_save_snippet,
+            db::cmd_db_delete_snippet,
+            db::cmd_db_list_recent_tools,
+            db::cmd_db_add_recent_tool,
+            db::cmd_db_list_ocr_history,
+            db::cmd_db_add_ocr_history,
+            db::cmd_db_clear_ocr_history,
+            db::cmd_db_list_clipboard_history,
+            db::cmd_db_search_clipboard_history,
+            db::cmd_db_add_clipboard_record,
+            db::cmd_db_delete_clipboard_record,
+            db::cmd_db_clear_clipboard_history,
+            db::cmd_db_list_http_environments,
+            db::cmd_db_save_http_environment,
+            db::cmd_db_delete_http_environment,
+            db::cmd_db_list_http_history,
+            db::cmd_db_add_http_history,
+            db::cmd_db_clear_http_history,
+            db::cmd_db_list_http_bookmarks,
+            db::cmd_db_save_http_bookmark,
+            db::cmd_db_delete_http_bookmark,
+            db::cmd_db_register_shortcuts,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -54,21 +96,15 @@ fn main() {
                 }
             });
             
-            let shortcuts = [
-                ("json", "CmdOrCtrl+Alt+J"),
-                ("string", "CmdOrCtrl+Alt+S"),
-                ("encode", "CmdOrCtrl+Alt+E"),
-                ("regex", "CmdOrCtrl+Alt+R"),
-                ("base", "CmdOrCtrl+Alt+B"),
-                ("uuid", "CmdOrCtrl+Alt+U"),
-                ("batch", "CmdOrCtrl+Alt+T"),
-                ("fileEncoding", "CmdOrCtrl+Alt+F"),
-            ];
+            let shortcuts = db::db_read_shortcuts();
             
             let manager = app.global_shortcut();
             
             for (tool_id, shortcut_str) in shortcuts {
-                let shortcut: Shortcut = shortcut_str.parse().unwrap();
+                let shortcut: Shortcut = match shortcut_str.parse() {
+                    Ok(s) => s,
+                    Err(_) => continue,
+                };
                 let tool = tool_id.to_string();
                 let h = handle.clone();
                 

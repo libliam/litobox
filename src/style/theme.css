@@ -258,6 +258,27 @@ body {
   color: var(--accent-cyan) !important;
 }
 
+/* Dialog / Popover 等浮层深色主题 */
+:root {
+  --el-bg-color-overlay: var(--bg-card);
+  --el-popover-bg-color: var(--bg-card);
+  --el-dialog-bg-color: var(--bg-card);
+}
+
+/* 强制覆盖弹窗内部元素 */
+.el-dialog,
+.el-dialog__header,
+.el-dialog__body,
+.el-dialog__footer,
+.el-popover,
+.el-popper {
+  background-color: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+}
+.el-dialog__title {
+  color: var(--accent-cyan) !important;
+}
+
 /* Message 提示 */
 .el-message {
   background: var(--bg-card) !important;

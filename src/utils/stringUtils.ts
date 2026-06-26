@@ -88,3 +88,32 @@ export function reverseLines(text: string): string {
 export function sortLines(text: string): string {
   return text.split('\n').sort().join('\n')
 }
+
+export function toKebabCase(text: string): string {
+  return text.replace(/([A-Z])/g, (_, char) => '-' + char)
+    .replace(/[_\s]+/g, '-')
+    .toLowerCase()
+    .replace(/^-/, '')
+    .replace(/-+/g, '-')
+}
+
+export function toPascalCase(text: string): string {
+  return text.replace(/[-_\s]+(.)?/g, (_, char) => char ? char.toUpperCase() : '')
+    .replace(/^[a-z]/, char => char.toUpperCase())
+}
+
+export function reverseString(text: string): string {
+  return text.split('').reverse().join('')
+}
+
+export function toFullWidth(text: string): string {
+  return text.replace(/[\u0020-\u007e]/g, char =>
+    String.fromCharCode(char.charCodeAt(0) + 0xfee0)
+  ).replace(/\u0020/g, '\u3000')
+}
+
+export function toHalfWidth(text: string): string {
+  return text.replace(/[\uff01-\uff5e]/g, char =>
+    String.fromCharCode(char.charCodeAt(0) - 0xfee0)
+  ).replace(/\u3000/g, '\u0020')
+}

@@ -13,12 +13,14 @@ export function urlDecode(text: string): string {
 }
 
 export function base64Encode(text: string): string {
-  return Base64.encode(text)
+  const bytes = new TextEncoder().encode(text)
+  return Base64.fromUint8Array(bytes)
 }
 
 export function base64Decode(text: string): string {
   try {
-    return Base64.decode(text)
+    const bytes = Base64.toUint8Array(text)
+    return new TextDecoder().decode(bytes)
   } catch {
     return '解码失败：无效的Base64编码'
   }

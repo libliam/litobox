@@ -36,6 +36,7 @@
       <div class="card-header">
         <span class="card-title">时间戳 → 日期时间</span>
         <div class="card-actions">
+          <VariablePicker @select="handleInsertVariable" />
           <el-button size="small" @click="handleClear">清空</el-button>
           <el-button size="small" @click="handlePaste">粘贴</el-button>
         </div>
@@ -286,6 +287,7 @@
           </el-tooltip>
         </div>
         <div class="card-actions">
+          <VariablePicker @select="handleInsertVariableRelative" />
           <el-button size="small" @click="handleClearRelative">清空</el-button>
           <el-button size="small" @click="handlePasteRelative">粘贴</el-button>
         </div>
@@ -319,6 +321,7 @@ import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { QuestionFilled } from '@element-plus/icons-vue'
 import { useToolboxStore } from '@/store'
+import VariablePicker from '@/components/VariablePicker.vue'
 
 const store = useToolboxStore()
 const activeTab = ref('timestamp')
@@ -434,6 +437,10 @@ const handlePaste = async () => {
   } catch {
     ElMessage.warning('无法读取剪贴板')
   }
+}
+
+const handleInsertVariable = (value: string) => {
+  tsInput.value = value
 }
 
 const handleCopy = async (text: string) => {
@@ -672,6 +679,10 @@ const handlePasteRelative = async () => {
   } catch {
     ElMessage.warning('无法读取剪贴板')
   }
+}
+
+const handleInsertVariableRelative = (value: string) => {
+  relativeInput.value = value
 }
 </script>
 

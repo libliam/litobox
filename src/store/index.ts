@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import * as db from '@/utils/dbClient'
 
 export interface ToolboxConfig {
   theme: 'auto' | 'dark' | 'light'
@@ -61,12 +62,10 @@ export const TOOL_LIST: ToolItem[] = [
   { id: 'fileprocessing', name: '文件处理', icon: '📁', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>`, description: '批量文本处理、文件编码转换', keywords: ['文件', '编码', '转换', '批量', '替换'], category: 'utility' },
   { id: 'clipboard', name: '剪贴板', icon: '📋', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><path d="M9 14l2 2 4-4"/></svg>`, description: '系统剪贴板历史记录', keywords: ['剪贴板', '复制', '历史', 'clipboard'] },
   { id: 'snippet', name: '代码片段', icon: '<>', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>`, description: '代码片段管理，支持分类、搜索、导入导出', keywords: ['代码', '片段', 'snippet', '管理', '收藏', '模板'], category: 'utility' },
-  { id: 'history', name: '历史记录', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/><path d="M3 12a9 9 0 0115.36-6.36L21 3"/></svg>`, description: '查看和清空操作历史', keywords: ['历史', '记录', '操作'] }
+  { id: 'history', name: '历史记录', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/><path d="M3 12a9 9 0 0115.36-6.36L21 3"/></svg>`, description: '查看和清空操作历史', keywords: ['历史', '记录', '操作'] },
+  { id: 'workflow', name: '工作流', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h4l3 3h6l3-3h4"/><path d="M4 12h4l3 3h6l3-3h4"/><path d="M4 18h4l3 3h6l3-3h4"/><circle cx="4" cy="6" r="1" fill="currentColor"/><circle cx="20" cy="6" r="1" fill="currentColor"/><circle cx="4" cy="12" r="1" fill="currentColor"/><circle cx="20" cy="12" r="1" fill="currentColor"/><circle cx="4" cy="18" r="1" fill="currentColor"/><circle cx="20" cy="18" r="1" fill="currentColor"/></svg>`, description: '工作流编排，链式处理，变量池管理', keywords: ['工作流', '编排', '链式', '变量池'], category: 'utility' }
 ]
 
-const STORAGE_KEY_CONFIG = 'toolbox_config'
-const STORAGE_KEY_HISTORY = 'toolbox_history'
-const STORAGE_KEY_RECENT = 'toolbox_recent'
 const MAX_HISTORY = 100
 const MAX_RECENT = 8
 
@@ -88,77 +87,113 @@ export const useToolboxStore = defineStore('toolbox', () => {
   const history = ref<HistoryRecord[]>([])
   const recentTools = ref<string[]>([])
 
-  // 加载本地存储
-  const loadFromStorage = () => {
+  // 从 SQLite 加载配置
+  const loadConfigFromDB = async () => {
     try {
-      const savedConfig = localStorage.getItem(STORAGE_KEY_CONFIG)
+      const savedConfig = await db.getConfig('main')
       if (savedConfig) {
-        config.value = { ...config.value, ...JSON.parse(savedConfig) }
-      }
-      
-      const savedHistory = localStorage.getItem(STORAGE_KEY_HISTORY)
-      if (savedHistory) {
-        history.value = JSON.parse(savedHistory)
-      }
-
-      const savedRecent = localStorage.getItem(STORAGE_KEY_RECENT)
-      if (savedRecent) {
-        recentTools.value = JSON.parse(savedRecent)
+        const parsed = JSON.parse(savedConfig)
+        config.value = { ...config.value, ...parsed }
       }
     } catch (error) {
-      console.error('加载本地配置失败:', error)
+      console.error('加载配置失败:', error)
     }
   }
 
-  // 保存配置
-  const saveConfig = (newConfig: Partial<ToolboxConfig>) => {
-    config.value = { ...config.value, ...newConfig }
-    localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify(config.value))
+  // 从 SQLite 加载历史
+  const loadHistoryFromDB = async () => {
+    try {
+      const records = await db.getHistory(MAX_HISTORY, 0)
+      history.value = records.map(r => ({
+        tool: r.tool,
+        action: r.action,
+        timestamp: r.created_at || new Date().toISOString(),
+        inputPreview: r.input_preview,
+        outputPreview: r.output_preview,
+      }))
+    } catch (error) {
+      console.error('加载历史失败:', error)
+    }
   }
 
-  // 添加历史记录
-  const addHistory = (record: Omit<HistoryRecord, 'timestamp'>) => {
+  // 从 SQLite 加载最近工具
+  const loadRecentFromDB = async () => {
+    try {
+      recentTools.value = await db.listRecentTools(MAX_RECENT)
+    } catch (error) {
+      console.error('加载最近工具失败:', error)
+    }
+  }
+
+  // 初始化加载
+  const loadFromDB = async () => {
+    await Promise.all([
+      loadConfigFromDB(),
+      loadHistoryFromDB(),
+      loadRecentFromDB(),
+    ])
+  }
+
+  // 保存配置到 SQLite
+  const saveConfig = async (newConfig: Partial<ToolboxConfig>) => {
+    config.value = { ...config.value, ...newConfig }
+    await db.setConfig('main', JSON.stringify(config.value))
+  }
+
+  // 添加历史记录到 SQLite
+  const addHistory = async (record: Omit<HistoryRecord, 'timestamp'>) => {
     const newRecord = {
       ...record,
       timestamp: new Date().toISOString()
     }
+    // 同步更新本地状态
     history.value.unshift(newRecord)
     if (history.value.length > MAX_HISTORY) {
       history.value = history.value.slice(0, MAX_HISTORY)
     }
-    localStorage.setItem(STORAGE_KEY_HISTORY, JSON.stringify(history.value))
+    // 保存到 SQLite
+    try {
+      await db.addHistory({
+        tool: newRecord.tool,
+        action: newRecord.action,
+        input_preview: newRecord.inputPreview,
+        output_preview: newRecord.outputPreview,
+      })
+    } catch (error) {
+      console.error('保存历史失败:', error)
+    }
   }
 
-  // 清空历史
-  const clearHistory = () => {
+  // 清空历史（SQLite + 本地状态）
+  const clearHistory = async () => {
     history.value = []
-    localStorage.removeItem(STORAGE_KEY_HISTORY)
+    await db.clearHistory()
   }
 
   // 记录最近使用的工具
-  const addRecentTool = (toolId: string) => {
+  const addRecentTool = async (toolId: string) => {
     if (toolId === 'home') return
     recentTools.value = recentTools.value.filter(id => id !== toolId)
     recentTools.value.unshift(toolId)
     if (recentTools.value.length > MAX_RECENT) {
       recentTools.value = recentTools.value.slice(0, MAX_RECENT)
     }
-    localStorage.setItem(STORAGE_KEY_RECENT, JSON.stringify(recentTools.value))
+    await db.addRecentTool(toolId)
   }
 
   // 切换收藏
-  const toggleFavorite = (toolId: string) => {
+  const toggleFavorite = async (toolId: string) => {
     const idx = config.value.favorites.indexOf(toolId)
     if (idx > -1) {
       config.value.favorites.splice(idx, 1)
     } else {
       config.value.favorites.push(toolId)
     }
-    saveConfig({ favorites: config.value.favorites })
+    await saveConfig({ favorites: config.value.favorites })
   }
 
   // 初始化加载
-  loadFromStorage()
+  loadFromDB()
 
   return {
     config,

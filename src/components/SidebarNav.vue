@@ -5,7 +5,7 @@
         <span class="logo-icon">⚡</span>
         <div class="logo-text">
           <h1 class="app-title">栗的百宝箱</h1>
-          <span class="app-version">v2.12</span>
+          <span class="app-version">v3.0</span>
         </div>
       </div>
     </div>
@@ -115,13 +115,41 @@
         <el-option label="深色模式" value="dark" />
         <el-option label="浅色模式" value="light" />
       </el-select>
+      <el-tooltip content="快捷键设置" placement="top">
+        <button class="pin-btn" @click="showShortcutSettings = true">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <path d="M7 3v18M17 3v18M3 7h18M3 17h18"/>
+          </svg>
+        </button>
+      </el-tooltip>
     </div>
   </aside>
+  
+  <!-- 快捷键设置对话框 -->
+  <el-dialog v-model="showShortcutSettings" title="快捷键设置" width="480px" destroy-on-close @opened="initShortcutList">
+    <div class="shortcut-list">
+      <div v-for="item in shortcutList" :key="item.id" class="shortcut-row">
+        <span class="shortcut-tool-name">{{ item.label }}</span>
+        <div class="shortcut-input-wrapper" :class="{ editing: editingShortcut === item.id }" @click="startEditShortcut(item)">
+          <span v-if="editingShortcut !== item.id">{{ item.shortcut || '未设置' }}</span>
+          <span v-else class="shortcut-recording">按下键盘组合键...</span>
+        </div>
+        <el-button v-if="editingShortcut === item.id" size="small" @click="cancelEditShortcut">取消</el-button>
+      </div>
+    </div>
+    <template #footer>
+      <el-button @click="showShortcutSettings = false">取消</el-button>
+      <el-button type="primary" @click="saveShortcuts">保存</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ElMessage } from 'element-plus'
 import { useToolboxStore, TOOL_LIST } from '@/store'
+import * as db from '@/utils/dbClient'
 
 defineProps<{
   modelValue: string
@@ -134,6 +162,99 @@ const emit = defineEmits<{
 const store = useToolboxStore()
 const currentTheme = ref(store.config.theme)
 const isPinned = ref(false)
+
+// ============ 快捷键设置 ============
+const showShortcutSettings = ref(false)
+const shortcutList = ref<Array<{ id: string; label: string; shortcut: string }>>([])
+const editingShortcut = ref('')
+let shortcutKeyHandler: ((e: KeyboardEvent) => void) | null = null
+
+const SHORTCUT_TOOLS = [
+  { id: 'json', label: 'JSON工具' },
+  { id: 'string', label: '字符串工具' },
+  { id: 'encode', label: '编码工具' },
+  { id: 'regex', label: '正则测试' },
+  { id: 'http', label: 'HTTP 请求' },
+  { id: 'time', label: '时间工具' },
+  { id: 'uuid', label: 'UUID生成' },
+  { id: 'ocr', label: 'OCR识别' },
+  { id: 'clipboard', label: '剪贴板' },
+  { id: 'diff', label: '文本对比' },
+  { id: 'color', label: '颜色工具' },
+  { id: 'password', label: '密码工具' },
+  { id: 'snippet', label: '代码片段' },
+]
+
+const initShortcutList = () => {
+  const saved = store.config.shortcuts || {}
+  shortcutList.value = SHORTCUT_TOOLS.map(t => ({
+    id: t.id,
+    label: t.label,
+    shortcut: saved[t.id] || '',
+  }))
+}
+
+const startEditShortcut = (item: { id: string; label: string; shortcut: string }) => {
+  editingShortcut.value = item.id
+  if (shortcutKeyHandler) {
+    document.removeEventListener('keydown', shortcutKeyHandler)
+  }
+  shortcutKeyHandler = (e: KeyboardEvent) => {
+    e.preventDefault()
+    // 至少需要一个修饰键 Ctrl/Alt/Cmd + 一个普通键
+    if (e.key === 'Control' || e.key === 'Alt' || e.key === 'Meta' || e.key === 'Shift') return
+
+    const parts: string[] = []
+    if (e.ctrlKey || e.metaKey) parts.push(e.metaKey ? 'CmdOrCtrl' : 'CmdOrCtrl')
+    if (e.altKey) parts.push('Alt')
+    if (e.shiftKey) parts.push('Shift')
+    parts.push(e.key.length === 1 ? e.key.toUpperCase() : e.key)
+
+    const shortcut = parts.join('+')
+    const found = shortcutList.value.find(s => s.id === editingShortcut.value)
+    if (found) found.shortcut = shortcut
+    editingShortcut.value = ''
+    if (shortcutKeyHandler) {
+      document.removeEventListener('keydown', shortcutKeyHandler)
+      shortcutKeyHandler = null
+    }
+  }
+  // 延迟添加，避免点击按钮本身触发
+  setTimeout(() => {
+    document.addEventListener('keydown', shortcutKeyHandler!)
+  }, 100)
+}
+
+const cancelEditShortcut = () => {
+  editingShortcut.value = ''
+  if (shortcutKeyHandler) {
+    document.removeEventListener('keydown', shortcutKeyHandler)
+    shortcutKeyHandler = null
+  }
+}
+
+const saveShortcuts = async () => {
+  const shortcutsMap: Record<string, string> = {}
+  for (const item of shortcutList.value) {
+    if (item.shortcut) shortcutsMap[item.id] = item.shortcut
+  }
+  try {
+    const json = JSON.stringify(shortcutsMap)
+    await db.registerShortcuts(json)
+    store.config.shortcuts = shortcutsMap
+    await store.saveConfig({ shortcuts: shortcutsMap })
+    ElMessage.success('快捷键已保存，重启应用后生效')
+    showShortcutSettings.value = false
+  } catch {
+    ElMessage.error('保存失败')
+  }
+}
+
+onUnmounted(() => {
+  if (shortcutKeyHandler) {
+    document.removeEventListener('keydown', shortcutKeyHandler)
+  }
+})
 
 const togglePin = async () => {
   try {
@@ -156,16 +277,16 @@ onMounted(async () => {
   }
 })
 
-// 固定工具（首页、剪贴板、历史）
+// 固定工具（首页、剪贴板、历史、工作流）
 const fixedTools = computed(() => {
-  return TOOL_LIST.filter(t => t.id === 'home' || t.id === 'clipboard' || t.id === 'history')
+  return TOOL_LIST.filter(t => t.id === 'home' || t.id === 'clipboard' || t.id === 'history' || t.id === 'workflow')
 })
 
 // 收藏工具（排除固定工具）
 const favoritedTools = computed(() => {
   const favorites = store.config.favorites
   return TOOL_LIST.filter(t =>
-    t.id !== 'home' && t.id !== 'clipboard' && t.id !== 'history' && favorites.includes(t.id)
+    t.id !== 'home' && t.id !== 'clipboard' && t.id !== 'history' && t.id !== 'workflow' && favorites.includes(t.id)
   )
 })
 
@@ -173,7 +294,7 @@ const favoritedTools = computed(() => {
 const categorizedTools = computed(() => {
   const favorites = store.config.favorites
   const categorized = TOOL_LIST.filter(t =>
-    t.category && t.id !== 'home' && t.id !== 'clipboard' && t.id !== 'history' && !favorites.includes(t.id)
+    t.category && t.id !== 'home' && t.id !== 'clipboard' && t.id !== 'history' && t.id !== 'workflow' && !favorites.includes(t.id)
   )
 
   const categoryMap = new Map<string, typeof TOOL_LIST>()
@@ -439,5 +560,64 @@ const applyTheme = (theme: string) => {
 .sidebar-nav::-webkit-scrollbar-thumb {
   background: var(--border-color);
   border-radius: 2px;
+}
+
+/* ===== 快捷键设置 ===== */
+.shortcut-list {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.shortcut-row:last-child {
+  border-bottom: none;
+}
+
+.shortcut-tool-name {
+  font-size: 13px;
+  color: var(--text-primary);
+  min-width: 100px;
+}
+
+.shortcut-input-wrapper {
+  flex: 1;
+  padding: 6px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: center;
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  transition: border-color 0.2s;
+  user-select: none;
+}
+
+.shortcut-input-wrapper:hover {
+  border-color: var(--accent-cyan);
+}
+
+.shortcut-input-wrapper.editing {
+  border-color: var(--accent-cyan);
+  box-shadow: var(--glow-cyan);
+  background: rgba(0, 212, 255, 0.06);
+}
+
+.shortcut-recording {
+  color: var(--accent-cyan);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
 </style>

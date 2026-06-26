@@ -32,6 +32,7 @@
       <div class="card-header">
         <span class="card-title">输入</span>
         <div class="card-actions">
+          <VariablePicker @select="handleInsertVariable" />
           <el-button size="small" @click="handleClear">清空</el-button>
           <el-button size="small" @click="handlePaste">粘贴</el-button>
         </div>
@@ -80,6 +81,7 @@ import { ElMessage } from 'element-plus'
 import { QuestionFilled } from '@element-plus/icons-vue'
 import { Base64 } from 'js-base64'
 import { useToolboxStore } from '@/store'
+import VariablePicker from '@/components/VariablePicker.vue'
 
 const store = useToolboxStore()
 
@@ -105,7 +107,8 @@ const expInfo = computed(() => {
 const base64UrlDecode = (str: string): string => {
   str = str.replace(/-/g, '+').replace(/_/g, '/')
   while (str.length % 4) str += '='
-  return Base64.decode(str)
+  const bytes = Base64.toUint8Array(str)
+  return new TextDecoder().decode(bytes)
 }
 
 const handleParse = () => {
@@ -167,6 +170,10 @@ const handlePaste = async () => {
   } catch {
     ElMessage.error('无法读取剪贴板')
   }
+}
+
+const handleInsertVariable = (value: string) => {
+  input.value = value
 }
 
 const handleCopy = (text: string) => {
