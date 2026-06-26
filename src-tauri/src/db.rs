@@ -364,13 +364,41 @@ pub fn db_export_all() -> Result<String, String> {
             .collect();
         export.insert("history", serde_json::Value::Array(history));
 
-        // 导出工作流
-        let workflows = db_list_workflows()?;
-        export.insert("workflows", serde_json::to_value(workflows).map_err(|e| e.to_string())?);
+        // 导出工作流（直接查询，避免 db_list_workflows 内部再次 with_conn 导致死锁）
+        let mut stmt = conn.prepare("SELECT id, name, description, steps_json, created_at, updated_at FROM workflows ORDER BY updated_at DESC")
+            .map_err(|e| e.to_string())?;
+        let workflows: Vec<serde_json::Value> = stmt
+            .query_map([], |row| {
+                Ok(serde_json::json!({
+                    "id": row.get::<_, i64>(0)?,
+                    "name": row.get::<_, String>(1)?,
+                    "description": row.get::<_, String>(2)?,
+                    "steps_json": row.get::<_, String>(3)?,
+                    "created_at": row.get::<_, String>(4)?,
+                    "updated_at": row.get::<_, String>(5)?,
+                }))
+            }).map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+        export.insert("workflows", serde_json::Value::Array(workflows));
 
-        // 导出变量池
-        let variables = db_list_variables()?;
-        export.insert("variables", serde_json::to_value(variables).map_err(|e| e.to_string())?);
+        // 导出变量池（直接查询，避免 db_list_variables 内部再次 with_conn 导致死锁）
+        let mut stmt = conn.prepare("SELECT id, name, value, source, created_at, last_used_at FROM variable_pool ORDER BY created_at DESC")
+            .map_err(|e| e.to_string())?;
+        let variables: Vec<serde_json::Value> = stmt
+            .query_map([], |row| {
+                Ok(serde_json::json!({
+                    "id": row.get::<_, i64>(0)?,
+                    "name": row.get::<_, String>(1)?,
+                    "value": row.get::<_, String>(2)?,
+                    "source": row.get::<_, String>(3)?,
+                    "created_at": row.get::<_, String>(4)?,
+                    "last_used_at": row.get::<_, Option<String>>(5)?,
+                }))
+            }).map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+        export.insert("variables", serde_json::Value::Array(variables));
 
         // 导出最近工具
         let mut stmt = conn.prepare("SELECT tool_id, last_used_at FROM recent_tools ORDER BY last_used_at DESC")

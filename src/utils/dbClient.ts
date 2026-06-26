@@ -93,6 +93,10 @@ export async function importAll(data: string): Promise<void> {
   return invoke('cmd_db_import_all', { data });
 }
 
+export async function saveFileWithDialog(dataBase64: string, filename: string, defaultExt: string): Promise<string> {
+  return invoke('save_file_with_dialog', { dataBase64, filename, defaultExt });
+}
+
 // 迁移相关
 export async function checkMigrated(): Promise<boolean> {
   return invoke('cmd_db_check_migrated');

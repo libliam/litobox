@@ -9,6 +9,7 @@
     "core:window:allow-is-always-on-top",
     "shell:allow-open",
     "dialog:allow-open",
+    "dialog:allow-save",
     "global-shortcut:allow-register",
     "global-shortcut:allow-is-registered",
     "global-shortcut:allow-unregister"

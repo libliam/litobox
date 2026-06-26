@@ -60,6 +60,7 @@
 import { ref, computed } from 'vue'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
+import { Base64 } from 'js-base64'
 import { useToolboxStore } from '@/store'
 import * as db from '@/utils/dbClient'
 
@@ -154,15 +155,13 @@ const handleExport = async () => {
   })
   try {
     const data = await db.exportAll()
-    const blob = new Blob([data], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
     const date = new Date().toISOString().slice(0, 10).replace(/-/g, '')
-    a.href = url
-    a.download = `litobox-backup-${date}.json`
-    a.click()
-    URL.revokeObjectURL(url)
-    ElMessage.success('导出成功')
+    const filename = `litobox-backup-${date}.json`
+    // ponytail: 使用 Tauri 保存对话框让用户选择路径
+    const result = await db.saveFileWithDialog(Base64.encode(data), filename, 'json')
+    if (result !== 'cancelled') {
+      ElMessage.success('导出成功')
+    }
   } catch (e: any) {
     ElMessage.error('导出失败: ' + (e.message || e))
   } finally {
