@@ -61,6 +61,16 @@ fn main() {
             db::cmd_db_add_clipboard_record,
             db::cmd_db_delete_clipboard_record,
             db::cmd_db_clear_clipboard_history,
+            db::cmd_db_list_http_environments,
+            db::cmd_db_save_http_environment,
+            db::cmd_db_delete_http_environment,
+            db::cmd_db_list_http_history,
+            db::cmd_db_add_http_history,
+            db::cmd_db_clear_http_history,
+            db::cmd_db_list_http_bookmarks,
+            db::cmd_db_save_http_bookmark,
+            db::cmd_db_delete_http_bookmark,
+            db::cmd_db_register_shortcuts,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -86,21 +96,15 @@ fn main() {
                 }
             });
             
-            let shortcuts = [
-                ("json", "CmdOrCtrl+Alt+J"),
-                ("string", "CmdOrCtrl+Alt+S"),
-                ("encode", "CmdOrCtrl+Alt+E"),
-                ("regex", "CmdOrCtrl+Alt+R"),
-                ("base", "CmdOrCtrl+Alt+B"),
-                ("uuid", "CmdOrCtrl+Alt+U"),
-                ("batch", "CmdOrCtrl+Alt+T"),
-                ("fileEncoding", "CmdOrCtrl+Alt+F"),
-            ];
+            let shortcuts = db::db_read_shortcuts();
             
             let manager = app.global_shortcut();
             
             for (tool_id, shortcut_str) in shortcuts {
-                let shortcut: Shortcut = shortcut_str.parse().unwrap();
+                let shortcut: Shortcut = match shortcut_str.parse() {
+                    Ok(s) => s,
+                    Err(_) => continue,
+                };
                 let tool = tool_id.to_string();
                 let h = handle.clone();
                 

@@ -86,7 +86,7 @@
 
 | 工具 | 功能 |
 |------|------|
-| **HTTP请求** | GET/POST/PUT/DELETE 测试 |
+| **HTTP请求** | GET/POST/PUT/DELETE，环境变量/收藏/历史，绕过 CORS |
 | **代码片段** | 代码片段管理/分类/搜索/导入导出 |
 | **剪贴板** | 系统剪贴板历史记录 |
 | **历史记录** | 操作历史回溯 |
@@ -244,7 +244,7 @@ Vibe Coding 不是一次性的对话，而是**持续进化的工程实践**：
 | UI | Element Plus | 桌面端组件库 |
 | 桌面 | Tauri 2.0 | Rust 底层，系统级调用 |
 | 状态 | Pinia | 轻量状态管理 |
-| 存储 | localStorage | 配置与历史缓存 |
+| 存储 | SQLite | 数据持久化，支持导入导出备份 |
 | OCR | PaddleOCR.js | PP-OCRv6 离线识别 |
 | PDF | pdf-lib + pdfjs-dist | PDF 处理与渲染 |
 | 加密 | crypto-js | AES/RSA/DES 等算法 |
@@ -280,7 +280,8 @@ Vibe Coding 不是一次性的对话，而是**持续进化的工程实践**：
 | V1.1 | ✅ | 操作历史/窗口置顶/主题切换 |
 | V1.2 | ✅ | SQL/JS执行器/Mock/OCR/文件编码 |
 | V1.3 | ✅ | 文本对比工具 |
-| V2.x | 🔄 | 更多工具持续加入... |
+| V2.x | ✅ | 30+ 工具，OCR/PDF/Markdown/颜色/密码等 |
+| V3.0 | ✅ | SQLite 数据持久化、HTTP 环境变量/收藏/历史、快捷键自定义 |
 
 ---
 

@@ -15,7 +15,24 @@
             <el-icon class="hint-icon"><QuestionFilled /></el-icon>
           </el-tooltip>
         </div>
-        <el-button size="small" type="primary" @click="handleSend" :loading="loading">发送</el-button>
+        <div class="action-bar">
+          <div class="action-bar-left">
+            <el-select v-model="currentEnvId" size="small" style="width: 160px" placeholder="环境变量" clearable @change="onEnvChange">
+              <el-option
+                v-for="env in environments"
+                :key="env.id"
+                :label="env.name"
+                :value="env.id"
+              >
+                <span>{{ env.name }}</span>
+                <span class="env-var-count">{{ Object.keys(JSON.parse(env.variables_json || '{}')).length }}个变量</span>
+              </el-option>
+            </el-select>
+            <el-button size="small" @click="showEnvDialog = true">管理</el-button>
+            <el-button size="small" @click="handleSaveBookmark" :disabled="!url.trim()">收藏</el-button>
+          </div>
+          <el-button size="small" type="primary" @click="handleSend" :loading="loading">发送</el-button>
+        </div>
       </div>
       <div class="card-body">
         <div class="request-bar">
@@ -34,7 +51,11 @@
             size="default"
             style="flex: 1; margin-left: 8px"
             @keyup.enter="handleSend"
-          />
+          >
+            <template v-if="currentEnv?.base_url" #prepend>
+              <span class="url-base-prefix">{{ currentEnv.base_url }}</span>
+            </template>
+          </el-input>
           <el-input-number v-model="timeoutMs" :min="1000" :max="60000" :step="5000" size="default" style="width: 120px; margin-left: 8px" />
           <span class="timeout-label">ms</span>
         </div>
@@ -131,16 +152,130 @@
         <div v-else class="stats-empty">发送请求后查看响应</div>
       </div>
     </div>
+
+    <!-- 历史/收藏/环境管理 -->
+    <div class="tool-card">
+      <div class="card-header">
+        <span class="card-title">历史与收藏</span>
+        <el-button size="small" @click="refreshHistory" :disabled="loading">刷新</el-button>
+      </div>
+      <div class="card-body">
+        <el-tabs v-model="historyTab" size="small">
+          <el-tab-pane label="请求历史" name="history">
+            <div v-if="httpHistory.length === 0" class="empty-hint">暂无请求历史</div>
+            <div v-else class="history-list">
+              <div v-for="(item, idx) in httpHistory" :key="idx" class="history-item" @click="restoreFromHistory(item)">
+                <div class="history-method" :class="'method-' + item.method.toLowerCase()">{{ item.method }}</div>
+                <div class="history-info">
+                  <div class="history-url">{{ item.url }}</div>
+                  <div class="history-meta">
+                    <span>{{ item.created_at }}</span>
+                    <span v-if="item.status">· {{ item.status }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </el-tab-pane>
+          <el-tab-pane label="收藏" name="bookmarks">
+            <div v-if="bookmarks.length === 0" class="empty-hint">暂无收藏，点击「收藏」按钮保存当前请求</div>
+            <div v-else class="bookmark-list">
+              <div v-for="(bm, idx) in bookmarks" :key="idx" class="history-item" @click="restoreFromBookmark(bm)">
+                <div class="bookmark-left">
+                  <div class="history-method" :class="'method-' + bm.method.toLowerCase()">{{ bm.method }}</div>
+                  <div class="history-info">
+                    <div class="history-url">{{ bm.name }}</div>
+                    <div class="history-meta">{{ bm.url }}</div>
+                  </div>
+                </div>
+                <el-button size="small" type="danger" :icon="Delete" circle @click.stop="deleteBookmark(bm.id)" />
+              </div>
+            </div>
+          </el-tab-pane>
+          <el-tab-pane label="环境变量" name="envs">
+            <div class="env-vars-section">
+              <div class="env-vars-header">
+                <span v-if="currentEnv">当前环境：{{ currentEnv.name }}</span>
+                <span v-else class="text-muted">未选择环境</span>
+                <el-button size="small" @click="showEnvDialog = true">管理环境</el-button>
+              </div>
+              <div v-if="currentEnv" class="env-vars-list">
+                <div v-for="(val, key) in parsedEnvVars" :key="key" class="env-var-row">
+                  <code class="env-var-key">\x7b\x7b{{ key }}\x7d\x7d</code>
+                  <span class="env-var-val">{{ val }}</span>
+                </div>
+              </div>
+            </div>
+          </el-tab-pane>
+        </el-tabs>
+      </div>
+    </div>
+
+    <!-- 环境管理对话框 -->
+    <el-dialog v-model="showEnvDialog" title="管理环境变量" width="600px" destroy-on-close>
+      <div class="env-dialog-body">
+        <div class="env-list-panel">
+          <div class="env-list-header">
+            <span>环境列表</span>
+            <el-button size="small" @click="addEnvironment">+ 新建</el-button>
+          </div>
+          <div v-for="env in environments" :key="env.id"
+            :class="['env-list-item', { active: editingEnvId === env.id }]"
+            @click="selectEnvForEdit(env.id)">
+            <span>{{ env.name }}</span>
+            <el-button size="small" type="danger" :icon="Delete" circle @click.stop="deleteEnvironment(env.id)" />
+          </div>
+        </div>
+        <div v-if="editingEnv" class="env-edit-panel">
+          <el-form label-width="80px" size="small">
+            <el-form-item label="环境名称">
+              <el-input v-model="editingEnv.name" placeholder="如: dev / staging / prod" />
+            </el-form-item>
+            <el-form-item label="接口地址">
+              <el-input v-model="editingEnv.base_url" placeholder="如: https://api.dev.example.com" />
+              <div class="form-hint">选中此环境后，URL 输入框会显示此前缀，只需输入路径部分</div>
+            </el-form-item>
+            <el-form-item label="变量列表">
+              <div class="env-edit-vars">
+                <div v-for="(item, idx) in editingEnvVars" :key="idx" class="env-var-edit-row">
+                  <el-input v-model="item.key" placeholder="变量名" style="width: 140px" />
+                  <el-input v-model="item.value" placeholder="值" style="flex: 1; margin: 0 6px" />
+                  <el-button size="small" type="danger" :icon="Delete" circle @click="editingEnvVars.splice(idx, 1)" />
+                </div>
+                <el-button size="small" @click="editingEnvVars.push({ key: '', value: '' })">+ 添加变量</el-button>
+              </div>
+            </el-form-item>
+          </el-form>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="showEnvDialog = false">取消</el-button>
+        <el-button type="primary" @click="saveEnvironment">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 收藏命名对话框 -->
+    <el-dialog v-model="showBookmarkDialog" title="收藏请求" width="400px" destroy-on-close>
+      <el-form label-width="70px" size="small">
+        <el-form-item label="名称">
+          <el-input v-model="bookmarkName" placeholder="为此请求起个名字" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showBookmarkDialog = false">取消</el-button>
+        <el-button type="primary" @click="confirmSaveBookmark">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ref, computed, onMounted } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { QuestionFilled, Delete, Loading } from '@element-plus/icons-vue'
 import { invoke } from '@tauri-apps/api/core'
 import { useToolboxStore } from '@/store'
 import VariablePicker from '@/components/VariablePicker.vue'
+import * as db from '@/utils/dbClient'
 
 const store = useToolboxStore()
 
@@ -154,6 +289,7 @@ const headers = ref<Array<{ key: string; value: string }>>([])
 const loading = ref(false)
 
 // ============ 响应 ============
+const historyTab = ref('history')
 const responseTab = ref('body')
 const responseStatus = ref(0)
 const responseStatusText = ref('')
@@ -171,14 +307,11 @@ const statusClass = computed(() => {
 })
 
 const formattedResponseBody = computed(() => {
-  if (bodyType.value === 'json' || responseTab.value === 'body') {
-    try {
-      return JSON.stringify(JSON.parse(responseBody.value), null, 2)
-    } catch {
-      return responseBody.value
-    }
+  try {
+    return JSON.stringify(JSON.parse(responseBody.value), null, 2)
+  } catch {
+    return responseBody.value
   }
-  return responseBody.value
 })
 
 // ============ 请求头操作 ============
@@ -190,14 +323,11 @@ const removeHeader = (idx: number) => {
   headers.value.splice(idx, 1)
 }
 
-const handleClearBody = () => {
-  body.value = ''
-}
+const handleClearBody = () => { body.value = '' }
 
 const handlePasteBody = async () => {
   try {
-    const text = await navigator.clipboard.readText()
-    body.value = text
+    body.value = await navigator.clipboard.readText()
   } catch {
     ElMessage.warning('无法读取剪贴板')
   }
@@ -207,6 +337,181 @@ const handleInsertVariable = (value: string) => {
   body.value = value
 }
 
+// ============ 环境变量 ============
+const environments = ref<db.HttpEnvironment[]>([])
+const currentEnvId = ref('')
+const showEnvDialog = ref(false)
+const editingEnvId = ref('')
+const editingEnv = computed(() => environments.value.find(e => e.id === editingEnvId.value))
+const editingEnvVars = ref<Array<{ key: string; value: string }>>([])
+const currentEnv = computed(() => environments.value.find(e => e.id === currentEnvId.value))
+const parsedEnvVars = computed(() => {
+  if (!currentEnv.value) return {}
+  try {
+    return JSON.parse(currentEnv.value.variables_json || '{}') as Record<string, string>
+  } catch { return {} }
+})
+
+const loadEnvironments = async () => {
+  try {
+    environments.value = await db.listHttpEnvironments()
+  } catch { environments.value = [] }
+}
+
+const addEnvironment = () => {
+  const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
+  editingEnvId.value = id
+  environments.value.unshift({
+    id, name: '', base_url: '', variables_json: '{}',
+    created_at: new Date().toISOString(), updated_at: new Date().toISOString()
+  })
+  editingEnvVars.value = []
+}
+
+const selectEnvForEdit = (id: string) => {
+  editingEnvId.value = id
+  if (editingEnv.value) {
+    try {
+      const vars = JSON.parse(editingEnv.value.variables_json || '{}')
+      editingEnvVars.value = Object.entries(vars).map(([key, value]) => ({ key, value: value as string }))
+    } catch {
+      editingEnvVars.value = []
+    }
+  }
+}
+
+const saveEnvironment = async () => {
+  const env = editingEnv.value
+  if (!env || !env.name.trim()) {
+    ElMessage.warning('环境名称不能为空')
+    return
+  }
+  const varsObj: Record<string, string> = {}
+  for (const item of editingEnvVars.value) {
+    if (item.key.trim()) varsObj[item.key.trim()] = item.value
+  }
+  env.variables_json = JSON.stringify(varsObj)
+  env.updated_at = new Date().toISOString()
+  try {
+    await db.saveHttpEnvironment({ ...env })
+    ElMessage.success('环境已保存')
+    showEnvDialog.value = false
+  } catch {
+    ElMessage.error('保存失败')
+  }
+}
+
+const deleteEnvironment = async (id: string) => {
+  try {
+    await ElMessageBox.confirm('确定删除此环境？', '确认', { type: 'warning' })
+    await db.deleteHttpEnvironment(id)
+    environments.value = environments.value.filter(e => e.id !== id)
+    if (currentEnvId.value === id) currentEnvId.value = ''
+    ElMessage.success('已删除')
+  } catch { /* 取消 */ }
+}
+
+const resolveEnvVars = (text: string): string => {
+  const vars = parsedEnvVars.value
+  return text.replace(/\{\{(.+?)\}\}/g, (_, key) => vars[key.trim()] || `{{${key}}}`)
+}
+
+const onEnvChange = () => {
+  ElMessage.info(`已切换至：${currentEnv.value?.name || '无环境'}`)
+}
+
+// ============ 请求历史 ============
+const httpHistory = ref<db.HttpHistoryItem[]>([])
+
+const loadHistory = async () => {
+  try {
+    httpHistory.value = await db.listHttpHistory(50)
+  } catch { httpHistory.value = [] }
+}
+
+const refreshHistory = () => {
+  if (!loading.value) loadHistory()
+}
+
+const restoreFromHistory = (item: db.HttpHistoryItem) => {
+  method.value = item.method
+  url.value = item.url
+  bodyType.value = item.body_type
+  body.value = item.body || ''
+  try {
+    const hdrs = JSON.parse(item.headers_json || '{}')
+    headers.value = Object.entries(hdrs).map(([key, value]) => ({ key, value: value as string }))
+  } catch {
+    headers.value = []
+  }
+  ElMessage.success('已恢复历史请求')
+}
+
+// ============ 收藏 ============
+const bookmarks = ref<db.HttpBookmark[]>([])
+const showBookmarkDialog = ref(false)
+const bookmarkName = ref('')
+
+const loadBookmarks = async () => {
+  try {
+    bookmarks.value = await db.listHttpBookmarks()
+  } catch { bookmarks.value = [] }
+}
+
+const handleSaveBookmark = () => {
+  if (!url.value.trim()) {
+    ElMessage.warning('请输入 URL')
+    return
+  }
+  bookmarkName.value = `${method.value} ${url.value.slice(0, 40)}`
+  showBookmarkDialog.value = true
+}
+
+const confirmSaveBookmark = async () => {
+  if (!bookmarkName.value.trim()) {
+    ElMessage.warning('请输入收藏名称')
+    return
+  }
+  const headerMap: Record<string, string> = {}
+  for (const h of headers.value) {
+    if (h.key.trim()) headerMap[h.key.trim()] = h.value
+  }
+  const now = new Date().toISOString()
+  const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 5)
+  try {
+    await db.saveHttpBookmark({
+      id, name: bookmarkName.value.trim(), method: method.value, url: url.value,
+      headers_json: JSON.stringify(headerMap), body: body.value || null, body_type: bodyType.value,
+      created_at: now, updated_at: now,
+    })
+    showBookmarkDialog.value = false
+    loadBookmarks()
+    ElMessage.success('已收藏')
+  } catch { ElMessage.error('收藏失败') }
+}
+
+const restoreFromBookmark = (bm: db.HttpBookmark) => {
+  method.value = bm.method
+  url.value = bm.url
+  bodyType.value = bm.body_type
+  body.value = bm.body || ''
+  try {
+    const hdrs = JSON.parse(bm.headers_json || '{}')
+    headers.value = Object.entries(hdrs).map(([key, value]) => ({ key, value: value as string }))
+  } catch {
+    headers.value = []
+  }
+  ElMessage.success(`已加载：${bm.name}`)
+}
+
+const deleteBookmark = async (id: string) => {
+  try {
+    await db.deleteHttpBookmark(id)
+    bookmarks.value = bookmarks.value.filter(b => b.id !== id)
+    ElMessage.success('已删除')
+  } catch { ElMessage.error('删除失败') }
+}
+
 // ============ 发送请求 ============
 const handleSend = async () => {
   if (!url.value.trim()) {
@@ -214,24 +519,29 @@ const handleSend = async () => {
     return
   }
 
+  // 替换环境变量
+  let finalUrl = url.value.trim()
+  if (currentEnv.value?.base_url && !finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
+    finalUrl = currentEnv.value.base_url.replace(/\/+$/, '') + '/' + finalUrl.replace(/^\/+/, '')
+  }
+  const resolvedUrl = resolveEnvVars(finalUrl)
+  const resolvedHeaders: Record<string, string> = {}
+  for (const h of headers.value) {
+    if (h.key.trim()) resolvedHeaders[h.key.trim()] = resolveEnvVars(h.value)
+  }
+  const resolvedBody = body.value ? resolveEnvVars(body.value) : null
+
   loading.value = true
   errorMsg.value = ''
   responseStatus.value = 0
 
   try {
-    const headerMap: Record<string, string> = {}
-    for (const h of headers.value) {
-      if (h.key.trim()) {
-        headerMap[h.key.trim()] = h.value
-      }
-    }
-
     const result = await invoke('send_http_request', {
       request: {
         method: method.value,
-        url: url.value.trim(),
-        headers: headerMap,
-        body: body.value || null,
+        url: resolvedUrl,
+        headers: resolvedHeaders,
+        body: resolvedBody,
         bodyType: bodyType.value,
         timeoutMs: timeoutMs.value
       }
@@ -251,6 +561,27 @@ const handleSend = async () => {
       inputPreview: `${method.value} ${url.value.slice(0, 30)}`,
       outputPreview: `${result.status} ${result.status_text}`
     })
+
+    // 保存历史到 SQLite
+    const headerMap: Record<string, string> = {}
+    for (const h of headers.value) {
+      if (h.key.trim()) headerMap[h.key.trim()] = h.value
+    }
+    const now = new Date().toISOString()
+    try {
+      await db.addHttpHistory({
+        method: method.value,
+        url: url.value.trim(),
+        headers_json: JSON.stringify(headerMap),
+        body: body.value || null,
+        body_type: bodyType.value,
+        env_name: currentEnv.value?.name || null,
+        status: result.status,
+        created_at: now,
+      })
+      // 刷新历史列表
+      loadHistory()
+    } catch { /* 历史保存失败不影响主流程 */ }
   } catch (e: any) {
     errorMsg.value = e.message || '请求失败'
     ElMessage.error('请求失败')
@@ -261,16 +592,11 @@ const handleSend = async () => {
 
 // ============ 工具方法 ============
 const handleCopyResponse = async () => {
-  if (!responseBody.value) {
-    ElMessage.warning('没有可复制的内容')
-    return
-  }
+  if (!responseBody.value) { ElMessage.warning('没有可复制的内容'); return }
   try {
     await navigator.clipboard.writeText(responseBody.value)
     ElMessage.success('已复制到剪贴板')
-  } catch {
-    ElMessage.error('复制失败')
-  }
+  } catch { ElMessage.error('复制失败') }
 }
 
 const formatSize = (bytes: number): string => {
@@ -278,6 +604,12 @@ const formatSize = (bytes: number): string => {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
+
+onMounted(() => {
+  loadEnvironments()
+  loadHistory()
+  loadBookmarks()
+})
 </script>
 
 <style scoped>
@@ -510,5 +842,209 @@ const formatSize = (bytes: number): string => {
   padding: 40px 0;
   color: var(--text-muted);
   font-style: italic;
+}
+
+/* ===== 动作栏 ===== */
+.action-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex: 1;
+  margin-left: 12px;
+}
+
+.action-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.env-var-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: 6px;
+}
+
+/* ===== 历史/收藏列表 ===== */
+.history-list, .bookmark-list {
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.15s;
+  gap: 8px;
+}
+
+.history-item:hover {
+  background: var(--bg-input);
+}
+
+.bookmark-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.history-method {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  min-width: 44px;
+  text-align: center;
+}
+
+.method-get { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
+.method-post { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+.method-put { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+.method-delete { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+.method-patch { background: rgba(168, 85, 247, 0.15); color: #a855f7; }
+.method-head { background: rgba(99, 102, 241, 0.15); color: #6366f1; }
+.method-options { background: rgba(236, 72, 153, 0.15); color: #ec4899; }
+
+.history-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.history-url {
+  font-size: 13px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* ===== 环境变量区域 ===== */
+.env-vars-section {
+  font-size: 13px;
+}
+
+.env-vars-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.env-vars-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.env-var-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-input);
+  padding: 4px 10px;
+  border-radius: 4px;
+}
+
+.env-var-key {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  color: var(--accent-cyan);
+}
+
+.env-var-val {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.text-muted {
+  color: var(--text-muted);
+}
+
+/* ===== 环境管理对话框 ===== */
+.env-dialog-body {
+  display: flex;
+  gap: 16px;
+  min-height: 300px;
+}
+
+.env-list-panel {
+  width: 180px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border-color);
+  padding-right: 12px;
+}
+
+.env-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.env-list-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 8px;
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.env-list-item:hover {
+  background: var(--bg-input);
+}
+
+.env-list-item.active {
+  background: rgba(0, 212, 255, 0.1);
+  color: var(--accent-cyan);
+}
+
+.env-edit-panel {
+  flex: 1;
+  min-width: 0;
+}
+
+.env-edit-vars {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.env-var-edit-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.url-base-prefix {
+  font-size: 12px;
+  color: var(--accent-cyan);
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  opacity: 0.8;
+}
+
+.form-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  line-height: 1.4;
 }
 </style>

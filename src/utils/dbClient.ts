@@ -185,3 +185,80 @@ export async function deleteClipboardRecord(id: number): Promise<void> {
 export async function clearClipboardHistory(): Promise<void> {
   return invoke('cmd_db_clear_clipboard_history');
 }
+
+// HTTP 环境相关
+export interface HttpEnvironment {
+  id: string;
+  name: string;
+  base_url: string;
+  variables_json: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function listHttpEnvironments(): Promise<HttpEnvironment[]> {
+  return invoke('cmd_db_list_http_environments');
+}
+
+export async function saveHttpEnvironment(env: HttpEnvironment): Promise<void> {
+  return invoke('cmd_db_save_http_environment', { env });
+}
+
+export async function deleteHttpEnvironment(id: string): Promise<void> {
+  return invoke('cmd_db_delete_http_environment', { id });
+}
+
+// HTTP 历史相关
+export interface HttpHistoryItem {
+  id?: number;
+  method: string;
+  url: string;
+  headers_json: string;
+  body: string | null;
+  body_type: string;
+  env_name: string | null;
+  status: number | null;
+  created_at: string;
+}
+
+export async function listHttpHistory(limit: number): Promise<HttpHistoryItem[]> {
+  return invoke('cmd_db_list_http_history', { limit });
+}
+
+export async function addHttpHistory(record: HttpHistoryItem): Promise<number> {
+  return invoke('cmd_db_add_http_history', { record });
+}
+
+export async function clearHttpHistory(): Promise<void> {
+  return invoke('cmd_db_clear_http_history');
+}
+
+// HTTP 收藏相关
+export interface HttpBookmark {
+  id: string;
+  name: string;
+  method: string;
+  url: string;
+  headers_json: string;
+  body: string | null;
+  body_type: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function listHttpBookmarks(): Promise<HttpBookmark[]> {
+  return invoke('cmd_db_list_http_bookmarks');
+}
+
+export async function saveHttpBookmark(bookmark: HttpBookmark): Promise<void> {
+  return invoke('cmd_db_save_http_bookmark', { bookmark });
+}
+
+export async function deleteHttpBookmark(id: string): Promise<void> {
+  return invoke('cmd_db_delete_http_bookmark', { id });
+}
+
+// 快捷键相关
+export async function registerShortcuts(shortcutsJson: string): Promise<void> {
+  return invoke('cmd_db_register_shortcuts', { shortcutsJson });
+}

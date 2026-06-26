@@ -72,6 +72,42 @@ pub struct ClipboardRecord {
     pub timestamp: String,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct HttpEnvironment {
+    pub id: String,
+    pub name: String,
+    pub base_url: String,
+    pub variables_json: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct HttpHistoryRecord {
+    pub id: Option<i64>,
+    pub method: String,
+    pub url: String,
+    pub headers_json: String,
+    pub body: Option<String>,
+    pub body_type: String,
+    pub env_name: Option<String>,
+    pub status: Option<i64>,
+    pub created_at: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct HttpBookmark {
+    pub id: String,
+    pub name: String,
+    pub method: String,
+    pub url: String,
+    pub headers_json: String,
+    pub body: Option<String>,
+    pub body_type: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 fn init_tables(conn: &Connection) -> Result<()> {
     conn.execute_batch(r#"
         CREATE TABLE IF NOT EXISTS config (
@@ -129,6 +165,36 @@ fn init_tables(conn: &Connection) -> Result<()> {
             text TEXT NOT NULL,
             timestamp TEXT NOT NULL DEFAULT (datetime('now'))
         );
+        CREATE TABLE IF NOT EXISTS http_environments (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                base_url TEXT NOT NULL DEFAULT '',
+                variables_json TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+        CREATE TABLE IF NOT EXISTS http_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            method TEXT NOT NULL,
+            url TEXT NOT NULL,
+            headers_json TEXT NOT NULL DEFAULT '{}',
+            body TEXT,
+            body_type TEXT NOT NULL DEFAULT 'json',
+            env_name TEXT,
+            status INTEGER,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE TABLE IF NOT EXISTS http_bookmarks (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            method TEXT NOT NULL DEFAULT 'GET',
+            url TEXT NOT NULL,
+            headers_json TEXT NOT NULL DEFAULT '{}',
+            body TEXT,
+            body_type TEXT NOT NULL DEFAULT 'json',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
         CREATE TABLE IF NOT EXISTS migration_status (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
@@ -140,6 +206,9 @@ fn init_tables(conn: &Connection) -> Result<()> {
         // 列已存在，忽略
     }
     if let Err(_) = conn.execute("ALTER TABLE snippets ADD COLUMN note TEXT NOT NULL DEFAULT ''", []) {
+        // 列已存在，忽略
+    }
+    if let Err(_) = conn.execute("ALTER TABLE http_environments ADD COLUMN base_url TEXT NOT NULL DEFAULT ''", []) {
         // 列已存在，忽略
     }
 
@@ -999,4 +1068,212 @@ pub fn cmd_db_delete_clipboard_record(id: i64) -> Result<(), String> {
 #[tauri::command]
 pub fn cmd_db_clear_clipboard_history() -> Result<(), String> {
     db_clear_clipboard_history()
+}
+
+// ========== HTTP 环境 CRUD ==========
+
+pub fn db_list_http_environments() -> Result<Vec<HttpEnvironment>, String> {
+    with_conn(|conn| {
+        let mut stmt = conn
+            .prepare("SELECT id, name, base_url, variables_json, created_at, updated_at FROM http_environments ORDER BY created_at ASC")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(HttpEnvironment {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    base_url: row.get(2)?,
+                    variables_json: row.get(3)?,
+                    created_at: row.get(4)?,
+                    updated_at: row.get(5)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    })
+}
+
+pub fn db_save_http_environment(env: HttpEnvironment) -> Result<(), String> {
+    with_conn(|conn| {
+        conn.execute(
+            "INSERT INTO http_environments (id, name, base_url, variables_json, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(id) DO UPDATE SET
+                 name = ?2, base_url = ?3, variables_json = ?4, updated_at = ?6",
+            params![env.id, env.name, env.base_url, env.variables_json, env.created_at, env.updated_at],
+        ).map_err(|e| e.to_string())?;
+        Ok(())
+    })
+}
+
+pub fn db_delete_http_environment(id: String) -> Result<(), String> {
+    with_conn(|conn| {
+        conn.execute("DELETE FROM http_environments WHERE id = ?1", params![id])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    })
+}
+
+// ========== HTTP 历史 CRUD ==========
+
+pub fn db_list_http_history(limit: i64) -> Result<Vec<HttpHistoryRecord>, String> {
+    with_conn(|conn| {
+        let mut stmt = conn
+            .prepare("SELECT id, method, url, headers_json, body, body_type, env_name, status, created_at
+                      FROM http_history ORDER BY id DESC LIMIT ?1")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![limit], |row| {
+                Ok(HttpHistoryRecord {
+                    id: Some(row.get(0)?),
+                    method: row.get(1)?,
+                    url: row.get(2)?,
+                    headers_json: row.get(3)?,
+                    body: row.get(4)?,
+                    body_type: row.get(5)?,
+                    env_name: row.get(6)?,
+                    status: row.get(7)?,
+                    created_at: row.get(8)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    })
+}
+
+pub fn db_add_http_history(record: HttpHistoryRecord) -> Result<i64, String> {
+    with_conn(|conn| {
+        conn.execute(
+            "INSERT INTO http_history (method, url, headers_json, body, body_type, env_name, status)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![record.method, record.url, record.headers_json, record.body, record.body_type, record.env_name, record.status],
+        ).map_err(|e| e.to_string())?;
+        Ok(conn.last_insert_rowid())
+    })
+}
+
+pub fn db_clear_http_history() -> Result<(), String> {
+    with_conn(|conn| {
+        conn.execute("DELETE FROM http_history", []).map_err(|e| e.to_string())?;
+        Ok(())
+    })
+}
+
+// ========== HTTP 收藏 CRUD ==========
+
+pub fn db_list_http_bookmarks() -> Result<Vec<HttpBookmark>, String> {
+    with_conn(|conn| {
+        let mut stmt = conn
+            .prepare("SELECT id, name, method, url, headers_json, body, body_type, created_at, updated_at
+                      FROM http_bookmarks ORDER BY updated_at DESC")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(HttpBookmark {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    method: row.get(2)?,
+                    url: row.get(3)?,
+                    headers_json: row.get(4)?,
+                    body: row.get(5)?,
+                    body_type: row.get(6)?,
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    })
+}
+
+pub fn db_save_http_bookmark(bookmark: HttpBookmark) -> Result<(), String> {
+    with_conn(|conn| {
+        conn.execute(
+            "INSERT INTO http_bookmarks (id, name, method, url, headers_json, body, body_type, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             ON CONFLICT(id) DO UPDATE SET
+                 name = ?2, method = ?3, url = ?4, headers_json = ?5, body = ?6, body_type = ?7, updated_at = ?9",
+            params![
+                bookmark.id, bookmark.name, bookmark.method, bookmark.url,
+                bookmark.headers_json, bookmark.body, bookmark.body_type,
+                bookmark.created_at, bookmark.updated_at
+            ],
+        ).map_err(|e| e.to_string())?;
+        Ok(())
+    })
+}
+
+pub fn db_delete_http_bookmark(id: String) -> Result<(), String> {
+    with_conn(|conn| {
+        conn.execute("DELETE FROM http_bookmarks WHERE id = ?1", params![id])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    })
+}
+
+// ========== HTTP Tauri 命令 ==========
+
+#[tauri::command]
+pub fn cmd_db_list_http_environments() -> Result<Vec<HttpEnvironment>, String> {
+    db_list_http_environments()
+}
+
+#[tauri::command]
+pub fn cmd_db_save_http_environment(env: HttpEnvironment) -> Result<(), String> {
+    db_save_http_environment(env)
+}
+
+#[tauri::command]
+pub fn cmd_db_delete_http_environment(id: String) -> Result<(), String> {
+    db_delete_http_environment(id)
+}
+
+#[tauri::command]
+pub fn cmd_db_list_http_history(limit: i64) -> Result<Vec<HttpHistoryRecord>, String> {
+    db_list_http_history(limit)
+}
+
+#[tauri::command]
+pub fn cmd_db_add_http_history(record: HttpHistoryRecord) -> Result<i64, String> {
+    db_add_http_history(record)
+}
+
+#[tauri::command]
+pub fn cmd_db_clear_http_history() -> Result<(), String> {
+    db_clear_http_history()
+}
+
+#[tauri::command]
+pub fn cmd_db_list_http_bookmarks() -> Result<Vec<HttpBookmark>, String> {
+    db_list_http_bookmarks()
+}
+
+#[tauri::command]
+pub fn cmd_db_save_http_bookmark(bookmark: HttpBookmark) -> Result<(), String> {
+    db_save_http_bookmark(bookmark)
+}
+
+#[tauri::command]
+pub fn cmd_db_delete_http_bookmark(id: String) -> Result<(), String> {
+    db_delete_http_bookmark(id)
+}
+
+// 读取快捷键配置
+pub fn db_read_shortcuts() -> Vec<(String, String)> {
+    let config = db_get_config("shortcuts".to_string()).unwrap_or_default();
+    if config.is_empty() {
+        return vec![
+            ("json".to_string(), "CmdOrCtrl+Alt+J".to_string()),
+            ("string".to_string(), "CmdOrCtrl+Alt+S".to_string()),
+            ("encode".to_string(), "CmdOrCtrl+Alt+E".to_string()),
+            ("regex".to_string(), "CmdOrCtrl+Alt+R".to_string()),
+            ("http".to_string(), "CmdOrCtrl+Alt+H".to_string()),
+        ];
+    }
+    serde_json::from_str(&config).unwrap_or_default()
+}
+
+#[tauri::command]
+pub fn cmd_db_register_shortcuts(shortcuts_json: String) -> Result<(), String> {
+    db_set_config("shortcuts".to_string(), shortcuts_json)
 }
