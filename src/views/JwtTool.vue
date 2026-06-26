@@ -107,7 +107,8 @@ const expInfo = computed(() => {
 const base64UrlDecode = (str: string): string => {
   str = str.replace(/-/g, '+').replace(/_/g, '/')
   while (str.length % 4) str += '='
-  return Base64.decode(str)
+  const bytes = Base64.toUint8Array(str)
+  return new TextDecoder().decode(bytes)
 }
 
 const handleParse = () => {
