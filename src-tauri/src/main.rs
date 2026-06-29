@@ -71,6 +71,9 @@ fn main() {
             db::cmd_db_save_http_bookmark,
             db::cmd_db_delete_http_bookmark,
             db::cmd_db_register_shortcuts,
+            db::cmd_db_add_history_detail,
+            db::cmd_db_get_history_detail,
+            db::cmd_db_delete_history_details_for_history,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
