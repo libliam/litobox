@@ -197,6 +197,7 @@ const handleCopy = async () => {
 }
 
 const restoreFromHistory = (data: HistoryRestoreState) => {
+  isRestoringFromHistory = true
   // 填充输入框
   inputValue.value = data.input
   // 填充输出框（不重新执行）
@@ -211,6 +212,10 @@ const restoreFromHistory = (data: HistoryRestoreState) => {
     type: 'info',
     duration: 3000,
   })
+  // 恢复完成后解除标志
+  setTimeout(() => {
+    isRestoringFromHistory = false
+  }, 500)
 }
 
 onMounted(() => {
@@ -222,7 +227,9 @@ onMounted(() => {
 
 // 粘贴后自动执行格式化（带防抖）
 let autoExecTimer: ReturnType<typeof setTimeout> | null = null
+let isRestoringFromHistory = false
 watch(inputValue, (value) => {
+  if (isRestoringFromHistory) return
   if (!value.trim()) {
     outputValue.value = ''
     errorMessage.value = ''
