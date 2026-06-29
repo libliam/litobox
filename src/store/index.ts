@@ -18,6 +18,9 @@ export interface HistoryRecord {
   timestamp: string
   inputPreview: string
   outputPreview: string
+  inputFull?: string
+  outputFull?: string
+  options?: Record<string, any>
 }
 
 export interface HistoryRestoreState {
@@ -183,6 +186,17 @@ export const useToolboxStore = defineStore('toolbox', () => {
         input_preview: newRecord.inputPreview,
         output_preview: newRecord.outputPreview,
       })
+
+      // 如果有完整数据，写入 details 表
+      if (record.inputFull !== undefined || record.outputFull !== undefined || record.options) {
+        await db.addHistoryDetail({
+          history_id: id,
+          input_full: record.inputFull ?? null,
+          output_full: record.outputFull ?? null,
+          options_json: JSON.stringify(record.options || {}),
+        })
+      }
+
       // 同步更新本地状态（带 id）
       newRecord.id = id
     } catch (error) {
