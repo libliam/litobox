@@ -54,6 +54,28 @@ export async function searchHistory(query: string, limit: number): Promise<Histo
   return invoke('cmd_db_search_history', { query, limit });
 }
 
+// 历史详情相关
+export interface HistoryDetail {
+  id?: number;
+  history_id: number;
+  input_full: string | null;
+  output_full: string | null;
+  options_json: string;
+  created_at?: string;
+}
+
+export async function addHistoryDetail(detail: HistoryDetail): Promise<number> {
+  return invoke('cmd_db_add_history_detail', { detail });
+}
+
+export async function getHistoryDetail(historyId: number): Promise<HistoryDetail | null> {
+  return invoke('cmd_db_get_history_detail', { historyId });
+}
+
+export async function deleteHistoryDetailsForHistory(historyId: number): Promise<void> {
+  return invoke('cmd_db_delete_history_details_for_history', { historyId });
+}
+
 // 工作流相关
 export async function listWorkflows(): Promise<Workflow[]> {
   return invoke('cmd_db_list_workflows');
