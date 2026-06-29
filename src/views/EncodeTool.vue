@@ -86,10 +86,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import * as encodeUtils from '@/utils/encodeUtils'
-import { useToolboxStore } from '@/store'
+import { useToolboxStore, type HistoryRestoreState } from '@/store'
 import VariablePicker from '@/components/VariablePicker.vue'
 
 const store = useToolboxStore()
@@ -171,6 +171,30 @@ const handleCopy = async () => {
     ElMessage.error('复制失败')
   }
 }
+
+const restoreFromHistory = (data: HistoryRestoreState) => {
+  // 填充输入框
+  inputValue.value = data.input
+  // 填充输出框（不重新执行）
+  outputValue.value = data.output
+  // 还原配置
+  if (data.options?.timestampMode) {
+    timestampMode.value = data.options.timestampMode
+  }
+  // 显示提示
+  ElMessage({
+    message: `已加载历史记录（${new Date(data.timestamp).toLocaleString('zh-CN')} 的操作）`,
+    type: 'info',
+    duration: 3000,
+  })
+}
+
+onMounted(() => {
+  if (store.pendingHistoryRestore?.tool === 'encode') {
+    restoreFromHistory(store.pendingHistoryRestore)
+    store.clearHistoryRestore()
+  }
+})
 </script>
 
 <style scoped>
