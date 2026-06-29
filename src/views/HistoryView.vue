@@ -31,6 +31,8 @@
             v-for="(record, index) in filteredHistory"
             :key="index"
             class="history-item"
+            @dblclick="handleJumpToTool(record)"
+            :title="'双击跳转到对应工具'"
           >
             <div class="history-header">
               <div class="history-meta">
@@ -42,11 +44,11 @@
             <div class="history-preview">
               <div class="preview-row">
                 <span class="preview-label">输入</span>
-                <code class="preview-text">{{ record.inputPreview }}</code>
+                <code class="preview-text">{{ formatPreview(record.inputPreview) }}</code>
               </div>
               <div class="preview-row">
                 <span class="preview-label">输出</span>
-                <code class="preview-text">{{ record.outputPreview }}</code>
+                <code class="preview-text">{{ formatPreview(record.outputPreview) }}</code>
               </div>
             </div>
           </div>
@@ -61,7 +63,7 @@ import { ref, computed } from 'vue'
 import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
 import { Base64 } from 'js-base64'
-import { useToolboxStore } from '@/store'
+import { useToolboxStore, TOOL_LIST } from '@/store'
 import * as db from '@/utils/dbClient'
 
 const store = useToolboxStore()
@@ -143,6 +145,51 @@ const handleClear = async () => {
     ElMessage.success('历史已清空')
   } catch {
     // 用户取消
+  }
+}
+
+const LARGE_TEXT_THRESHOLD = 10240
+
+const formatPreview = (text: string): string => {
+  if (!text) return ''
+  if (text.length > LARGE_TEXT_THRESHOLD) {
+    return '[大文本 · 双击查看]'
+  }
+  return text
+}
+
+const handleJumpToTool = async (record: any) => {
+  // 检查工具是否在导航列表中
+  if (!TOOL_LIST.find(t => t.id === record.tool)) {
+    ElMessage.warning('该工具当前不可用')
+    return
+  }
+
+  const loading = ElLoading.service({
+    lock: true,
+    text: '正在加载历史数据...',
+    background: 'rgba(0, 0, 0, 0.7)',
+  })
+
+  try {
+    // 获取完整数据
+    const detail = await db.getHistoryDetail(record.id)
+
+    store.triggerHistoryRestore({
+      tool: record.tool,
+      input: detail?.input_full || record.inputPreview || '',
+      output: detail?.output_full || record.outputPreview || '',
+      options: detail ? JSON.parse(detail.options_json || '{}') : {},
+      timestamp: record.timestamp,
+    })
+
+    // 切换页面
+    store.activeTool = record.tool
+    ElMessage.success('已加载历史记录，输入和输出已填充')
+  } catch (e: any) {
+    ElMessage.error('加载失败: ' + (e.message || e))
+  } finally {
+    loading.close()
   }
 }
 
@@ -269,6 +316,7 @@ const handleImportFile = async (event: Event) => {
   border: 1px solid var(--border-color);
   border-radius: 6px;
   transition: border-color 0.3s;
+  cursor: pointer;
 }
 .history-item:hover {
   border-color: var(--accent-cyan);

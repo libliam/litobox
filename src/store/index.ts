@@ -98,6 +98,8 @@ export const useToolboxStore = defineStore('toolbox', () => {
   const pendingHistoryRestore = ref<HistoryRestoreState | null>(null)
   let restoreTimeout: ReturnType<typeof setTimeout> | null = null
 
+  const activeTool = ref('home')
+
   const triggerHistoryRestore = (data: HistoryRestoreState) => {
     if (restoreTimeout) clearTimeout(restoreTimeout)
     pendingHistoryRestore.value = data
@@ -232,5 +234,6 @@ export const useToolboxStore = defineStore('toolbox', () => {
     pendingHistoryRestore,
     triggerHistoryRestore,
     clearHistoryRestore,
+    activeTool,
   }
 })

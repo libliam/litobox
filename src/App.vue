@@ -90,7 +90,8 @@ import HistoryView from '@/views/HistoryView.vue'
 import WorkflowView from '@/views/WorkflowView.vue'
 
 const store = useToolboxStore()
-const activeTool = ref(store.config.lastTool)
+const activeTool = store.activeTool
+activeTool.value = store.config.lastTool
 
 let unlistenShortcut: (() => void) | null = null
 
