@@ -842,6 +842,7 @@ pub fn db_import_all(data: String) -> Result<(), String> {
         }
 
         // 导入历史（清空后重新导入）
+        conn.execute("DELETE FROM history_details", []).map_err(|e| e.to_string())?;
         conn.execute("DELETE FROM history", []).map_err(|e| e.to_string())?;
         if let Some(history) = export.get("history").and_then(|v| v.as_array()) {
             for record in history {
