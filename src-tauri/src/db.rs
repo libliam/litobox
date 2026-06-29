@@ -725,9 +725,14 @@ pub fn db_export_all() -> Result<String, String> {
         }
         export.insert("config", serde_json::Value::Object(config_map.into_iter().map(|(k, v)| (k, serde_json::Value::String(v))).collect()));
 
-        // 导出历史
-        let mut stmt = conn.prepare("SELECT tool, action, input_preview, output_preview, created_at FROM history ORDER BY created_at DESC")
-            .map_err(|e| e.to_string())?;
+        // 导出历史（LEFT JOIN details）
+        let mut stmt = conn.prepare(
+            "SELECT h.tool, h.action, h.input_preview, h.output_preview, h.created_at,
+                    d.input_full, d.output_full, d.options_json
+             FROM history h
+             LEFT JOIN history_details d ON h.detail_id = d.id
+             ORDER BY h.created_at DESC"
+        ).map_err(|e| e.to_string())?;
         let history: Vec<serde_json::Value> = stmt
             .query_map([], |row| {
                 Ok(serde_json::json!({
@@ -736,6 +741,9 @@ pub fn db_export_all() -> Result<String, String> {
                     "input_preview": row.get::<_, String>(2)?,
                     "output_preview": row.get::<_, String>(3)?,
                     "created_at": row.get::<_, String>(4)?,
+                    "input_full": row.get::<_, Option<String>>(5)?,
+                    "output_full": row.get::<_, Option<String>>(6)?,
+                    "options_json": row.get::<_, Option<String>>(7)?,
                 }))
             }).map_err(|e| e.to_string())?
             .filter_map(|r| r.ok())
@@ -842,11 +850,30 @@ pub fn db_import_all(data: String) -> Result<(), String> {
                 let input_preview = record.get("input_preview").and_then(|v| v.as_str()).unwrap_or("");
                 let output_preview = record.get("output_preview").and_then(|v| v.as_str()).unwrap_or("");
                 let created_at = record.get("created_at").and_then(|v| v.as_str()).unwrap_or("");
-                conn.execute(
+                let history_id = conn.execute(
                     "INSERT INTO history (tool, action, input_preview, output_preview, created_at)
                      VALUES (?1, ?2, ?3, ?4, ?5)",
                     params![tool, action, input_preview, output_preview, created_at],
                 ).map_err(|e| e.to_string())?;
+
+                // 导入 details
+                if let (Some(input_full), Some(output_full)) = (
+                    record.get("input_full").and_then(|v| v.as_str()),
+                    record.get("output_full").and_then(|v| v.as_str()),
+                ) {
+                    let options_json = record.get("options_json")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("{}");
+                    let detail_id = conn.execute(
+                        "INSERT INTO history_details (history_id, input_full, output_full, options_json)
+                         VALUES (?1, ?2, ?3, ?4)",
+                        params![history_id as i64, input_full, output_full, options_json],
+                    ).map_err(|e| e.to_string())?;
+                    conn.execute(
+                        "UPDATE history SET detail_id = ?1 WHERE id = ?2",
+                        params![detail_id as i64, history_id as i64],
+                    ).map_err(|e| e.to_string())?;
+                }
             }
         }
 
