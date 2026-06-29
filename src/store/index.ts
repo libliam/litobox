@@ -199,12 +199,12 @@ export const useToolboxStore = defineStore('toolbox', () => {
 
       // 同步更新本地状态（带 id）
       newRecord.id = id
+      history.value.unshift(newRecord)
+      if (history.value.length > MAX_HISTORY) {
+        history.value = history.value.slice(0, MAX_HISTORY)
+      }
     } catch (error) {
       console.error('保存历史失败:', error)
-    }
-    history.value.unshift(newRecord)
-    if (history.value.length > MAX_HISTORY) {
-      history.value = history.value.slice(0, MAX_HISTORY)
     }
   }
 

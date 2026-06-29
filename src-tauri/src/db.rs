@@ -857,11 +857,10 @@ pub fn db_import_all(data: String) -> Result<(), String> {
                     params![tool, action, input_preview, output_preview, created_at],
                 ).map_err(|e| e.to_string())?;
 
-                // 导入 details
-                if let (Some(input_full), Some(output_full)) = (
-                    record.get("input_full").and_then(|v| v.as_str()),
-                    record.get("output_full").and_then(|v| v.as_str()),
-                ) {
+                // 导入 details（任一字段存在即可）
+                let input_full = record.get("input_full").and_then(|v| v.as_str());
+                let output_full = record.get("output_full").and_then(|v| v.as_str());
+                if input_full.is_some() || output_full.is_some() {
                     let options_json = record.get("options_json")
                         .and_then(|v| v.as_str())
                         .unwrap_or("{}");

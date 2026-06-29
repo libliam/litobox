@@ -175,11 +175,21 @@ const handleJumpToTool = async (record: any) => {
     // 获取完整数据
     const detail = await db.getHistoryDetail(record.id)
 
+    let options: Record<string, any> = {}
+    if (detail?.options_json) {
+      try {
+        options = JSON.parse(detail.options_json)
+      } catch {
+        // options_json 解析失败，忽略 options 还原
+        options = {}
+      }
+    }
+
     store.triggerHistoryRestore({
       tool: record.tool,
       input: detail?.input_full || record.inputPreview || '',
       output: detail?.output_full || record.outputPreview || '',
-      options: detail ? JSON.parse(detail.options_json || '{}') : {},
+      options,
       timestamp: record.timestamp,
     })
 
