@@ -19,6 +19,14 @@ export interface HistoryRecord {
   outputPreview: string
 }
 
+export interface HistoryRestoreState {
+  tool: string
+  input: string
+  output: string
+  options: Record<string, any>
+  timestamp: string
+}
+
 export interface ToolItem {
   id: string
   name: string
@@ -86,6 +94,23 @@ export const useToolboxStore = defineStore('toolbox', () => {
 
   const history = ref<HistoryRecord[]>([])
   const recentTools = ref<string[]>([])
+
+  const pendingHistoryRestore = ref<HistoryRestoreState | null>(null)
+  let restoreTimeout: ReturnType<typeof setTimeout> | null = null
+
+  const triggerHistoryRestore = (data: HistoryRestoreState) => {
+    if (restoreTimeout) clearTimeout(restoreTimeout)
+    pendingHistoryRestore.value = data
+    // 30 秒未消费自动清除
+    restoreTimeout = setTimeout(() => {
+      pendingHistoryRestore.value = null
+    }, 30000)
+  }
+
+  const clearHistoryRestore = () => {
+    if (restoreTimeout) clearTimeout(restoreTimeout)
+    pendingHistoryRestore.value = null
+  }
 
   // 从 SQLite 加载配置
   const loadConfigFromDB = async () => {
@@ -203,6 +228,9 @@ export const useToolboxStore = defineStore('toolbox', () => {
     addHistory,
     clearHistory,
     addRecentTool,
-    toggleFavorite
+    toggleFavorite,
+    pendingHistoryRestore,
+    triggerHistoryRestore,
+    clearHistoryRestore,
   }
 })
