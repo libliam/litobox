@@ -12,11 +12,23 @@ export interface ToolboxConfig {
 }
 
 export interface HistoryRecord {
+  id?: number
   tool: string
   action: string
   timestamp: string
   inputPreview: string
   outputPreview: string
+  inputFull?: string
+  outputFull?: string
+  options?: Record<string, any>
+}
+
+export interface HistoryRestoreState {
+  tool: string
+  input: string
+  output: string
+  options: Record<string, any>
+  timestamp: string
 }
 
 export interface ToolItem {
@@ -87,6 +99,25 @@ export const useToolboxStore = defineStore('toolbox', () => {
   const history = ref<HistoryRecord[]>([])
   const recentTools = ref<string[]>([])
 
+  const pendingHistoryRestore = ref<HistoryRestoreState | null>(null)
+  let restoreTimeout: ReturnType<typeof setTimeout> | null = null
+
+  const activeTool = ref('home')
+
+  const triggerHistoryRestore = (data: HistoryRestoreState) => {
+    if (restoreTimeout) clearTimeout(restoreTimeout)
+    pendingHistoryRestore.value = data
+    // 30 秒未消费自动清除
+    restoreTimeout = setTimeout(() => {
+      pendingHistoryRestore.value = null
+    }, 30000)
+  }
+
+  const clearHistoryRestore = () => {
+    if (restoreTimeout) clearTimeout(restoreTimeout)
+    pendingHistoryRestore.value = null
+  }
+
   // 从 SQLite 加载配置
   const loadConfigFromDB = async () => {
     try {
@@ -105,6 +136,7 @@ export const useToolboxStore = defineStore('toolbox', () => {
     try {
       const records = await db.getHistory(MAX_HISTORY, 0)
       history.value = records.map(r => ({
+        id: r.id,
         tool: r.tool,
         action: r.action,
         timestamp: r.created_at || new Date().toISOString(),
@@ -146,19 +178,31 @@ export const useToolboxStore = defineStore('toolbox', () => {
       ...record,
       timestamp: new Date().toISOString()
     }
-    // 同步更新本地状态
-    history.value.unshift(newRecord)
-    if (history.value.length > MAX_HISTORY) {
-      history.value = history.value.slice(0, MAX_HISTORY)
-    }
     // 保存到 SQLite
     try {
-      await db.addHistory({
+      const id = await db.addHistory({
         tool: newRecord.tool,
         action: newRecord.action,
         input_preview: newRecord.inputPreview,
         output_preview: newRecord.outputPreview,
       })
+
+      // 如果有完整数据，写入 details 表
+      if (record.inputFull !== undefined || record.outputFull !== undefined || record.options) {
+        await db.addHistoryDetail({
+          history_id: id,
+          input_full: record.inputFull ?? null,
+          output_full: record.outputFull ?? null,
+          options_json: JSON.stringify(record.options || {}),
+        })
+      }
+
+      // 同步更新本地状态（带 id）
+      newRecord.id = id
+      history.value.unshift(newRecord)
+      if (history.value.length > MAX_HISTORY) {
+        history.value = history.value.slice(0, MAX_HISTORY)
+      }
     } catch (error) {
       console.error('保存历史失败:', error)
     }
@@ -203,6 +247,10 @@ export const useToolboxStore = defineStore('toolbox', () => {
     addHistory,
     clearHistory,
     addRecentTool,
-    toggleFavorite
+    toggleFavorite,
+    pendingHistoryRestore,
+    triggerHistoryRestore,
+    clearHistoryRestore,
+    activeTool,
   }
 })
