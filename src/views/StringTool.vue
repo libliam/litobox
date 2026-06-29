@@ -234,7 +234,10 @@ const applyTransform = (transform: (text: string) => string) => {
     tool: 'string',
     action: 'transform',
     inputPreview: inputValue.value.slice(0, 50),
-    outputPreview: outputValue.value.slice(0, 50)
+    outputPreview: outputValue.value.slice(0, 50),
+    inputFull: inputValue.value,
+    outputFull: outputValue.value,
+    options: { activeTab: activeTab.value, separator: separator.value }
   })
   ElMessage.success('处理完成')
 }
@@ -285,7 +288,10 @@ const applyBatch = (operation: string) => {
     tool: 'string',
     action: `batch-${operation}`,
     inputPreview: batchInputText.value.slice(0, 50),
-    outputPreview: batchResults.value.join('\n').slice(0, 50)
+    outputPreview: batchResults.value.join('\n').slice(0, 50),
+    inputFull: batchInputText.value,
+    outputFull: batchResults.value.join('\n'),
+    options: { activeTab: activeTab.value, separator: separator.value }
   })
 
   ElMessage.success(`已处理 ${batchResults.value.length} 行文本`)

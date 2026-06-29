@@ -114,7 +114,10 @@ const handleEncode = (encodeFn: (text: string) => string) => {
     tool: 'encode',
     action: 'encode',
     inputPreview: inputValue.value.slice(0, 50),
-    outputPreview: outputValue.value.slice(0, 50)
+    outputPreview: outputValue.value.slice(0, 50),
+    inputFull: inputValue.value,
+    outputFull: outputValue.value,
+    options: { timestampMode: timestampMode.value }
   })
   ElMessage.success('处理完成')
 }

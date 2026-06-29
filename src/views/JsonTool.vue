@@ -111,7 +111,10 @@ const handleFormat = () => {
       tool: 'json',
       action: 'format',
       inputPreview: inputValue.value.slice(0, 50),
-      outputPreview: outputValue.value.slice(0, 50)
+      outputPreview: outputValue.value.slice(0, 50),
+      inputFull: inputValue.value,
+      outputFull: outputValue.value,
+      options: { indentSize: indentSize.value }
     })
   } else {
     outputValue.value = ''
@@ -135,7 +138,10 @@ const handleCompress = () => {
       tool: 'json',
       action: 'compress',
       inputPreview: inputValue.value.slice(0, 50),
-      outputPreview: outputValue.value.slice(0, 50)
+      outputPreview: outputValue.value.slice(0, 50),
+      inputFull: inputValue.value,
+      outputFull: outputValue.value,
+      options: {}
     })
   } else {
     outputValue.value = ''

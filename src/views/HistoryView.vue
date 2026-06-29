@@ -175,6 +175,13 @@ const handleJumpToTool = async (record: any) => {
     // 获取完整数据
     const detail = await db.getHistoryDetail(record.id)
 
+    // 如果没有完整数据，提示用户
+    if (!detail || (!detail.input_full && !detail.output_full)) {
+      loading.close()
+      ElMessage.warning('该历史记录没有完整数据（旧记录只保存了预览），无法还原')
+      return
+    }
+
     let options: Record<string, any> = {}
     if (detail?.options_json) {
       try {
@@ -187,8 +194,8 @@ const handleJumpToTool = async (record: any) => {
 
     store.triggerHistoryRestore({
       tool: record.tool,
-      input: detail?.input_full || record.inputPreview || '',
-      output: detail?.output_full || record.outputPreview || '',
+      input: detail.input_full || '',
+      output: detail.output_full || '',
       options,
       timestamp: record.timestamp,
     })

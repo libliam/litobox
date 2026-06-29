@@ -49,9 +49,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { watch, onMounted, onUnmounted } from 'vue'
 import { listen } from '@tauri-apps/api/event'
 import { useToolboxStore } from '@/store'
+import { storeToRefs } from 'pinia'
 import SidebarNav from '@/components/SidebarNav.vue'
 import HomeView from '@/views/HomeView.vue'
 import JsonTool from '@/views/JsonTool.vue'
@@ -72,6 +73,7 @@ import DiffTool from '@/views/DiffTool.vue'
 import ClipboardTool from '@/views/ClipboardTool.vue'
 import ImageTool from '@/views/ImageTool.vue'
 import CsvTool from '@/views/CsvTool.vue'
+import PdfTool from '@/views/PdfTool.vue'
 import HashTool from '@/views/HashTool.vue'
 import XmlYamlTool from '@/views/XmlYamlTool.vue'
 import DedupTool from '@/views/DedupTool.vue'
@@ -85,12 +87,13 @@ import PasswordTool from '@/views/PasswordTool.vue'
 import QrTool from '@/views/QrTool.vue'
 import SnippetTool from '@/views/SnippetTool.vue'
 import HttpTool from '@/views/HttpTool.vue'
-import PdfTool from '@/views/PdfTool.vue'
 import HistoryView from '@/views/HistoryView.vue'
 import WorkflowView from '@/views/WorkflowView.vue'
 
 const store = useToolboxStore()
-const activeTool = store.activeTool
+const { activeTool } = storeToRefs(store)
+
+// 初始化 activeTool
 activeTool.value = store.config.lastTool
 
 let unlistenShortcut: (() => void) | null = null
@@ -99,7 +102,7 @@ const handleSelectTool = (toolId: string) => {
   activeTool.value = toolId
 }
 
-watch(activeTool, (newTool) => {
+watch(activeTool, (newTool: string) => {
   store.saveConfig({ lastTool: newTool })
 })
 
