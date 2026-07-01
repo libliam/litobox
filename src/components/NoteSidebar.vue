@@ -1,26 +1,26 @@
 <template>
-  <div class="note-sidebar">
+  <div class="note-sidebar" @click="closeContextMenu">
     <div class="sidebar-header">
       <span class="sidebar-title">笔记</span>
-      <el-button size="small" text @click="showNewMenu = true">
-        <el-icon><Plus /></el-icon>
-      </el-button>
+      <el-dropdown trigger="click" placement="bottom-end" @command="handleCommand">
+        <el-button size="small" text>
+          <el-icon><Plus /></el-icon>
+        </el-button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item command="create-file">
+              <el-icon><DocumentAdd /></el-icon> 新建文件
+            </el-dropdown-item>
+            <el-dropdown-item command="create-folder">
+              <el-icon><FolderAdd /></el-icon> 新建文件夹
+            </el-dropdown-item>
+            <el-dropdown-item command="open-folder" divided>
+              <el-icon><FolderOpened /></el-icon> 打开存储目录
+            </el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
     </div>
-
-    <!-- 新建菜单 -->
-    <el-dropdown v-model:visible="showNewMenu" trigger="click" placement="bottom-start">
-      <div class="new-menu-trigger" style="display:none"></div>
-      <template #dropdown>
-        <el-dropdown-menu>
-          <el-dropdown-item @click="handleCreateFolder">
-            <el-icon><FolderAdd /></el-icon> 新建文件夹
-          </el-dropdown-item>
-          <el-dropdown-item @click="handleCreateFile">
-            <el-icon><DocumentAdd /></el-icon> 新建文件
-          </el-dropdown-item>
-        </el-dropdown-menu>
-      </template>
-    </el-dropdown>
 
     <!-- 文件树 -->
     <div class="file-tree">
@@ -36,13 +36,45 @@
         @create-child="handleCreateChild"
       />
     </div>
+
+    <!-- 右键菜单 -->
+    <div
+      v-if="contextMenu.visible"
+      class="context-menu"
+      :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
+    >
+      <template v-if="contextMenu.item?.type === 'folder'">
+        <div class="context-menu-item" @click="handleContextAction('create-file')">
+          <el-icon><DocumentAdd /></el-icon> 新建文件
+        </div>
+        <div class="context-menu-item" @click="handleContextAction('create-folder')">
+          <el-icon><FolderAdd /></el-icon> 新建文件夹
+        </div>
+        <div class="context-menu-divider"></div>
+        <div class="context-menu-item" @click="handleContextAction('rename')">
+          <el-icon><Edit /></el-icon> 重命名
+        </div>
+        <div class="context-menu-item danger" @click="handleContextAction('delete')">
+          <el-icon><Delete /></el-icon> 删除
+        </div>
+      </template>
+      <template v-else>
+        <div class="context-menu-item" @click="handleContextAction('rename')">
+          <el-icon><Edit /></el-icon> 重命名
+        </div>
+        <div class="context-menu-item danger" @click="handleContextAction('delete')">
+          <el-icon><Delete /></el-icon> 删除
+        </div>
+      </template>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, FolderAdd, DocumentAdd } from '@element-plus/icons-vue'
+import { Plus, FolderAdd, DocumentAdd, FolderOpened, Edit, Delete } from '@element-plus/icons-vue'
+import { invoke } from '@tauri-apps/api/core'
 import * as noteClient from '@/utils/noteClient'
 import type { NoteItem } from '@/utils/noteClient'
 import NoteTreeItem from './NoteTreeItem.vue'
@@ -53,7 +85,13 @@ const emit = defineEmits<{
 
 const rootItems = ref<NoteItem[]>([])
 const selectedId = ref<number | null>(null)
-const showNewMenu = ref(false)
+
+const contextMenu = reactive({
+  visible: false,
+  x: 0,
+  y: 0,
+  item: null as NoteItem | null,
+})
 
 const loadItems = async (parentId: number | null = null) => {
   try {
@@ -75,8 +113,21 @@ const handleSelect = (item: NoteItem) => {
   }
 }
 
+const handleCommand = async (command: string) => {
+  switch (command) {
+    case 'create-file':
+      await handleCreateFile()
+      break
+    case 'create-folder':
+      await handleCreateFolder()
+      break
+    case 'open-folder':
+      await handleOpenFolder()
+      break
+  }
+}
+
 const handleCreateFolder = async () => {
-  showNewMenu.value = false
   try {
     const { value } = await ElMessageBox.prompt('文件夹名称', '新建文件夹', {
       inputPattern: /^[^\\/:*?"<>|]+$/,
@@ -91,11 +142,10 @@ const handleCreateFolder = async () => {
 }
 
 const handleCreateFile = async () => {
-  showNewMenu.value = false
   try {
     const { value } = await ElMessageBox.prompt('文件名称', '新建文件', {
-      inputPattern: /^[^\\/:*?"<>|]+\.[a-zA-Z0-9]+$/,
-      inputErrorMessage: '请输入有效的文件名（含扩展名）',
+      inputPattern: /^[^\\/:*?"<>|]+$/,
+      inputErrorMessage: '名称不能包含 \\ / : * ? " < > |',
     })
     const item = await noteClient.noteCreate(value, 'file', null)
     await loadItems()
@@ -109,15 +159,17 @@ const handleCreateFile = async () => {
 const handleCreateChild = async (parentId: number, type: 'folder' | 'file') => {
   try {
     const label = type === 'folder' ? '文件夹名称' : '文件名称'
-    const pattern = type === 'folder'
-      ? /^[^\\/:*?"<>|]+$/
-      : /^[^\\/:*?"<>|]+\.[a-zA-Z0-9]+$/
+    const pattern = /^[^\\/:*?"<>|]+$/
     const { value } = await ElMessageBox.prompt(label, `新建${type === 'folder' ? '文件夹' : '文件'}`, {
       inputPattern: pattern,
-      inputErrorMessage: type === 'folder' ? '名称不能包含 \\ / : * ? " < > |' : '请输入有效的文件名（含扩展名）',
+      inputErrorMessage: '名称不能包含 \\ / : * ? " < > |',
     })
-    await noteClient.noteCreate(value, type, parentId)
-    await loadItems()
+    const item = await noteClient.noteCreate(value, type, parentId)
+    // 刷新父文件夹的子项列表
+    await loadItems(null)
+    if (type === 'file') {
+      emit('select', item)
+    }
     ElMessage.success('已创建')
   } catch {
     // 用户取消
@@ -128,8 +180,8 @@ const handleRename = async (item: NoteItem) => {
   try {
     const { value } = await ElMessageBox.prompt('新名称', '重命名', {
       inputValue: item.name,
-      inputPattern: item.type === 'folder' ? /^[^\\/:*?"<>|]+$/ : /^[^\\/:*?"<>|]+\.[a-zA-Z0-9]+$/,
-      inputErrorMessage: item.type === 'folder' ? '名称不能包含 \\ / : * ? " < > |' : '请输入有效的文件名（含扩展名）',
+      inputPattern: /^[^\\/:*?"<>|]+$/,
+      inputErrorMessage: '名称不能包含 \\ / : * ? " < > |',
     })
     await noteClient.noteRename(item.id, value)
     await loadItems()
@@ -163,23 +215,47 @@ const handleDelete = async (item: NoteItem) => {
   }
 }
 
-const handleContextMenu = (_event: MouseEvent, item: NoteItem | null) => {
+const handleContextMenu = (event: MouseEvent, item: NoteItem | null) => {
   if (!item) return
-  // 右键菜单：使用 Element Plus 的 ElMessageBox 提供快速操作
-  ElMessageBox({
-    title: item.name,
-    message: `选择操作`,
-    showCancelButton: true,
-    confirmButtonText: '重命名',
-    cancelButtonText: '删除',
-    distinguishCancelAndClose: true,
-  }).then(() => {
-    handleRename(item)
-  }).catch((action) => {
-    if (action === 'cancel') {
-      handleDelete(item)
-    }
-  })
+  event.preventDefault()
+  contextMenu.visible = true
+  contextMenu.x = event.clientX
+  contextMenu.y = event.clientY
+  contextMenu.item = item
+}
+
+const closeContextMenu = () => {
+  contextMenu.visible = false
+  contextMenu.item = null
+}
+
+const handleContextAction = async (action: string) => {
+  const item = contextMenu.item
+  closeContextMenu()
+  if (!item) return
+
+  switch (action) {
+    case 'create-file':
+      await handleCreateChild(item.id, 'file')
+      break
+    case 'create-folder':
+      await handleCreateChild(item.id, 'folder')
+      break
+    case 'rename':
+      await handleRename(item)
+      break
+    case 'delete':
+      await handleDelete(item)
+      break
+  }
+}
+
+const handleOpenFolder = async () => {
+  try {
+    await invoke('open_notes_folder')
+  } catch (e: any) {
+    ElMessage.error(`打开目录失败: ${e}`)
+  }
 }
 
 onMounted(() => {
@@ -216,5 +292,47 @@ onMounted(() => {
   flex: 1;
   overflow-y: auto;
   padding: 8px 0;
+}
+
+/* 右键菜单 */
+.context-menu {
+  position: fixed;
+  z-index: 9999;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 4px 0;
+  min-width: 140px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.context-menu-item:hover {
+  background: rgba(0, 212, 255, 0.1);
+  color: var(--accent-cyan);
+}
+
+.context-menu-item.danger {
+  color: var(--color-danger);
+}
+
+.context-menu-item.danger:hover {
+  background: rgba(255, 77, 79, 0.1);
+}
+
+.context-menu-divider {
+  height: 1px;
+  background: var(--border-color);
+  margin: 4px 0;
 }
 </style>

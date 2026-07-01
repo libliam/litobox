@@ -1,5 +1,11 @@
 <template>
   <div class="note-toolbar">
+    <div class="toolbar-file-name">
+      <el-icon><Document /></el-icon>
+      <span>{{ fileName }}</span>
+      <span v-if="isModified" class="modified-dot">●</span>
+    </div>
+
     <div class="toolbar-group">
       <el-button size="small" @click="$emit('find')">
         <el-icon><Search /></el-icon> 查找
@@ -36,21 +42,22 @@
 
     <div class="toolbar-group">
       <el-button type="primary" size="small" @click="$emit('format')">格式化</el-button>
-    </div>
-
-    <div class="toolbar-status" :class="{ modified: isModified }">
-      {{ isModified ? '未保存 ●' : '已保存' }}
+      <el-button type="success" size="small" @click="$emit('save')">
+        <el-icon><Download /></el-icon> 保存
+      </el-button>
+      <el-button size="small" @click="$emit('save-as')">另存为</el-button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import { Search } from '@element-plus/icons-vue'
+import { ref, watch } from 'vue'
+import { Search, Document, Download } from '@element-plus/icons-vue'
 
-defineProps<{
+const props = defineProps<{
   language?: string
   isModified?: boolean
+  fileName?: string
 }>()
 
 defineEmits<{
@@ -63,9 +70,15 @@ defineEmits<{
   'to-upper': []
   'to-lower': []
   'format': []
+  'save': []
+  'save-as': []
 }>()
 
 const localLanguage = ref('auto')
+
+watch(() => props.language, (val) => {
+  if (val) localLanguage.value = val
+}, { immediate: true })
 </script>
 
 <style scoped>
@@ -79,19 +92,24 @@ const localLanguage = ref('auto')
   flex-wrap: wrap;
 }
 
+.toolbar-file-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  min-width: 100px;
+}
+
+.modified-dot {
+  color: var(--accent-cyan);
+  font-size: 10px;
+}
+
 .toolbar-group {
   display: flex;
   align-items: center;
   gap: 4px;
-}
-
-.toolbar-status {
-  margin-left: auto;
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.toolbar-status.modified {
-  color: var(--accent-cyan);
 }
 </style>

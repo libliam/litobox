@@ -10,7 +10,7 @@ pub struct NoteFileContent {
     pub size: usize,
 }
 
-pub fn note_read(file_path: &str) -> Result<NoteFileContent, String> {
+pub fn do_note_read(file_path: &str) -> Result<NoteFileContent, String> {
     let path = Path::new(file_path);
     if !path.exists() {
         return Err("文件不存在".to_string());
@@ -35,7 +35,7 @@ pub fn note_read(file_path: &str) -> Result<NoteFileContent, String> {
     })
 }
 
-pub fn note_write(file_path: &str, content: &str) -> Result<(), String> {
+pub fn do_note_write(file_path: &str, content: &str) -> Result<(), String> {
     let path = Path::new(file_path);
     // 确保父目录存在
     if let Some(parent) = path.parent() {
@@ -45,11 +45,11 @@ pub fn note_write(file_path: &str, content: &str) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn cmd_note_read(file_path: String) -> Result<NoteFileContent, String> {
-    note_read(&file_path)
+pub fn note_read(file_path: String) -> Result<NoteFileContent, String> {
+    do_note_read(&file_path)
 }
 
 #[tauri::command]
-pub fn cmd_note_write(file_path: String, content: String) -> Result<(), String> {
-    note_write(&file_path, &content)
+pub fn note_write(file_path: String, content: String) -> Result<(), String> {
+    do_note_write(&file_path, &content)
 }

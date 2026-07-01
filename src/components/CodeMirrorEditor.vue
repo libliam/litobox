@@ -7,7 +7,7 @@ import { ref, onMounted, onUnmounted, watch, shallowRef } from 'vue'
 import { EditorState } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
-import { searchKeymap, highlightSelectionMatches, openSearchPanel } from '@codemirror/search'
+import { search, searchKeymap, highlightSelectionMatches, openSearchPanel } from '@codemirror/search'
 import { bracketMatching, foldGutter, foldKeymap, syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { javascript } from '@codemirror/lang-javascript'
@@ -68,6 +68,7 @@ const createEditor = () => {
   const state = EditorState.create({
     doc: props.modelValue,
     extensions: [
+      search(),
       lineNumbers(),
       highlightActiveLine(),
       bracketMatching(),
@@ -131,13 +132,32 @@ const updateLanguage = (_lang: string) => {
 const openFind = () => {
   if (view.value) {
     openSearchPanel(view.value)
+    // 聚焦查找输入框
+    const inputs = view.value.dom.querySelectorAll('.cm-panel input.cm-textfield')
+    if (inputs.length > 0) {
+      inputs[0].focus()
+      inputs[0].select()
+    }
   }
 }
 
 // 替换
 const openReplace = () => {
-  if (view.value) {
-    openSearchPanel(view.value)
+  if (!view.value) return
+  openSearchPanel(view.value)
+  // 展开替换区域并聚焦替换输入框
+  const panel = view.value.dom.querySelector('.cm-panel')
+  if (panel) {
+    // 显示隐藏的替换区域
+    panel.querySelectorAll('.cm-replace-section').forEach((el) => {
+      (el as HTMLElement).style.display = ''
+    })
+    // 聚焦替换输入框
+    const inputs = panel.querySelectorAll('input.cm-textfield')
+    if (inputs.length >= 2) {
+      inputs[1].focus()
+      inputs[1].select()
+    }
   }
 }
 

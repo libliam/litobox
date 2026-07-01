@@ -7,6 +7,7 @@
         v-if="currentFile"
         :language="currentLanguage"
         :is-modified="isModified"
+        :file-name="currentFile.name"
         @find="handleFind"
         @replace="handleReplace"
         @language-change="handleLanguageChange"
@@ -16,6 +17,8 @@
         @to-upper="handleToUpper"
         @to-lower="handleToLower"
         @format="handleFormat"
+        @save="handleSave"
+        @save-as="handleSaveAs"
       />
 
       <div v-if="!currentFile" class="editor-empty">
@@ -36,8 +39,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onUnmounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ref, onMounted, onUnmounted } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Document } from '@element-plus/icons-vue'
 import * as noteClient from '@/utils/noteClient'
 import type { NoteItem } from '@/utils/noteClient'
@@ -65,12 +68,8 @@ const detectLanguage = (filename: string): string => {
   return langMap[ext] || 'plaintext'
 }
 
-const handleSelectFile = async (item: NoteItem) => {
-  // 保存当前文件
-  if (currentFile.value && isModified.value) {
-    await saveCurrentFile()
-  }
-
+// 加载文件内容
+const loadFile = async (item: NoteItem) => {
   currentFile.value = item
   currentLanguage.value = item.language !== 'plaintext' ? item.language : detectLanguage(item.name)
 
@@ -79,6 +78,7 @@ const handleSelectFile = async (item: NoteItem) => {
       const result = await noteClient.noteRead(item.file_path)
       editorContent.value = result.content
       originalContent.value = result.content
+      isModified.value = false
 
       if (result.size > 1024 * 1024) {
         ElMessage.warning('文件较大，加载可能较慢')
@@ -89,16 +89,43 @@ const handleSelectFile = async (item: NoteItem) => {
   }
 }
 
+// 切换到指定文件（带保存确认）
+const switchToFile = async (item: NoteItem) => {
+  if (currentFile.value && isModified.value) {
+    const action = await ElMessageBox.confirm(
+      `"${currentFile.value.name}" 有未保存的修改，是否保存？`,
+      '保存确认',
+      {
+        confirmButtonText: '保存',
+        cancelButtonText: '不保存',
+        distinguishCancelAndClose: true,
+        type: 'warning',
+      }
+    ).catch(() => 'close')
+
+    if (action === 'confirm') {
+      await saveCurrentFile()
+    }
+  }
+
+  await loadFile(item)
+  await noteClient.noteSetLastOpened(item.id)
+}
+
+const handleSelectFile = async (item: NoteItem) => {
+  await switchToFile(item)
+}
+
 const handleContentChange = () => {
   isModified.value = editorContent.value !== originalContent.value
 
-  // 自动保存：停止输入 1 秒后保存
   if (autoSaveTimer) clearTimeout(autoSaveTimer)
   autoSaveTimer = setTimeout(() => {
     saveCurrentFile()
   }, 1000)
 }
 
+// 直接保存到当前文件路径
 const saveCurrentFile = async () => {
   if (!currentFile.value || !currentFile.value.file_path || !isModified.value) return
 
@@ -108,6 +135,52 @@ const saveCurrentFile = async () => {
     isModified.value = false
   } catch (e: any) {
     ElMessage.error(`保存失败: ${e}`)
+  }
+}
+
+// 手动保存：弹出对话框选择保存位置
+const handleSave = async () => {
+  if (!currentFile.value) return
+
+  try {
+    const result = await noteClient.saveTextWithDialog(editorContent.value, currentFile.value.name)
+    if (result === 'cancelled') return
+
+    // 更新当前文件的路径和名称
+    const fileName = result.split(/[\\/]/).pop() || currentFile.value.name
+    currentFile.value.file_path = result
+    currentFile.value.name = fileName
+    originalContent.value = editorContent.value
+    isModified.value = false
+
+    // 更新数据库记录
+    await noteClient.noteRename(currentFile.value.id, fileName)
+
+    ElMessage.success(`已保存到: ${fileName}`)
+  } catch (e: any) {
+    ElMessage.error(`保存失败: ${e}`)
+  }
+}
+
+// 另存为
+const handleSaveAs = async () => {
+  if (!currentFile.value) return
+
+  try {
+    const result = await noteClient.saveTextWithDialog(editorContent.value, currentFile.value.name)
+    if (result === 'cancelled') return
+
+    const fileName = result.split(/[\\/]/).pop() || currentFile.value.name
+    currentFile.value.file_path = result
+    currentFile.value.name = fileName
+    originalContent.value = editorContent.value
+    isModified.value = false
+
+    await noteClient.noteRename(currentFile.value.id, fileName)
+
+    ElMessage.success(`已另存为: ${fileName}`)
+  } catch (e: any) {
+    ElMessage.error(`另存为失败: ${e}`)
   }
 }
 
@@ -125,7 +198,27 @@ const handleToUpper = () => editorRef.value?.toUpperCase()
 const handleToLower = () => editorRef.value?.toLowerCase()
 const handleFormat = () => editorRef.value?.formatCode()
 
-// 关闭时保存
+// 初始化：进入文本编辑器时自动加载草稿或上次打开的文件
+onMounted(async () => {
+  try {
+    const lastOpenedId = await noteClient.noteGetLastOpened()
+    if (lastOpenedId) {
+      const items = await noteClient.noteList(null)
+      const lastItem = items.find(item => item.id === lastOpenedId)
+      if (lastItem && lastItem.type === 'file' && lastItem.file_path) {
+        await loadFile(lastItem)
+        return
+      }
+    }
+
+    const draft = await noteClient.noteEnsureDraft()
+    await loadFile(draft)
+    await noteClient.noteSetLastOpened(draft.id)
+  } catch (e: any) {
+    ElMessage.error(`加载笔记失败: ${e}`)
+  }
+})
+
 onUnmounted(() => {
   if (autoSaveTimer) clearTimeout(autoSaveTimer)
   if (currentFile.value && isModified.value) {
@@ -165,6 +258,6 @@ onUnmounted(() => {
 .editor-wrapper {
   flex: 1;
   overflow: hidden;
-  padding: 8px;
+  padding: 8px 8px 32px;
 }
 </style>

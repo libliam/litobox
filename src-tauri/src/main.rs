@@ -29,6 +29,7 @@ fn main() {
             file_encoding::batch_replace_in_files,
             file_encoding::batch_convert_encoding,
             file_saver::save_file_with_dialog,
+            file_saver::save_text_with_dialog,
             js_executor::execute_js,
             http_cmd::send_http_request,
             // 数据库命令
@@ -75,14 +76,18 @@ fn main() {
             db::cmd_db_save_http_bookmark,
             db::cmd_db_delete_http_bookmark,
             // Notes 命令
-            db::cmd_db_note_list,
-            db::cmd_db_note_create,
-            db::cmd_db_note_rename,
-            db::cmd_db_note_delete,
-            db::cmd_db_note_move,
+            db::db_note_list,
+            db::db_note_create,
+            db::db_note_rename,
+            db::db_note_delete,
+            db::db_note_move,
+            db::db_note_ensure_draft,
+            db::db_note_get_last_opened,
+            db::db_note_set_last_opened,
+            db::open_notes_folder,
             // Note manager 命令
-            note_manager::cmd_note_read,
-            note_manager::cmd_note_write,
+            note_manager::note_read,
+            note_manager::note_write,
             db::cmd_db_register_shortcuts,
         ])
         .setup(|app| {

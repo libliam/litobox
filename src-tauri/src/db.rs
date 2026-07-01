@@ -259,7 +259,7 @@ fn init_tables(conn: &Connection) -> Result<()> {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             parent_id INTEGER DEFAULT NULL,
             name TEXT NOT NULL,
-            type TEXT NOT NULL DEFAULT 'file',
+            "type" TEXT NOT NULL DEFAULT 'file',
             file_path TEXT,
             language TEXT DEFAULT 'plaintext',
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -1404,30 +1404,67 @@ fn generate_note_file_path(name: &str) -> String {
     app_dir.join(name).to_string_lossy().to_string()
 }
 
-pub fn db_note_list(parent_id: Option<i64>) -> Result<Vec<NoteItem>, String> {
+/// 确保 notes 目录存在，返回路径
+fn ensure_notes_dir() -> PathBuf {
+    let app_dir = dirs::config_dir()
+        .expect("无法获取应用数据目录")
+        .join("com.dev.toolbox")
+        .join("notes");
+    std::fs::create_dir_all(&app_dir).expect("无法创建笔记目录");
+    app_dir
+}
+
+pub fn do_note_list(parent_id: Option<i64>) -> Result<Vec<NoteItem>, String> {
     with_conn(|conn| {
-        let sql = "SELECT id, parent_id, name, type, file_path, language, created_at, updated_at 
-                   FROM notes WHERE parent_id = ? ORDER BY type DESC, name ASC";
-        let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
-        let rows = stmt.query_map(params![parent_id], |row| {
-            Ok(NoteItem {
-                id: row.get(0)?,
-                parent_id: row.get(1)?,
-                name: row.get(2)?,
-                r#type: row.get(3)?,
-                file_path: row.get(4)?,
-                language: row.get(5)?,
-                created_at: row.get(6)?,
-                updated_at: row.get(7)?,
-            })
-        }).map_err(|e| e.to_string())?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+        let items = match parent_id {
+            Some(pid) => {
+                let sql = r#"SELECT id, parent_id, name, "type", file_path, language, created_at, updated_at 
+                             FROM notes WHERE parent_id = ? ORDER BY "type" DESC, name ASC"#;
+                let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
+                let mut rows = stmt.query(params![pid]).map_err(|e| e.to_string())?;
+                let mut items = Vec::new();
+                while let Some(row) = rows.next().map_err(|e| e.to_string())? {
+                    items.push(NoteItem {
+                        id: row.get(0).map_err(|e| e.to_string())?,
+                        parent_id: row.get(1).map_err(|e| e.to_string())?,
+                        name: row.get(2).map_err(|e| e.to_string())?,
+                        r#type: row.get(3).map_err(|e| e.to_string())?,
+                        file_path: row.get(4).map_err(|e| e.to_string())?,
+                        language: row.get(5).map_err(|e| e.to_string())?,
+                        created_at: row.get(6).map_err(|e| e.to_string())?,
+                        updated_at: row.get(7).map_err(|e| e.to_string())?,
+                    });
+                }
+                items
+            }
+            None => {
+                let sql = r#"SELECT id, parent_id, name, "type", file_path, language, created_at, updated_at 
+                             FROM notes WHERE parent_id IS NULL ORDER BY "type" DESC, name ASC"#;
+                let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
+                let mut rows = stmt.query([]).map_err(|e| e.to_string())?;
+                let mut items = Vec::new();
+                while let Some(row) = rows.next().map_err(|e| e.to_string())? {
+                    items.push(NoteItem {
+                        id: row.get(0).map_err(|e| e.to_string())?,
+                        parent_id: row.get(1).map_err(|e| e.to_string())?,
+                        name: row.get(2).map_err(|e| e.to_string())?,
+                        r#type: row.get(3).map_err(|e| e.to_string())?,
+                        file_path: row.get(4).map_err(|e| e.to_string())?,
+                        language: row.get(5).map_err(|e| e.to_string())?,
+                        created_at: row.get(6).map_err(|e| e.to_string())?,
+                        updated_at: row.get(7).map_err(|e| e.to_string())?,
+                    });
+                }
+                items
+            }
+        };
+        Ok(items)
     })
 }
 
-pub fn db_note_get_by_id(id: i64) -> Result<NoteItem, String> {
+pub fn do_note_get_by_id(id: i64) -> Result<NoteItem, String> {
     with_conn(|conn| {
-        let sql = "SELECT id, parent_id, name, type, file_path, language, created_at, updated_at FROM notes WHERE id = ?";
+        let sql = r#"SELECT id, parent_id, name, "type", file_path, language, created_at, updated_at FROM notes WHERE id = ?"#;
         conn.query_row(sql, params![id], |row| {
             Ok(NoteItem {
                 id: row.get(0)?,
@@ -1443,25 +1480,53 @@ pub fn db_note_get_by_id(id: i64) -> Result<NoteItem, String> {
     })
 }
 
-pub fn db_note_create(name: &str, note_type: &str, parent_id: Option<i64>) -> Result<NoteItem, String> {
+pub fn do_note_create(name: &str, note_type: &str, parent_id: Option<i64>) -> Result<NoteItem, String> {
     with_conn(|conn| {
         let file_path = if note_type == "file" {
-            Some(generate_note_file_path(name))
+            let path = generate_note_file_path(name);
+            std::fs::File::create(&path).map_err(|e| format!("创建文件失败: {}", e))?;
+            Some(path)
         } else {
             None
         };
         conn.execute(
-            "INSERT INTO notes (name, type, parent_id, file_path) VALUES (?, ?, ?, ?)",
+            r#"INSERT INTO notes (name, "type", parent_id, file_path) VALUES (?, ?, ?, ?)"#,
             params![name, note_type, parent_id, file_path],
         ).map_err(|e| e.to_string())?;
         let id = conn.last_insert_rowid();
-        db_note_get_by_id(id)
+        let sql = r#"SELECT id, parent_id, name, "type", file_path, language, created_at, updated_at FROM notes WHERE id = ?"#;
+        conn.query_row(sql, params![id], |row| {
+            Ok(NoteItem {
+                id: row.get(0)?,
+                parent_id: row.get(1)?,
+                name: row.get(2)?,
+                r#type: row.get(3)?,
+                file_path: row.get(4)?,
+                language: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
+            })
+        }).map_err(|e| e.to_string())
     })
 }
 
-pub fn db_note_rename(id: i64, new_name: &str) -> Result<NoteItem, String> {
+pub fn do_note_rename(id: i64, new_name: &str) -> Result<NoteItem, String> {
     with_conn(|conn| {
-        let item = db_note_get_by_id(id)?;
+        // 先查询获取旧信息
+        let sql = r#"SELECT id, parent_id, name, "type", file_path, language, created_at, updated_at FROM notes WHERE id = ?"#;
+        let item: NoteItem = conn.query_row(sql, params![id], |row| {
+            Ok(NoteItem {
+                id: row.get(0)?,
+                parent_id: row.get(1)?,
+                name: row.get(2)?,
+                r#type: row.get(3)?,
+                file_path: row.get(4)?,
+                language: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
+            })
+        }).map_err(|e| e.to_string())?;
+        
         if item.r#type == "file" {
             if let Some(old_path) = &item.file_path {
                 let new_path = generate_note_file_path(new_name);
@@ -1478,13 +1543,39 @@ pub fn db_note_rename(id: i64, new_name: &str) -> Result<NoteItem, String> {
                 params![new_name, id],
             ).map_err(|e| e.to_string())?;
         }
-        db_note_get_by_id(id)
+        // 直接查询返回，避免嵌套 with_conn 导致死锁
+        conn.query_row(sql, params![id], |row| {
+            Ok(NoteItem {
+                id: row.get(0)?,
+                parent_id: row.get(1)?,
+                name: row.get(2)?,
+                r#type: row.get(3)?,
+                file_path: row.get(4)?,
+                language: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
+            })
+        }).map_err(|e| e.to_string())
     })
 }
 
-pub fn db_note_delete(id: i64) -> Result<(), String> {
+pub fn do_note_delete(id: i64) -> Result<(), String> {
     with_conn(|conn| {
-        let item = db_note_get_by_id(id)?;
+        // 先查询获取信息
+        let sql = r#"SELECT id, parent_id, name, "type", file_path, language, created_at, updated_at FROM notes WHERE id = ?"#;
+        let item: NoteItem = conn.query_row(sql, params![id], |row| {
+            Ok(NoteItem {
+                id: row.get(0)?,
+                parent_id: row.get(1)?,
+                name: row.get(2)?,
+                r#type: row.get(3)?,
+                file_path: row.get(4)?,
+                language: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
+            })
+        }).map_err(|e| e.to_string())?;
+        
         if item.r#type == "file" {
             if let Some(path) = &item.file_path {
                 std::fs::remove_file(path)
@@ -1492,7 +1583,23 @@ pub fn db_note_delete(id: i64) -> Result<(), String> {
             }
         } else {
             // 删除文件夹下的所有文件
-            let children = db_note_list(Some(id))?;
+            let children_sql = r#"SELECT id, parent_id, name, "type", file_path, language, created_at, updated_at 
+                             FROM notes WHERE parent_id = ? ORDER BY "type" DESC, name ASC"#;
+            let mut stmt = conn.prepare(&children_sql).map_err(|e| e.to_string())?;
+            let children: Vec<NoteItem> = stmt.query_map(params![id], |row| {
+                Ok(NoteItem {
+                    id: row.get(0)?,
+                    parent_id: row.get(1)?,
+                    name: row.get(2)?,
+                    r#type: row.get(3)?,
+                    file_path: row.get(4)?,
+                    language: row.get(5)?,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
+                })
+            }).map_err(|e| e.to_string())?
+                .filter_map(|r| r.ok())
+                .collect();
             for child in children {
                 if child.r#type == "file" {
                     if let Some(path) = &child.file_path {
@@ -1507,41 +1614,182 @@ pub fn db_note_delete(id: i64) -> Result<(), String> {
     })
 }
 
-pub fn db_note_move(id: i64, new_parent_id: Option<i64>) -> Result<NoteItem, String> {
+pub fn do_note_move(id: i64, new_parent_id: Option<i64>) -> Result<NoteItem, String> {
     with_conn(|conn| {
         conn.execute(
             "UPDATE notes SET parent_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
             params![new_parent_id, id],
         ).map_err(|e| e.to_string())?;
-        db_note_get_by_id(id)
+        // 直接查询返回，避免嵌套 with_conn 导致死锁
+        let sql = r#"SELECT id, parent_id, name, "type", file_path, language, created_at, updated_at FROM notes WHERE id = ?"#;
+        conn.query_row(sql, params![id], |row| {
+            Ok(NoteItem {
+                id: row.get(0)?,
+                parent_id: row.get(1)?,
+                name: row.get(2)?,
+                r#type: row.get(3)?,
+                file_path: row.get(4)?,
+                language: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
+            })
+        }).map_err(|e| e.to_string())
     })
 }
 
 // ========== Notes Tauri 命令 ==========
 
-#[tauri::command]
-pub fn cmd_db_note_list(parent_id: Option<i64>) -> Result<Vec<NoteItem>, String> {
-    db_note_list(parent_id)
+#[tauri::command(rename_all = "snake_case")]
+pub fn db_note_list(parent_id: Option<i64>) -> Result<Vec<NoteItem>, String> {
+    do_note_list(parent_id)
 }
 
-#[tauri::command]
-pub fn cmd_db_note_create(name: String, note_type: String, parent_id: Option<i64>) -> Result<NoteItem, String> {
-    db_note_create(&name, &note_type, parent_id)
+#[tauri::command(rename_all = "snake_case")]
+pub fn db_note_create(name: String, note_type: String, parent_id: Option<i64>) -> Result<NoteItem, String> {
+    do_note_create(&name, &note_type, parent_id)
 }
 
-#[tauri::command]
-pub fn cmd_db_note_rename(id: i64, new_name: String) -> Result<NoteItem, String> {
-    db_note_rename(id, &new_name)
+#[tauri::command(rename_all = "snake_case")]
+pub fn db_note_rename(id: i64, new_name: String) -> Result<NoteItem, String> {
+    do_note_rename(id, &new_name)
 }
 
-#[tauri::command]
-pub fn cmd_db_note_delete(id: i64) -> Result<(), String> {
-    db_note_delete(id)
+#[tauri::command(rename_all = "snake_case")]
+pub fn db_note_delete(id: i64) -> Result<(), String> {
+    do_note_delete(id)
 }
 
+#[tauri::command(rename_all = "snake_case")]
+pub fn db_note_move(id: i64, new_parent_id: Option<i64>) -> Result<NoteItem, String> {
+    do_note_move(id, new_parent_id)
+}
+
+// ========== 草稿 & 上次打开的笔记 ==========
+
+/// 获取上次打开的笔记 ID
 #[tauri::command]
-pub fn cmd_db_note_move(id: i64, new_parent_id: Option<i64>) -> Result<NoteItem, String> {
-    db_note_move(id, new_parent_id)
+pub fn db_note_get_last_opened() -> Result<Option<i64>, String> {
+    with_conn(|conn| {
+        let result: Option<String> = conn
+            .query_row("SELECT value FROM config WHERE key = 'note_last_opened'", [], |row| row.get(0))
+            .optional()
+            .map_err(|e| e.to_string())?;
+        match result {
+            Some(val) => Ok(Some(val.parse::<i64>().map_err(|e| e.to_string())?)),
+            None => Ok(None),
+        }
+    })
+}
+
+/// 设置上次打开的笔记 ID
+#[tauri::command]
+pub fn db_note_set_last_opened(id: i64) -> Result<(), String> {
+    with_conn(|conn| {
+        conn.execute(
+            "INSERT INTO config (key, value) VALUES ('note_last_opened', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = ?1",
+            params![id.to_string()],
+        ).map_err(|e| e.to_string())?;
+        Ok(())
+    })
+}
+
+/// 打开笔记存储目录
+#[tauri::command]
+pub fn open_notes_folder() -> Result<(), String> {
+    let app_dir = dirs::config_dir()
+        .expect("无法获取应用数据目录")
+        .join("com.dev.toolbox")
+        .join("notes");
+    std::fs::create_dir_all(&app_dir).map_err(|e| format!("创建目录失败: {}", e))?;
+    
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(&app_dir)
+            .spawn()
+            .map_err(|e| format!("打开目录失败: {}", e))?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&app_dir)
+            .spawn()
+            .map_err(|e| format!("打开目录失败: {}", e))?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&app_dir)
+            .spawn()
+            .map_err(|e| format!("打开目录失败: {}", e))?;
+    }
+    
+    Ok(())
+}
+
+/// 确保草稿存在，如果不存在则创建
+#[tauri::command]
+pub fn db_note_ensure_draft() -> Result<NoteItem, String> {
+    with_conn(|conn| {
+        // 先检查是否已有草稿
+        let existing: Option<NoteItem> = conn
+            .query_row(
+                r#"SELECT id, parent_id, name, "type", file_path, language, created_at, updated_at 
+                 FROM notes WHERE name = '草稿' AND "type" = 'file' AND parent_id IS NULL"#,
+                [],
+                |row| {
+                    Ok(NoteItem {
+                        id: row.get(0)?,
+                        parent_id: row.get(1)?,
+                        name: row.get(2)?,
+                        r#type: row.get(3)?,
+                        file_path: row.get(4)?,
+                        language: row.get(5)?,
+                        created_at: row.get(6)?,
+                        updated_at: row.get(7)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
+
+        if let Some(item) = existing {
+            return Ok(item);
+        }
+
+        // 创建草稿
+        let notes_dir = ensure_notes_dir();
+        let file_path = notes_dir.join("草稿.txt").to_string_lossy().to_string();
+        
+        // 确保文件存在
+        if !std::path::Path::new(&file_path).exists() {
+            std::fs::write(&file_path, "").map_err(|e| format!("创建草稿文件失败: {}", e))?;
+        }
+
+        conn.execute(
+            r#"INSERT INTO notes (name, "type", parent_id, file_path, language) VALUES ('草稿', 'file', NULL, ?1, 'plaintext')"#,
+            params![file_path],
+        ).map_err(|e| e.to_string())?;
+        
+        let id = conn.last_insert_rowid();
+        conn.query_row(
+            r#"SELECT id, parent_id, name, "type", file_path, language, created_at, updated_at FROM notes WHERE id = ?"#,
+            params![id],
+            |row| {
+                Ok(NoteItem {
+                    id: row.get(0)?,
+                    parent_id: row.get(1)?,
+                    name: row.get(2)?,
+                    r#type: row.get(3)?,
+                    file_path: row.get(4)?,
+                    language: row.get(5)?,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
+                })
+            },
+        ).map_err(|e| e.to_string())
+    })
 }
 
 // 读取快捷键配置
