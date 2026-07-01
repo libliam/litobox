@@ -163,3 +163,11 @@ litobox/
 9. **新增Vue页面必须基于模板创建**
 10. **打包时不生成安装包** — `bundle.targets` 保持为空数组
 11. **耗时操作必须显示加载提示** — 使用 `ElLoading.service()` + `finally` 确保关闭
+
+### SQLite 与 Tauri 后端避坑指南
+
+12. **SQLite NULL 比较必须用 IS 而非 =**：`WHERE parent_id = ?` 在参数为 NULL 时永远返回空（NULL = NULL → NULL），必须用 `WHERE parent_id IS ?` 或拆分为 `IS NULL` / `= ?` 两种情况
+13. **Tauri v2 命令参数默认 camelCase**：Rust 函数参数为 snake_case（如 `note_type`）时，必须在 `#[tauri::command]` 上添加 `rename_all = "snake_case"`，否则前端传参报 "missing required key"
+14. **with_conn 内禁止嵌套调用其他 with_conn 函数**：`with_conn` 使用 Mutex 保护数据库连接，在闭包内调用 `do_note_get_by_id` / `do_note_list` 等也使用 `with_conn` 的函数会导致死锁（应用卡死）。应在当前连接上直接执行 SQL 查询
+15. **do_note_create 创建文件时必须实际写入磁盘**：仅生成路径并存入数据库不够，必须调用 `std::fs::File::create(&path)` 创建空文件，否则前端读取时文件不存在
+16. **Rust 后端修改后必须重启 Tauri 开发服务器**：`cargo check` 通过不代表热更新生效，必须 `Ctrl+C` 停止后重新 `npm run tauri dev`

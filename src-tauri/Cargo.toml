@@ -1,6 +1,6 @@
 [package]
 name = "litobox"
-version = "3.0.0"
+version = "3.1.0"
 description = "栗的百宝箱"
 authors = ["developer"]
 edition = "2021"
@@ -23,6 +23,7 @@ serde_urlencoded = "0.7"
 base64 = "0.22"
 rusqlite = { version = "0.32", features = ["bundled"] }
 dirs = "5.0"
+chardetng = "0.1"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
