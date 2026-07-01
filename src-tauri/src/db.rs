@@ -118,6 +118,18 @@ pub struct HttpBookmark {
     pub updated_at: String,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct NoteItem {
+    pub id: i64,
+    pub parent_id: Option<i64>,
+    pub name: String,
+    pub r#type: String,
+    pub file_path: Option<String>,
+    pub language: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 fn init_tables(conn: &Connection) -> Result<()> {
     conn.execute_batch(r#"
         CREATE TABLE IF NOT EXISTS config (
@@ -240,6 +252,22 @@ fn init_tables(conn: &Connection) -> Result<()> {
     if let Err(_) = conn.execute("ALTER TABLE history ADD COLUMN detail_id INTEGER", []) {
         // 列已存在，忽略
     }
+
+    // 迁移：notes 表
+    conn.execute_batch(r#"
+        CREATE TABLE IF NOT EXISTS notes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            parent_id INTEGER DEFAULT NULL,
+            name TEXT NOT NULL,
+            type TEXT NOT NULL DEFAULT 'file',
+            file_path TEXT,
+            language TEXT DEFAULT 'plaintext',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (parent_id) REFERENCES notes(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_notes_parent ON notes(parent_id);
+    "#).ok();
 
     Ok(())
 }
@@ -1363,6 +1391,157 @@ pub fn cmd_db_save_http_bookmark(bookmark: HttpBookmark) -> Result<(), String> {
 #[tauri::command]
 pub fn cmd_db_delete_http_bookmark(id: String) -> Result<(), String> {
     db_delete_http_bookmark(id)
+}
+
+// ========== Notes CRUD ==========
+
+fn generate_note_file_path(name: &str) -> String {
+    let app_dir = dirs::config_dir()
+        .expect("无法获取应用数据目录")
+        .join("com.dev.toolbox")
+        .join("notes");
+    std::fs::create_dir_all(&app_dir).expect("无法创建笔记目录");
+    app_dir.join(name).to_string_lossy().to_string()
+}
+
+pub fn db_note_list(parent_id: Option<i64>) -> Result<Vec<NoteItem>, String> {
+    with_conn(|conn| {
+        let sql = "SELECT id, parent_id, name, type, file_path, language, created_at, updated_at 
+                   FROM notes WHERE parent_id = ? ORDER BY type DESC, name ASC";
+        let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
+        let rows = stmt.query_map(params![parent_id], |row| {
+            Ok(NoteItem {
+                id: row.get(0)?,
+                parent_id: row.get(1)?,
+                name: row.get(2)?,
+                r#type: row.get(3)?,
+                file_path: row.get(4)?,
+                language: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
+            })
+        }).map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    })
+}
+
+pub fn db_note_get_by_id(id: i64) -> Result<NoteItem, String> {
+    with_conn(|conn| {
+        let sql = "SELECT id, parent_id, name, type, file_path, language, created_at, updated_at FROM notes WHERE id = ?";
+        conn.query_row(sql, params![id], |row| {
+            Ok(NoteItem {
+                id: row.get(0)?,
+                parent_id: row.get(1)?,
+                name: row.get(2)?,
+                r#type: row.get(3)?,
+                file_path: row.get(4)?,
+                language: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
+            })
+        }).map_err(|e| e.to_string())
+    })
+}
+
+pub fn db_note_create(name: &str, note_type: &str, parent_id: Option<i64>) -> Result<NoteItem, String> {
+    with_conn(|conn| {
+        let file_path = if note_type == "file" {
+            Some(generate_note_file_path(name))
+        } else {
+            None
+        };
+        conn.execute(
+            "INSERT INTO notes (name, type, parent_id, file_path) VALUES (?, ?, ?, ?)",
+            params![name, note_type, parent_id, file_path],
+        ).map_err(|e| e.to_string())?;
+        let id = conn.last_insert_rowid();
+        db_note_get_by_id(id)
+    })
+}
+
+pub fn db_note_rename(id: i64, new_name: &str) -> Result<NoteItem, String> {
+    with_conn(|conn| {
+        let item = db_note_get_by_id(id)?;
+        if item.r#type == "file" {
+            if let Some(old_path) = &item.file_path {
+                let new_path = generate_note_file_path(new_name);
+                std::fs::rename(old_path, &new_path)
+                    .map_err(|e| format!("重命名文件失败: {}", e))?;
+                conn.execute(
+                    "UPDATE notes SET name = ?, file_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    params![new_name, new_path, id],
+                ).map_err(|e| e.to_string())?;
+            }
+        } else {
+            conn.execute(
+                "UPDATE notes SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                params![new_name, id],
+            ).map_err(|e| e.to_string())?;
+        }
+        db_note_get_by_id(id)
+    })
+}
+
+pub fn db_note_delete(id: i64) -> Result<(), String> {
+    with_conn(|conn| {
+        let item = db_note_get_by_id(id)?;
+        if item.r#type == "file" {
+            if let Some(path) = &item.file_path {
+                std::fs::remove_file(path)
+                    .map_err(|e| format!("删除文件失败: {}", e))?;
+            }
+        } else {
+            // 删除文件夹下的所有文件
+            let children = db_note_list(Some(id))?;
+            for child in children {
+                if child.r#type == "file" {
+                    if let Some(path) = &child.file_path {
+                        let _ = std::fs::remove_file(path);
+                    }
+                }
+            }
+        }
+        conn.execute("DELETE FROM notes WHERE id = ?", params![id])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    })
+}
+
+pub fn db_note_move(id: i64, new_parent_id: Option<i64>) -> Result<NoteItem, String> {
+    with_conn(|conn| {
+        conn.execute(
+            "UPDATE notes SET parent_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            params![new_parent_id, id],
+        ).map_err(|e| e.to_string())?;
+        db_note_get_by_id(id)
+    })
+}
+
+// ========== Notes Tauri 命令 ==========
+
+#[tauri::command]
+pub fn cmd_db_note_list(parent_id: Option<i64>) -> Result<Vec<NoteItem>, String> {
+    db_note_list(parent_id)
+}
+
+#[tauri::command]
+pub fn cmd_db_note_create(name: String, note_type: String, parent_id: Option<i64>) -> Result<NoteItem, String> {
+    db_note_create(&name, &note_type, parent_id)
+}
+
+#[tauri::command]
+pub fn cmd_db_note_rename(id: i64, new_name: String) -> Result<NoteItem, String> {
+    db_note_rename(id, &new_name)
+}
+
+#[tauri::command]
+pub fn cmd_db_note_delete(id: i64) -> Result<(), String> {
+    db_note_delete(id)
+}
+
+#[tauri::command]
+pub fn cmd_db_note_move(id: i64, new_parent_id: Option<i64>) -> Result<NoteItem, String> {
+    db_note_move(id, new_parent_id)
 }
 
 // 读取快捷键配置

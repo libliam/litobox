@@ -6,6 +6,7 @@ mod file_encoding;
 mod file_saver;
 mod js_executor;
 mod http_cmd;
+mod note_manager;
 
 use tauri::{Manager, Emitter};
 use tauri_plugin_dialog::{DialogExt, MessageDialogBuilder, MessageDialogButtons, MessageDialogKind};
@@ -73,6 +74,15 @@ fn main() {
             db::cmd_db_list_http_bookmarks,
             db::cmd_db_save_http_bookmark,
             db::cmd_db_delete_http_bookmark,
+            // Notes 命令
+            db::cmd_db_note_list,
+            db::cmd_db_note_create,
+            db::cmd_db_note_rename,
+            db::cmd_db_note_delete,
+            db::cmd_db_note_move,
+            // Note manager 命令
+            note_manager::cmd_note_read,
+            note_manager::cmd_note_write,
             db::cmd_db_register_shortcuts,
         ])
         .setup(|app| {
