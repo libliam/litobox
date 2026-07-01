@@ -23,6 +23,7 @@ serde_urlencoded = "0.7"
 base64 = "0.22"
 rusqlite = { version = "0.32", features = ["bundled"] }
 dirs = "5.0"
+chardetng = "0.1"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
