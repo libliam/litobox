@@ -118,11 +118,10 @@ const updateContent = (newContent: string) => {
 }
 
 // 更新语言
-const updateLanguage = (lang: string) => {
+const updateLanguage = (_lang: string) => {
   if (!view.value) return
   const currentLang = props.language || 'plaintext'
-  if (lang !== currentLang) {
-    const content = view.value.state.doc.toString()
+  if (_lang !== currentLang) {
     view.value.destroy()
     createEditor()
   }

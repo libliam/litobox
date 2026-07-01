@@ -163,7 +163,7 @@ const handleDelete = async (item: NoteItem) => {
   }
 }
 
-const handleContextMenu = (event: MouseEvent, item: NoteItem | null) => {
+const handleContextMenu = (_event: MouseEvent, item: NoteItem | null) => {
   if (!item) return
   // 右键菜单：使用 Element Plus 的 ElMessageBox 提供快速操作
   ElMessageBox({

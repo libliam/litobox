@@ -53,7 +53,7 @@ defineProps<{
   isModified?: boolean
 }>()
 
-const emit = defineEmits<{
+defineEmits<{
   'find': []
   'replace': []
   'language-change': [lang: string]

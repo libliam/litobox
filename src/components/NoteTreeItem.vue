@@ -25,10 +25,10 @@
         :item="child"
         :selected-id="selectedId"
         @select="$emit('select', $event)"
-        @contextmenu="$emit('contextmenu', $event, $event)"
+        @contextmenu="handleChildContextmenu"
         @rename="$emit('rename', $event)"
         @delete="$emit('delete', $event)"
-        @create-child="$emit('create-child', $event)"
+        @create-child="handleChildCreate"
       />
     </div>
   </div>
@@ -70,6 +70,14 @@ const handleClick = () => {
   } else {
     emit('select', props.item)
   }
+}
+
+const handleChildContextmenu = (event: MouseEvent, childItem: NoteItem) => {
+  emit('contextmenu', event, childItem)
+}
+
+const handleChildCreate = (parentId: number, type: 'folder' | 'file') => {
+  emit('create-child', parentId, type)
 }
 
 onMounted(() => {
