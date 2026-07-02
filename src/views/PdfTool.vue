@@ -71,6 +71,22 @@
               <el-button size="small" :disabled="!imageBlobs.length" @click="handleDownloadAllImages">
                 全部下载
               </el-button>
+              <el-button
+                size="small"
+                type="success"
+                :disabled="!imageBlobs.length || isOcrRunning"
+                :loading="isOcrRunning"
+                @click="handleOcrAll"
+              >
+                OCR 识别
+              </el-button>
+              <el-button
+                size="small"
+                :disabled="!imageBlobs.length"
+                @click="handleJumpToOcr"
+              >
+                跳转到OCR
+              </el-button>
             </div>
           </div>
         </div>
@@ -85,6 +101,27 @@
             <el-button size="small" @click="handleDownloadSingleImage(blob, idx + 1)">下载</el-button>
           </div>
         </div>
+
+        <!-- OCR 结果 -->
+        <div v-if="ocrResults.length > 0" class="ocr-result-section">
+          <el-divider />
+          <div class="ocr-result-header">
+            <span class="ocr-result-title">OCR 识别结果 ({{ ocrResults.length }} 页)</span>
+            <div class="ocr-actions">
+              <el-button size="small" @click="handleCopyOcrResult">复制全部</el-button>
+              <el-button size="small" @click="handleExportOcrResult">导出 .txt</el-button>
+              <el-button size="small" @click="handleClearOcrResult">清除</el-button>
+            </div>
+          </div>
+          <el-input
+            :model-value="ocrFullText"
+            type="textarea"
+            :rows="10"
+            readonly
+            class="ocr-textarea"
+          />
+        </div>
+
         <div v-if="error" class="error-message">{{ error }}</div>
       </div>
     </div>
@@ -289,7 +326,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed } from 'vue'
 import { ElMessage, ElLoading } from 'element-plus'
 import { QuestionFilled } from '@element-plus/icons-vue'
 import {
@@ -302,11 +339,19 @@ import {
   formatFileSize,
   type ImageToPdfOptions
 } from '@/utils/pdfUtils'
+import { recognizeImage } from '@/utils/ocrUtils'
 import { useToolboxStore } from '@/store'
 
 const store = useToolboxStore()
 const activeTab = ref('pdfToImages')
 const error = ref('')
+
+// ============ OCR 识别 ============
+const ocrResults = ref<string[]>([])
+const isOcrRunning = ref(false)
+const ocrFullText = computed(() =>
+  ocrResults.value.map((text, idx) => `--- 第 ${idx + 1} 页 ---\n${text}`).join('\n\n')
+)
 
 // ============ Tab 1: PDF转图片 ============
 const pdfInputRef = ref<HTMLInputElement | null>(null)
@@ -387,6 +432,66 @@ const handleDownloadAllImages = async () => {
     const blob = imageBlobs.value[idx]
     await saveFileWithDialog(blob, `page_${idx + 1}.png`, 'png')
   }
+}
+
+// ============ OCR 识别 ============
+const handleOcrAll = async () => {
+  if (imageBlobs.value.length === 0) return
+  error.value = ''
+  ocrResults.value = []
+  isOcrRunning.value = true
+
+  const loading = ElLoading.service({
+    lock: true,
+    text: `正在 OCR 识别 ${imageBlobs.value.length} 页...`,
+    background: 'rgba(0, 0, 0, 0.7)',
+  })
+
+  try {
+    for (let idx = 0; idx < imageBlobs.value.length; idx++) {
+      const blob = imageBlobs.value[idx]
+      const blobFile = new File([blob], `page_${idx + 1}.png`, { type: 'image/png' })
+      const text = await recognizeImage(blobFile)
+      ocrResults.value.push(text)
+    }
+    ElMessage.success(`OCR 识别完成，共 ${ocrResults.value.length} 页`)
+    store.addHistory({
+      tool: 'pdf',
+      action: 'PDF转图片+OCR',
+      inputPreview: pdfFile.value?.name.slice(0, 50) || '',
+      outputPreview: ocrFullText.value.slice(0, 50)
+    })
+  } catch (e: any) {
+    error.value = `OCR 识别失败: ${e.message}`
+  } finally {
+    isOcrRunning.value = false
+    loading.close()
+  }
+}
+
+const handleCopyOcrResult = async () => {
+  if (!ocrFullText.value) return
+  try {
+    await navigator.clipboard.writeText(ocrFullText.value)
+    ElMessage.success('已复制')
+  } catch {
+    ElMessage.error('复制失败')
+  }
+}
+
+const handleExportOcrResult = async () => {
+  if (!ocrFullText.value) return
+  const blob = new Blob([ocrFullText.value], { type: 'text/plain' })
+  await saveFileWithDialog(blob, 'pdf-ocr-result.txt', 'txt')
+}
+
+const handleClearOcrResult = () => {
+  ocrResults.value = []
+}
+
+const handleJumpToOcr = () => {
+  if (imageBlobs.value.length === 0) return
+  store.activeTool = 'ocr'
 }
 
 // ============ Tab 2: 图片转PDF ============
@@ -928,5 +1033,32 @@ html.light .pdf-tabs :deep(.el-tabs__header) {
 :deep(.el-textarea.error .el-textarea__inner) {
   border-color: var(--accent-red);
   box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.1);
+}
+
+/* ===== OCR 结果 ===== */
+.ocr-result-section {
+  margin-top: 8px;
+}
+
+.ocr-result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.ocr-result-title {
+  font-size: 13px;
+  color: var(--accent-cyan);
+  font-weight: 500;
+}
+
+.ocr-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.ocr-textarea {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
 }
 </style>

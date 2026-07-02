@@ -266,8 +266,9 @@ defineExpose({
 })
 
 let darkModeMediaQuery: MediaQueryList | null = null
+let isUnmounting = false
 const handleSystemThemeChange = () => {
-  if (store.config.theme === 'auto' && view.value) {
+  if (store.config.theme === 'auto' && view.value && !isUnmounting) {
     view.value.destroy()
     createEditor()
   }
@@ -282,6 +283,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  isUnmounting = true
   view.value?.destroy()
   if (darkModeMediaQuery) {
     darkModeMediaQuery.removeEventListener('change', handleSystemThemeChange)
