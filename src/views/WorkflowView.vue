@@ -93,6 +93,7 @@
                   <el-option label="正则替换" value="regex" />
                   <el-option label="SQL转换" value="sql" />
                   <el-option label="Base64编解码" value="base64" />
+                  <el-option label="计算器" value="calculator" />
                 </el-select>
                 <el-select v-model="step.action" placeholder="选择操作" size="small" style="width: 140px">
                   <el-option
@@ -266,6 +267,8 @@ import {
 import { formatJson, compressJson, validateJson } from '@/utils/jsonUtils'
 import { urlEncode, urlDecode, base64Encode, base64Decode } from '@/utils/encodeUtils'
 import { convertToSqlIn } from '@/utils/sqlUtils'
+import { create, all } from 'mathjs'
+const workflowMath = create(all, {})
 
 // 工作流列表
 const workflows = ref<db.Workflow[]>([])
@@ -311,6 +314,7 @@ const TOOL_ACTIONS: Record<string, string[]> = {
   regex: ['正则匹配', '正则替换'],
   sql: ['转SQL IN', '转SQL VALUES'],
   base64: ['编码', '解码'],
+  calculator: ['表达式计算'],
 }
 
 function getActionsForTool(tool: string): string[] {
@@ -560,6 +564,8 @@ async function executeStep(tool: string, action: string, input: string): Promise
       return executeRegexAction(action, input)
     case 'sql':
       return executeSqlAction(action, input)
+    case 'calculator':
+      return executeCalculatorAction(action, input)
     default:
       return input
   }
@@ -637,6 +643,17 @@ function executeSqlAction(action: string, input: string): string {
       return items.map(s => `('${s}')`).join(',\n')
     }
     default: return input
+  }
+}
+
+// 计算器执行 — 复用 mathjs
+function executeCalculatorAction(_action: string, input: string): string {
+  if (!input.trim()) return ''
+  try {
+    const result = workflowMath.evaluate(input.trim())
+    return String(result)
+  } catch (e: any) {
+    return `计算错误: ${e.message}`
   }
 }
 
