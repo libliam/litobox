@@ -4,43 +4,45 @@
     
     <div class="app-content">
       <main class="app-main">
-        <HomeView v-if="activeTool === 'home'" :on-select-tool="handleSelectTool" />
-        <JsonTool v-else-if="activeTool === 'json'" />
-        <StringTool v-else-if="activeTool === 'string'" />
-        <EncodeTool v-else-if="activeTool === 'encode'" />
-        <TimeTool v-else-if="activeTool === 'time'" />
-        <URLTool v-else-if="activeTool === 'url'" />
-        <RegexTool v-else-if="activeTool === 'regex'" />
-        <BaseConverter v-else-if="activeTool === 'baseConverter'" />
-        <UUIDTool v-else-if="activeTool === 'uuid'" />
-        <DevTools v-else-if="activeTool === 'devtools'" />
-        <FileProcessing v-else-if="activeTool === 'fileprocessing'" />
-        <SqlTool v-else-if="activeTool === 'sql'" />
-        <JSTool v-else-if="activeTool === 'js'" />
-        <MockDataTool v-else-if="activeTool === 'mockData'" />
-        <OcrTool v-else-if="activeTool === 'ocr'" />
-        <DiffTool v-else-if="activeTool === 'diff'" />
-        <ClipboardTool v-else-if="activeTool === 'clipboard'" />
-        <ImageTool v-else-if="activeTool === 'image'" />
-        <CsvTool v-else-if="activeTool === 'csv'" />
-        <PdfTool v-else-if="activeTool === 'pdf'" />
-        <HashTool v-else-if="activeTool === 'hash'" />
-        <XmlYamlTool v-else-if="activeTool === 'xmlYaml'" />
-        <DedupTool v-else-if="activeTool === 'dedup'" />
-        <CssTool v-else-if="activeTool === 'css'" />
-        <JwtTool v-else-if="activeTool === 'jwt'" />
-        <WordCountTool v-else-if="activeTool === 'wordCount'" />
-        <CronTool v-else-if="activeTool === 'cron'" />
-        <MarkdownTool v-else-if="activeTool === 'markdown'" />
-        <ColorTool v-else-if="activeTool === 'color'" />
-        <PasswordTool v-else-if="activeTool === 'password'" />
-        <QrTool v-else-if="activeTool === 'qr'" />
-        <SnippetTool v-else-if="activeTool === 'snippet'" />
-        <HttpTool v-else-if="activeTool === 'http'" />
-        <HistoryView v-else-if="activeTool === 'history'" />
-        <WorkflowView v-else-if="activeTool === 'workflow'" />
-        <NoteEditor v-else-if="activeTool === 'note'" />
-        <CalculatorTool v-else-if="activeTool === 'calculator'" />
+        <KeepAlive :max="4">
+          <HomeView v-if="activeTool === 'home'" :key="'home'" :on-select-tool="handleSelectTool" />
+          <JsonTool v-else-if="activeTool === 'json'" :key="'json'" />
+          <StringTool v-else-if="activeTool === 'string'" :key="'string'" />
+          <EncodeTool v-else-if="activeTool === 'encode'" :key="'encode'" />
+          <TimeTool v-else-if="activeTool === 'time'" :key="'time'" />
+          <URLTool v-else-if="activeTool === 'url'" :key="'url'" />
+          <RegexTool v-else-if="activeTool === 'regex'" :key="'regex'" />
+          <BaseConverter v-else-if="activeTool === 'baseConverter'" :key="'baseConverter'" />
+          <UUIDTool v-else-if="activeTool === 'uuid'" :key="'uuid'" />
+          <DevTools v-else-if="activeTool === 'devtools'" :key="'devtools'" />
+          <FileProcessing v-else-if="activeTool === 'fileprocessing'" :key="'fileprocessing'" />
+          <SqlTool v-else-if="activeTool === 'sql'" :key="'sql'" />
+          <JSTool v-else-if="activeTool === 'js'" :key="'js'" />
+          <MockDataTool v-else-if="activeTool === 'mockData'" :key="'mockData'" />
+          <OcrTool v-else-if="activeTool === 'ocr'" :key="'ocr'" />
+          <DiffTool v-else-if="activeTool === 'diff'" :key="'diff'" />
+          <ClipboardTool v-else-if="activeTool === 'clipboard'" :key="'clipboard'" />
+          <ImageTool v-else-if="activeTool === 'image'" :key="'image'" />
+          <CsvTool v-else-if="activeTool === 'csv'" :key="'csv'" />
+          <PdfTool v-else-if="activeTool === 'pdf'" :key="'pdf'" />
+          <HashTool v-else-if="activeTool === 'hash'" :key="'hash'" />
+          <XmlYamlTool v-else-if="activeTool === 'xmlYaml'" :key="'xmlYaml'" />
+          <DedupTool v-else-if="activeTool === 'dedup'" :key="'dedup'" />
+          <CssTool v-else-if="activeTool === 'css'" :key="'css'" />
+          <JwtTool v-else-if="activeTool === 'jwt'" :key="'jwt'" />
+          <WordCountTool v-else-if="activeTool === 'wordCount'" :key="'wordCount'" />
+          <CronTool v-else-if="activeTool === 'cron'" :key="'cron'" />
+          <MarkdownTool v-else-if="activeTool === 'markdown'" :key="'markdown'" />
+          <ColorTool v-else-if="activeTool === 'color'" :key="'color'" />
+          <PasswordTool v-else-if="activeTool === 'password'" :key="'password'" />
+          <QrTool v-else-if="activeTool === 'qr'" :key="'qr'" />
+          <SnippetTool v-else-if="activeTool === 'snippet'" :key="'snippet'" />
+          <HttpTool v-else-if="activeTool === 'http'" :key="'http'" />
+          <HistoryView v-else-if="activeTool === 'history'" :key="'history'" />
+          <WorkflowView v-else-if="activeTool === 'workflow'" :key="'workflow'" />
+          <NoteEditor v-else-if="activeTool === 'note'" :key="'note'" />
+          <CalculatorTool v-else-if="activeTool === 'calculator'" :key="'calculator'" />
+        </KeepAlive>
       </main>
       
       <div class="app-footer">
