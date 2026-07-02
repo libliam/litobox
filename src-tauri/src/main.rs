@@ -7,6 +7,7 @@ mod file_saver;
 mod js_executor;
 mod http_cmd;
 mod note_manager;
+mod system_info;
 
 use tauri::{Manager, Emitter};
 use tauri_plugin_dialog::{DialogExt, MessageDialogBuilder, MessageDialogButtons, MessageDialogKind};
@@ -89,6 +90,11 @@ fn main() {
             note_manager::note_read,
             note_manager::note_write,
             db::cmd_db_register_shortcuts,
+            system_info::get_system_info,
+            system_info::get_network_info,
+            system_info::get_process_list,
+            system_info::get_hardware_info,
+            system_info::get_software_env,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

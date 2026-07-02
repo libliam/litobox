@@ -42,6 +42,11 @@
           <WorkflowView v-else-if="activeTool === 'workflow'" :key="'workflow'" />
           <NoteEditor v-else-if="activeTool === 'note'" :key="'note'" />
           <CalculatorTool v-else-if="activeTool === 'calculator'" :key="'calculator'" />
+          <SystemInfoView v-else-if="activeTool === 'systemInfo'" :key="'systemInfo'" />
+          <NetworkInfoView v-else-if="activeTool === 'networkInfo'" :key="'networkInfo'" />
+          <ProcessListView v-else-if="activeTool === 'processList'" :key="'processList'" />
+          <HardwareInfoView v-else-if="activeTool === 'hardwareInfo'" :key="'hardwareInfo'" />
+          <SoftwareEnvView v-else-if="activeTool === 'softwareEnv'" :key="'softwareEnv'" />
         </KeepAlive>
       </main>
       
@@ -95,6 +100,11 @@ import HistoryView from '@/views/HistoryView.vue'
 import WorkflowView from '@/views/WorkflowView.vue'
 import NoteEditor from '@/views/NoteEditor.vue'
 import CalculatorTool from '@/views/CalculatorTool.vue'
+import SystemInfoView from '@/views/SystemInfoView.vue'
+import NetworkInfoView from '@/views/NetworkInfoView.vue'
+import ProcessListView from '@/views/ProcessListView.vue'
+import HardwareInfoView from '@/views/HardwareInfoView.vue'
+import SoftwareEnvView from '@/views/SoftwareEnvView.vue'
 
 const store = useToolboxStore()
 const { activeTool } = storeToRefs(store)

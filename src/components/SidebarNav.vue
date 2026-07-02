@@ -5,13 +5,13 @@
         <span class="logo-icon">⚡</span>
         <div class="logo-text">
           <h1 class="app-title">栗的百宝箱</h1>
-          <span class="app-version">v3.2</span>
+          <span class="app-version">v4.0</span>
         </div>
       </div>
     </div>
 
-    <nav class="sidebar-nav">
-      <!-- 首页和历史 -->
+    <!-- 固定工具（顶部固定，不滚动） -->
+    <div class="sidebar-fixed-nav">
       <div class="nav-section">
         <div
           v-for="tool in fixedTools"
@@ -31,7 +31,9 @@
           >★</span>
         </div>
       </div>
+    </div>
 
+    <nav class="sidebar-nav">
       <!-- 收藏工具 -->
       <div v-if="favoritedTools.length > 0" class="nav-section">
         <div class="nav-section-title">收藏</div>
@@ -302,7 +304,8 @@ const categorizedTools = computed(() => {
     text: '文本工具',
     dev: '开发工具',
     security: '安全工具',
-    utility: '实用工具'
+    utility: '实用工具',
+    system: '系统工具'
   }
 
   for (const tool of categorized) {
@@ -415,6 +418,12 @@ const applyTheme = (theme: string) => {
   border-radius: 8px;
   border: 1px solid rgba(8, 145, 178, 0.2);
   width: fit-content;
+}
+
+.sidebar-fixed-nav {
+  flex-shrink: 0;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-color);
 }
 
 .sidebar-nav {
