@@ -50,9 +50,13 @@ const langExtensions: Record<string, () => any> = {
   rust: () => rust(),
 }
 
-// 根据主题获取扩展
+// 根据主题获取扩展（auto 模式下跟随系统偏好）
 const getThemeExtension = () => {
-  return store.config.theme === 'light' ? [] : [oneDark]
+  const theme = store.config.theme
+  if (theme === 'light') return []
+  if (theme === 'dark') return [oneDark]
+  // auto: 跟随系统
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? [oneDark] : []
 }
 
 // 获取语言扩展
@@ -261,12 +265,27 @@ defineExpose({
   updateLanguage,
 })
 
+let darkModeMediaQuery: MediaQueryList | null = null
+const handleSystemThemeChange = () => {
+  if (store.config.theme === 'auto' && view.value) {
+    view.value.destroy()
+    createEditor()
+  }
+}
+
 onMounted(() => {
   createEditor()
+
+  // auto 模式下监听系统主题变化
+  darkModeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+  darkModeMediaQuery.addEventListener('change', handleSystemThemeChange)
 })
 
 onUnmounted(() => {
   view.value?.destroy()
+  if (darkModeMediaQuery) {
+    darkModeMediaQuery.removeEventListener('change', handleSystemThemeChange)
+  }
 })
 
 watch(() => props.modelValue, (newVal) => {
