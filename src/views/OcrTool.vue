@@ -448,6 +448,7 @@ import { ElMessage } from 'element-plus'
 import { QuestionFilled, Close } from '@element-plus/icons-vue'
 import { recognizeImage, cleanText, exportAsTxt, destroyOcr, batchRecognize, getMergedResult, type BatchImage, recognizeTable, toCsv, recognizeMarkdown, exportAsMd } from '@/utils/ocrUtils'
 import { saveFileWithDialog } from '@/utils/fileSaver'
+import { getPendingImages } from '@/utils/toolBridge'
 import * as db from '@/utils/dbClient'
 import { useToolboxStore } from '@/store'
 
@@ -1066,6 +1067,30 @@ const handleExportMarkdown = async () => {
 }
 
 onMounted(async () => {
+  // 检测是否有从其他工具（PDF）传入的图片
+  const pendingBlobs = getPendingImages()
+  if (pendingBlobs.length > 0) {
+    if (pendingBlobs.length === 1) {
+      // 单张 → 单图模式
+      await processImage(pendingBlobs[0])
+    } else {
+      // 多张 → 批量模式
+      batchImages.value = []
+      for (const blob of pendingBlobs) {
+        const thumbnail = await generateThumbnail(blob)
+        const originalUrl = URL.createObjectURL(blob)
+        batchImages.value.push({
+          id: Date.now().toString() + Math.random().toString(36).substring(2, 9),
+          file: blob,
+          thumbnail,
+          originalUrl,
+          name: `pdf-page-${batchImages.value.length + 1}.png`,
+          status: 'pending'
+        })
+      }
+    }
+  }
+
   await loadHistory()
   document.addEventListener('paste', handleGlobalPaste)
 })

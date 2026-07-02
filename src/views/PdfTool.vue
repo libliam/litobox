@@ -340,6 +340,7 @@ import {
   type ImageToPdfOptions
 } from '@/utils/pdfUtils'
 import { recognizeImage } from '@/utils/ocrUtils'
+import { setPendingImages } from '@/utils/toolBridge'
 import { useToolboxStore } from '@/store'
 
 const store = useToolboxStore()
@@ -491,6 +492,7 @@ const handleClearOcrResult = () => {
 
 const handleJumpToOcr = () => {
   if (imageBlobs.value.length === 0) return
+  setPendingImages(imageBlobs.value)
   store.activeTool = 'ocr'
 }
 
