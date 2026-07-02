@@ -133,7 +133,7 @@ const openFind = () => {
   if (view.value) {
     openSearchPanel(view.value)
     // 聚焦查找输入框
-    const inputs = view.value.dom.querySelectorAll('.cm-panel input.cm-textfield')
+    const inputs = view.value.dom.querySelectorAll<HTMLInputElement>('.cm-panel input.cm-textfield')
     if (inputs.length > 0) {
       inputs[0].focus()
       inputs[0].select()
@@ -149,11 +149,11 @@ const openReplace = () => {
   const panel = view.value.dom.querySelector('.cm-panel')
   if (panel) {
     // 显示隐藏的替换区域
-    panel.querySelectorAll('.cm-replace-section').forEach((el) => {
-      (el as HTMLElement).style.display = ''
+    panel.querySelectorAll<HTMLElement>('.cm-replace-section').forEach((el) => {
+      el.style.display = ''
     })
     // 聚焦替换输入框
-    const inputs = panel.querySelectorAll('input.cm-textfield')
+    const inputs = panel.querySelectorAll<HTMLInputElement>('input.cm-textfield')
     if (inputs.length >= 2) {
       inputs[1].focus()
       inputs[1].select()
