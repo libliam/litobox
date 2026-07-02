@@ -12,11 +12,23 @@ export interface ToolboxConfig {
 }
 
 export interface HistoryRecord {
+  id?: number
   tool: string
   action: string
   timestamp: string
   inputPreview: string
   outputPreview: string
+  inputFull?: string
+  outputFull?: string
+  options?: Record<string, any>
+}
+
+export interface HistoryRestoreState {
+  tool: string
+  input: string
+  output: string
+  options: Record<string, any>
+  timestamp: string
 }
 
 export interface ToolItem {
@@ -38,6 +50,7 @@ export const TOOL_LIST: ToolItem[] = [
   { id: 'diff', name: '文本对比', icon: '≠', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/><path d="M9 3v18M15 3v18"/></svg>`, description: '文本/代码对比，支持行级和字符级差异高亮', keywords: ['对比', 'diff', '差异', '代码对比'], category: 'text' },
   { id: 'dedup', name: '文本去重', icon: '≡', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h12M4 18h8"/><circle cx="20" cy="12" r="1" fill="currentColor"/><circle cx="16" cy="18" r="1" fill="currentColor"/></svg>`, description: '按行去重，支持首次/末次保留', keywords: ['去重', '重复', 'dedup', '清理'], category: 'text' },
   { id: 'regex', name: '正则测试', icon: '.*', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M8 12h8"/><path d="M12 8v8"/></svg>`, description: '正则表达式测试、匹配、替换', keywords: ['正则', 'regex', '匹配', '替换'], category: 'text' },
+  { id: 'note', name: '文本编辑器', icon: '📝', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>`, description: '草稿本/便签，支持语法高亮、查找替换、自动保存', keywords: ['文本编辑器', '草稿', '笔记', 'notepad'], category: 'text' },
   { id: 'encode', name: '编码工具', icon: 'En', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/><path d="M16 16l-2-4-2 4"/></svg>`, description: 'Base64、URL、HTML实体、Unicode编解码', keywords: ['编码', 'base64', 'url', 'unicode'], category: 'dev' },
   { id: 'hash', name: '哈希计算', icon: '#', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16M4 15h16"/><path d="M10 3l-2 18M16 3l-2 18"/></svg>`, description: 'MD5/SHA-1/SHA-256/SHA-512哈希计算', keywords: ['hash', 'md5', 'sha', '哈希', '摘要'], category: 'dev' },
   { id: 'jwt', name: 'JWT解析', icon: 'JWT', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>`, description: '解析 JWT token，查看 Header/Payload', keywords: ['jwt', 'token', '解析', '认证'], category: 'dev' },
@@ -87,6 +100,25 @@ export const useToolboxStore = defineStore('toolbox', () => {
   const history = ref<HistoryRecord[]>([])
   const recentTools = ref<string[]>([])
 
+  const pendingHistoryRestore = ref<HistoryRestoreState | null>(null)
+  let restoreTimeout: ReturnType<typeof setTimeout> | null = null
+
+  const activeTool = ref('home')
+
+  const triggerHistoryRestore = (data: HistoryRestoreState) => {
+    if (restoreTimeout) clearTimeout(restoreTimeout)
+    pendingHistoryRestore.value = data
+    // 30 秒未消费自动清除
+    restoreTimeout = setTimeout(() => {
+      pendingHistoryRestore.value = null
+    }, 30000)
+  }
+
+  const clearHistoryRestore = () => {
+    if (restoreTimeout) clearTimeout(restoreTimeout)
+    pendingHistoryRestore.value = null
+  }
+
   // 从 SQLite 加载配置
   const loadConfigFromDB = async () => {
     try {
@@ -105,6 +137,7 @@ export const useToolboxStore = defineStore('toolbox', () => {
     try {
       const records = await db.getHistory(MAX_HISTORY, 0)
       history.value = records.map(r => ({
+        id: r.id,
         tool: r.tool,
         action: r.action,
         timestamp: r.created_at || new Date().toISOString(),
@@ -146,19 +179,31 @@ export const useToolboxStore = defineStore('toolbox', () => {
       ...record,
       timestamp: new Date().toISOString()
     }
-    // 同步更新本地状态
-    history.value.unshift(newRecord)
-    if (history.value.length > MAX_HISTORY) {
-      history.value = history.value.slice(0, MAX_HISTORY)
-    }
     // 保存到 SQLite
     try {
-      await db.addHistory({
+      const id = await db.addHistory({
         tool: newRecord.tool,
         action: newRecord.action,
         input_preview: newRecord.inputPreview,
         output_preview: newRecord.outputPreview,
       })
+
+      // 如果有完整数据，写入 details 表
+      if (record.inputFull !== undefined || record.outputFull !== undefined || record.options) {
+        await db.addHistoryDetail({
+          history_id: id,
+          input_full: record.inputFull ?? null,
+          output_full: record.outputFull ?? null,
+          options_json: JSON.stringify(record.options || {}),
+        })
+      }
+
+      // 同步更新本地状态（带 id）
+      newRecord.id = id
+      history.value.unshift(newRecord)
+      if (history.value.length > MAX_HISTORY) {
+        history.value = history.value.slice(0, MAX_HISTORY)
+      }
     } catch (error) {
       console.error('保存历史失败:', error)
     }
@@ -203,6 +248,10 @@ export const useToolboxStore = defineStore('toolbox', () => {
     addHistory,
     clearHistory,
     addRecentTool,
-    toggleFavorite
+    toggleFavorite,
+    pendingHistoryRestore,
+    triggerHistoryRestore,
+    clearHistoryRestore,
+    activeTool,
   }
 })

@@ -6,6 +6,7 @@ mod file_encoding;
 mod file_saver;
 mod js_executor;
 mod http_cmd;
+mod note_manager;
 
 use tauri::{Manager, Emitter};
 use tauri_plugin_dialog::{DialogExt, MessageDialogBuilder, MessageDialogButtons, MessageDialogKind};
@@ -28,6 +29,7 @@ fn main() {
             file_encoding::batch_replace_in_files,
             file_encoding::batch_convert_encoding,
             file_saver::save_file_with_dialog,
+            file_saver::save_text_with_dialog,
             js_executor::execute_js,
             http_cmd::send_http_request,
             // 数据库命令
@@ -37,6 +39,9 @@ fn main() {
             db::cmd_db_get_history,
             db::cmd_db_clear_history,
             db::cmd_db_search_history,
+            db::cmd_db_add_history_detail,
+            db::cmd_db_get_history_detail,
+            db::cmd_db_delete_history_details_for_history,
             db::cmd_db_list_workflows,
             db::cmd_db_save_workflow,
             db::cmd_db_delete_workflow,
@@ -70,6 +75,19 @@ fn main() {
             db::cmd_db_list_http_bookmarks,
             db::cmd_db_save_http_bookmark,
             db::cmd_db_delete_http_bookmark,
+            // Notes 命令
+            db::db_note_list,
+            db::db_note_create,
+            db::db_note_rename,
+            db::db_note_delete,
+            db::db_note_move,
+            db::db_note_ensure_draft,
+            db::db_note_get_last_opened,
+            db::db_note_set_last_opened,
+            db::open_notes_folder,
+            // Note manager 命令
+            note_manager::note_read,
+            note_manager::note_write,
             db::cmd_db_register_shortcuts,
         ])
         .setup(|app| {
