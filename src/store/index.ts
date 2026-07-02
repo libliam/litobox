@@ -88,7 +88,7 @@ export const useToolboxStore = defineStore('toolbox', () => {
     jsonIndent: 2,
     hotkey: 'Ctrl+Alt+T',
     lastTool: 'home',
-    favorites: ['json', 'string', 'encode'],
+    favorites: ['note', 'json', 'string', 'encode'],
     shortcuts: {
       json: 'CmdOrCtrl+Alt+J',
       string: 'CmdOrCtrl+Alt+S',
