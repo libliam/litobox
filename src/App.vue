@@ -40,6 +40,7 @@
         <HistoryView v-else-if="activeTool === 'history'" />
         <WorkflowView v-else-if="activeTool === 'workflow'" />
         <NoteEditor v-else-if="activeTool === 'note'" />
+        <CalculatorTool v-else-if="activeTool === 'calculator'" />
       </main>
       
       <div class="app-footer">
@@ -91,6 +92,7 @@ import HttpTool from '@/views/HttpTool.vue'
 import HistoryView from '@/views/HistoryView.vue'
 import WorkflowView from '@/views/WorkflowView.vue'
 import NoteEditor from '@/views/NoteEditor.vue'
+import CalculatorTool from '@/views/CalculatorTool.vue'
 
 const store = useToolboxStore()
 const { activeTool } = storeToRefs(store)
