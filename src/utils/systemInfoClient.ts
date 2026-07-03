@@ -78,9 +78,36 @@ export interface ProcessItem {
 }
 
 export interface HardwareInfo {
+  cpu: CpuSummary
+  memory: MemorySummary
+  disks: DiskSummary[]
   gpus: GpuInfo[]
   displays: DisplayInfo[]
   audio_devices: AudioDevice[]
+  motherboard: MotherboardInfo
+  battery: BatteryInfo | null
+  usb_devices: UsbDevice[]
+}
+
+export interface CpuSummary {
+  name: string
+  cores: number
+  threads: number
+  frequency_mhz: number
+}
+
+export interface MemorySummary {
+  total_gb: number
+  used_gb: number
+  available_gb: number
+}
+
+export interface DiskSummary {
+  name: string
+  model: string
+  size_gb: number
+  free_gb: number
+  fs_type: string
 }
 
 export interface GpuInfo {
@@ -99,10 +126,26 @@ export interface AudioDevice {
   status: string
 }
 
+export interface MotherboardInfo {
+  manufacturer: string
+  product: string
+  serial: string
+}
+
+export interface BatteryInfo {
+  status: string
+  charge_percent: number
+  estimated_time: string
+}
+
+export interface UsbDevice {
+  name: string
+  device_id: string
+}
+
 export interface SoftwareEnv {
   installed_software: SoftwareItem[]
   environment_variables: EnvVar[]
-  startup_items: StartupItem[]
 }
 
 export interface SoftwareItem {

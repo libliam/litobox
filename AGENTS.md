@@ -112,12 +112,47 @@ litobox/
 - 配置数据持久化到localStorage
 - 操作历史最多保留10条
 
-## SQLite 与数据持久化
+### 通用注意事项
+- **禁止添加网络请求相关代码**
+- **禁止引入广告/推荐内容**
+- 大文本处理使用虚拟滚动
+- 页面销毁时清理监听器和缓存
+- 打包时不生成安装包 — `bundle.targets` 保持为空数组
+- 耗时操作必须显示加载提示 — 使用 `ElLoading.service()` + `finally` 确保关闭
 
+## 后端开发指南
+
+### SQLite 数据库
 - 数据库路径：`%APPDATA%\com.dev.toolbox\litobox.db`
 - 存储内容：工作流、变量池、操作历史、代码片段、配置
 - 所有数据库操作通过 `src-tauri/src/db.rs` 暴露，使用 `with_conn()` 确保线程安全
-- Tauri 命令参数使用 camelCase，前端传参必须匹配
+
+### Tauri 命令规范
+- 命令参数使用 camelCase，前端传参必须匹配
+- Rust 函数参数为 snake_case（如 `note_type`）时，必须在 `#[tauri::command]` 上添加 `rename_all = "snake_case"`
+- boa_engine API 使用注意 `unsafe` 块和引用链式调用
+- 多线程日志使用 `Arc<Mutex<Vec<LogEntry>>>` 安全共享
+
+### 子进程沙箱避坑（PowerShell / reg）
+Tauri 2.x 子进程（`Command::new("powershell")` / `Command::new("reg")`）受沙箱限制：
+
+**禁止的操作**：
+- **PowerShell `$_` 变量**：`Where-Object { $_.Property -eq 'value' }` 中的 `$_` 被沙箱剥离
+- **PowerShell `Get-NetAdapter` / `Get-NetIPAddress`**：在子进程中返回空数据
+- **PowerShell `Get-ItemProperty` 多路径逗号分隔**：无法解析，需拆分为两次调用
+
+**推荐的替代方案**：
+1. **`Where-Object` 用属性名直写语法**：`Where-Object { $_.Status -eq 'Up' }` → `Where-Object Status -eq 'Up'`
+2. **WMI 查询用 `Get-CimInstance -Filter`**：不需要 `$_`
+3. **注册表查询用 `reg query`**：通过 `Command::new("reg")` 直接读取，绕过 PowerShell
+4. **中文编码处理**：`reg query` 输出用 `encoding_rs::GBK.decode()` 解码，不用 `String::from_utf8_lossy()`
+5. **获取全部数据在 Rust 侧过滤**：`reg query /s`（不加 `/f`）导出全部，Rust 里按字段过滤
+
+### 避坑指南
+1. **SQLite NULL 比较必须用 IS 而非 =**：`WHERE parent_id = ?` 在参数为 NULL 时永远返回空，必须用 `WHERE parent_id IS ?` 或拆分为 `IS NULL` / `= ?` 两种情况
+2. **with_conn 内禁止嵌套调用其他 with_conn 函数**：会导致死锁（应用卡死），应在当前连接上直接执行 SQL
+3. **do_note_create 必须实际写盘**：仅生成路径并存入数据库不够，必须调用 `std::fs::File::create(&path)` 创建空文件
+4. **Rust 后端修改后必须重启 Tauri 开发服务器**：`cargo check` 通过不代表热更新生效，必须 `Ctrl+C` 停止后重新 `npm run tauri dev`
 
 ## 工作流与变量池集成
 
@@ -131,43 +166,7 @@ litobox/
 - 输入源支持：执行输入、上一步输出、手动输入、变量池
 - 执行完成后可选择将结果保存到变量池
 
-## Tauri 后端注意事项
-- 参数名 camelCase 匹配
-- boa_engine API 使用注意 `unsafe` 块和引用链式调用
-- 多线程日志使用 `Arc<Mutex<Vec<LogEntry>>>` 安全共享
-
-## 性能要求
-
-- 启动时间 ≤ 1s
-- 操作响应 ≤ 100ms
-- 空闲内存 ≤ 50MB
-- 大文本(10w字符)处理无卡顿
-- 打包体积: 便携版 ≤ 50MB
-
 ## 安全要求
-
 - 纯本地离线运行，无网络请求
 - 仅保留必要权限：剪贴板、窗口控制、全局热键、本地存储
 - 所有数据本地存储，不上传
-
-## 注意事项
-
-1. **禁止添加网络请求相关代码**
-2. **禁止引入广告/推荐内容**
-3. **大文本处理使用虚拟滚动**
-4. **页面销毁时清理监听器和缓存**
-5. **所有工具函数使用纯函数**
-6. **遵循Tauri安全最佳实践**
-7. **新增功能页面必须遵循科技风UI规范**
-8. **禁止硬编码颜色值**
-9. **新增Vue页面必须基于模板创建**
-10. **打包时不生成安装包** — `bundle.targets` 保持为空数组
-11. **耗时操作必须显示加载提示** — 使用 `ElLoading.service()` + `finally` 确保关闭
-
-### SQLite 与 Tauri 后端避坑指南
-
-12. **SQLite NULL 比较必须用 IS 而非 =**：`WHERE parent_id = ?` 在参数为 NULL 时永远返回空（NULL = NULL → NULL），必须用 `WHERE parent_id IS ?` 或拆分为 `IS NULL` / `= ?` 两种情况
-13. **Tauri v2 命令参数默认 camelCase**：Rust 函数参数为 snake_case（如 `note_type`）时，必须在 `#[tauri::command]` 上添加 `rename_all = "snake_case"`，否则前端传参报 "missing required key"
-14. **with_conn 内禁止嵌套调用其他 with_conn 函数**：`with_conn` 使用 Mutex 保护数据库连接，在闭包内调用 `do_note_get_by_id` / `do_note_list` 等也使用 `with_conn` 的函数会导致死锁（应用卡死）。应在当前连接上直接执行 SQL 查询
-15. **do_note_create 创建文件时必须实际写入磁盘**：仅生成路径并存入数据库不够，必须调用 `std::fs::File::create(&path)` 创建空文件，否则前端读取时文件不存在
-16. **Rust 后端修改后必须重启 Tauri 开发服务器**：`cargo check` 通过不代表热更新生效，必须 `Ctrl+C` 停止后重新 `npm run tauri dev`

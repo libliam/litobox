@@ -15,6 +15,47 @@
     </div>
 
     <template v-if="data">
+      <!-- CPU -->
+      <div class="tool-card">
+        <div class="card-header"><span class="card-title">CPU</span></div>
+        <div class="card-body">
+          <div class="kv-grid">
+            <div class="kv-item"><span class="kv-label">名称</span><span class="kv-value">{{ data.cpu.name || '—' }}</span></div>
+            <div class="kv-item"><span class="kv-label">核心 / 线程</span><span class="kv-value">{{ data.cpu.cores }} 核 / {{ data.cpu.threads }} 线程</span></div>
+            <div class="kv-item"><span class="kv-label">最大频率</span><span class="kv-value">{{ data.cpu.frequency_mhz > 0 ? data.cpu.frequency_mhz + ' MHz' : '—' }}</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 内存 -->
+      <div class="tool-card">
+        <div class="card-header"><span class="card-title">内存</span></div>
+        <div class="card-body">
+          <div class="kv-grid">
+            <div class="kv-item"><span class="kv-label">总容量</span><span class="kv-value">{{ fmt(data.memory.total_gb) }} GB</span></div>
+            <div class="kv-item"><span class="kv-label">已使用</span><span class="kv-value">{{ fmt(data.memory.used_gb) }} GB</span></div>
+            <div class="kv-item"><span class="kv-label">可用</span><span class="kv-value">{{ fmt(data.memory.available_gb) }} GB</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 磁盘 -->
+      <div class="tool-card">
+        <div class="card-header"><span class="card-title">磁盘</span></div>
+        <div class="card-body">
+          <el-table :data="data.disks" border size="small" style="width: 100%">
+            <el-table-column prop="name" label="盘符" width="80" />
+            <el-table-column prop="model" label="型号" min-width="180" />
+            <el-table-column label="容量" width="120">
+              <template #default="{ row }">{{ fmt(row.size_gb) }} GB</template>
+            </el-table-column>
+            <el-table-column prop="fs_type" label="类型" width="100" />
+          </el-table>
+          <div v-if="data.disks.length === 0" class="empty-tip">未检测到磁盘</div>
+        </div>
+      </div>
+
+      <!-- GPU -->
       <div class="tool-card">
         <div class="card-header"><span class="card-title">GPU</span></div>
         <div class="card-body">
@@ -29,6 +70,7 @@
         </div>
       </div>
 
+      <!-- 显示器 -->
       <div class="tool-card">
         <div class="card-header"><span class="card-title">显示器</span></div>
         <div class="card-body">
@@ -42,6 +84,7 @@
         </div>
       </div>
 
+      <!-- 音频设备 -->
       <div class="tool-card">
         <div class="card-header"><span class="card-title">音频设备</span></div>
         <div class="card-body">
@@ -50,6 +93,42 @@
             <el-table-column prop="status" label="状态" width="100" />
           </el-table>
           <div v-if="data.audio_devices.length === 0" class="empty-tip">未检测到音频设备</div>
+        </div>
+      </div>
+
+      <!-- 主板 -->
+      <div class="tool-card">
+        <div class="card-header"><span class="card-title">主板</span></div>
+        <div class="card-body">
+          <div class="kv-grid">
+            <div class="kv-item"><span class="kv-label">制造商</span><span class="kv-value">{{ data.motherboard.manufacturer || '—' }}</span></div>
+            <div class="kv-item"><span class="kv-label">型号</span><span class="kv-value">{{ data.motherboard.product || '—' }}</span></div>
+            <div class="kv-item"><span class="kv-label">序列号</span><span class="kv-value">{{ data.motherboard.serial || '—' }}</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 电池 -->
+      <div v-if="data.battery" class="tool-card">
+        <div class="card-header"><span class="card-title">电池</span></div>
+        <div class="card-body">
+          <div class="kv-grid">
+            <div class="kv-item"><span class="kv-label">状态</span><span class="kv-value">{{ data.battery.status }}</span></div>
+            <div class="kv-item"><span class="kv-label">电量</span><span class="kv-value">{{ data.battery.charge_percent }}%</span></div>
+            <div class="kv-item"><span class="kv-label">预计续航</span><span class="kv-value">{{ data.battery.estimated_time }}</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- USB 设备 -->
+      <div class="tool-card">
+        <div class="card-header"><span class="card-title">USB 设备 ({{ data.usb_devices.length }})</span></div>
+        <div class="card-body">
+          <el-table :data="data.usb_devices" border size="small" max-height="300" style="width: 100%">
+            <el-table-column prop="name" label="名称" min-width="200" />
+            <el-table-column prop="device_id" label="设备 ID" min-width="200" />
+          </el-table>
+          <div v-if="data.usb_devices.length === 0" class="empty-tip">未检测到 USB 设备</div>
         </div>
       </div>
     </template>
@@ -68,6 +147,8 @@ const loading = ref(false)
 const error = ref('')
 const lastRefresh = ref('')
 
+const fmt = (n: number) => n.toFixed(1)
+
 const loadData = async () => {
   loading.value = true
   error.value = ''
@@ -79,7 +160,7 @@ const loadData = async () => {
       tool: 'hardwareInfo',
       action: '查看硬件外设',
       inputPreview: '',
-      outputPreview: `${data.value.gpus.length} GPU | ${data.value.displays.length} 显示器`,
+      outputPreview: `${data.value.gpus.length} GPU | ${data.value.disks.length} 磁盘`,
     })
   } catch (e) {
     error.value = String(e)
@@ -104,7 +185,7 @@ onMounted(() => { loadData() })
 .refresh-time { font-size: 12px; color: var(--text-muted); }
 .hw-section { padding: 8px 0; border-bottom: 1px solid var(--border-color); }
 .hw-section:last-child { border-bottom: none; }
-.kv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; }
+.kv-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px 24px; }
 .kv-item { display: flex; flex-direction: column; gap: 2px; }
 .kv-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
 .kv-value { font-size: 14px; color: var(--text-primary); word-break: break-all; }

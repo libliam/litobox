@@ -89,9 +89,39 @@ pub struct ProcessItem {
 
 #[derive(Serialize)]
 pub struct HardwareInfo {
+    pub cpu: CpuSummary,
+    pub memory: MemorySummary,
+    pub disks: Vec<DiskSummary>,
     pub gpus: Vec<GpuInfo>,
     pub displays: Vec<DisplayInfo>,
     pub audio_devices: Vec<AudioDevice>,
+    pub motherboard: MotherboardInfo,
+    pub battery: Option<BatteryInfo>,
+    pub usb_devices: Vec<UsbDevice>,
+}
+
+#[derive(Serialize)]
+pub struct CpuSummary {
+    pub name: String,
+    pub cores: usize,
+    pub threads: usize,
+    pub frequency_mhz: u64,
+}
+
+#[derive(Serialize)]
+pub struct MemorySummary {
+    pub total_gb: f64,
+    pub used_gb: f64,
+    pub available_gb: f64,
+}
+
+#[derive(Serialize)]
+pub struct DiskSummary {
+    pub name: String,
+    pub model: String,
+    pub size_gb: f64,
+    pub free_gb: f64,
+    pub fs_type: String,
 }
 
 #[derive(Serialize)]
@@ -114,13 +144,33 @@ pub struct AudioDevice {
 }
 
 #[derive(Serialize)]
+pub struct MotherboardInfo {
+    pub manufacturer: String,
+    pub product: String,
+    pub serial: String,
+}
+
+#[derive(Serialize)]
+pub struct BatteryInfo {
+    pub status: String,
+    pub charge_percent: u32,
+    pub estimated_time: String,
+}
+
+#[derive(Serialize)]
+pub struct UsbDevice {
+    pub name: String,
+    pub device_id: String,
+}
+
+#[derive(Serialize)]
 pub struct SoftwareEnv {
     pub installed_software: Vec<SoftwareItem>,
     pub environment_variables: Vec<EnvVar>,
     pub startup_items: Vec<StartupItem>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Default)]
 pub struct SoftwareItem {
     pub name: String,
     pub version: String,
@@ -175,6 +225,23 @@ fn run_powershell_json<T: for<'de> Deserialize<'de>>(script: &str) -> Result<Vec
     }
 }
 
+// ponytail: 解析 reg query 输出行，提取指定字段值
+// 格式: "    DisplayName    REG_SZ    Value"
+fn parse_reg_line(line: &str, field: &str) -> Option<String> {
+    let trimmed = line.trim();
+    if !trimmed.starts_with(field) {
+        return None;
+    }
+    // 跳过字段名和类型（REG_SZ/REG_EXPAND_SZ 等），取剩余部分作为值
+    let rest = &trimmed[field.len()..].trim();
+    // 跳过 REG_XXX 类型标识
+    let parts: Vec<&str> = rest.splitn(2, char::is_whitespace).collect();
+    if parts.len() < 2 {
+        return None;
+    }
+    Some(parts[1].trim().to_string())
+}
+
 // ============ 命令实现（后续 Task 填充） ============
 
 #[tauri::command]
@@ -195,7 +262,7 @@ pub fn get_system_info() -> Result<SystemInfo, String> {
     // CPU 信息
     let cpus = sys.cpus();
     let cpu = CpuInfo {
-        brand: cpus.first().map(|c| c.brand_name().to_string()).unwrap_or_default(),
+        brand: cpus.first().map(|c| c.brand().to_string()).unwrap_or_default(),
         core_count: sys.physical_core_count().unwrap_or(0),
         thread_count: cpus.len(),
         frequency_mhz: cpus.first().map(|c| c.frequency()).unwrap_or(0),
@@ -246,72 +313,59 @@ pub fn get_network_info() -> Result<NetworkInfo, String> {
 
     let hostname = System::host_name().unwrap_or_default();
 
-    // 网络接口（通过 PowerShell 获取 IP 和 MAC）
+    // ponytail: 沙箱剥离所有 $_ 导致 PowerShell 脚本块失效；Get-NetAdapter/Get-NetIPAddress 在沙箱中返回空
+    // 改用 Get-CimInstance -Filter（不需要 $_），直接获取启用的网络适配器配置
     #[derive(Deserialize)]
-    struct PsNetAdapter {
-        #[serde(rename = "InterfaceAlias")]
-        interface_alias: String,
-        #[serde(rename = "MacAddress")]
-        mac_address: String,
-        #[serde(rename = "Status")]
-        status: String,
-    }
-    #[derive(Deserialize)]
-    struct PsNetIpAddress {
-        #[serde(rename = "InterfaceAlias")]
-        interface_alias: String,
+    struct CimAdapter {
+        #[serde(rename = "Description")]
+        description: String,
+        #[serde(rename = "MACAddress")]
+        mac_address: Option<String>,
         #[serde(rename = "IPAddress")]
-        ip_address: String,
-        #[serde(rename = "AddressFamily")]
-        address_family: String,
+        ip_address: Vec<String>,
+        #[serde(rename = "DefaultIPGateway")]
+        default_ip_gateway: Vec<String>,
     }
 
-    let adapters: Vec<PsNetAdapter> = run_powershell_json(
-        "Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | Select-Object InterfaceAlias,MacAddress,Status | ConvertTo-Json"
+    let cim_adapters: Vec<CimAdapter> = run_powershell_json(
+        "Get-CimInstance -ClassName Win32_NetworkAdapterConfiguration -Filter 'IPEnabled=True' | Select-Object Description,MACAddress,IPAddress,DefaultIPGateway | ConvertTo-Json"
     ).unwrap_or_default();
 
-    let ip_addresses: Vec<PsNetIpAddress> = run_powershell_json(
-        "Get-NetIPAddress -AddressFamily IPv4,IPv6 | Where-Object { $_.PrefixOrigin -ne 'WellKnown' } | Select-Object InterfaceAlias,IPAddress,AddressFamily | ConvertTo-Json"
-    ).unwrap_or_default();
-
-    let interfaces: Vec<NetInterface> = adapters.iter().map(|adapter| {
-        let mut ipv4 = Vec::new();
-        let mut ipv6 = Vec::new();
-        for ip in &ip_addresses {
-            if ip.interface_alias == adapter.interface_alias {
-                if ip.address_family == "IPv4" {
-                    ipv4.push(ip.ip_address.clone());
-                } else if ip.address_family == "IPv6" {
-                    ipv6.push(ip.ip_address.clone());
+    let interfaces: Vec<NetInterface> = cim_adapters.into_iter()
+        .map(|adapter| {
+            let mut ipv4 = Vec::new();
+            let mut ipv6 = Vec::new();
+            for ip in &adapter.ip_address {
+                if ip.contains(':') {
+                    ipv6.push(ip.clone());
+                } else {
+                    ipv4.push(ip.clone());
                 }
             }
-        }
-        NetInterface {
-            name: adapter.interface_alias.clone(),
-            mac: adapter.mac_address.clone(),
-            ipv4,
-            ipv6,
-            status: adapter.status.clone(),
-        }
-    }).collect();
+            NetInterface {
+                name: adapter.description,
+                mac: adapter.mac_address.unwrap_or_default().replace(':', "-"),
+                ipv4,
+                ipv6,
+                status: "Up".to_string(),
+            }
+        })
+        .collect();
 
-    // 默认网关
+    // 默认网关 — ponytail: IPv4DefaultGateway 返回 WMI 对象字符串，改用 Get-NetRoute 直接取 NextHop
     #[derive(Deserialize)]
     struct PsGateway {
         #[serde(rename = "InterfaceAlias")]
         interface_alias: String,
-        #[serde(rename = "IPv4DefaultGateway")]
-        ipv4_default_gateway: Option<serde_json::Value>,
+        #[serde(rename = "NextHop")]
+        next_hop: String,
     }
     let gateways: Vec<PsGateway> = run_powershell_json(
-        "Get-NetIPConfiguration | Select-Object InterfaceAlias,IPv4DefaultGateway | ConvertTo-Json"
+        "Get-NetRoute -DestinationPrefix '0.0.0.0/0' -AddressFamily IPv4 | Select-Object InterfaceAlias,NextHop | ConvertTo-Json"
     ).unwrap_or_default();
     let default_gateway = gateways.iter()
-        .find_map(|g| {
-            g.ipv4_default_gateway.as_ref().and_then(|v| {
-                v.get("NextHop").and_then(|nh| nh.as_str()).map(|s| s.to_string())
-            })
-        })
+        .find(|g| !g.next_hop.is_empty() && g.next_hop != "0.0.0.0")
+        .map(|g| g.next_hop.clone())
         .unwrap_or_default();
 
     // DNS 服务器
@@ -339,10 +393,14 @@ pub fn get_network_info() -> Result<NetworkInfo, String> {
         .filter(|s| !s.is_empty());
 
     // 活动连接和监听端口
+    // ponytail: Get-NetTCPConnection.State 返回数字码，需要手动映射为字符串名称
+    // MibTcpState: 1=Closed, 2=Listen, 3=SynSent, 4=SynReceived, 5=Established,
+    //              6=FinWait1, 7=FinWait2, 8=CloseWait, 9=LastAck, 10=Closing,
+    //              11=TimeWait, 12=DeleteTCB
     #[derive(Deserialize)]
     struct PsTcpConnection {
         #[serde(rename = "State")]
-        state: String,
+        state: u32,
         #[serde(rename = "LocalAddress")]
         local_address: String,
         #[serde(rename = "LocalPort")]
@@ -355,12 +413,30 @@ pub fn get_network_info() -> Result<NetworkInfo, String> {
         owning_process: u32,
     }
 
+    fn tcp_state_name(code: u32) -> &'static str {
+        match code {
+            1 => "Closed",
+            2 => "Listen",
+            3 => "SynSent",
+            4 => "SynReceived",
+            5 => "Established",
+            6 => "FinWait1",
+            7 => "FinWait2",
+            8 => "CloseWait",
+            9 => "LastAck",
+            10 => "Closing",
+            11 => "TimeWait",
+            12 => "DeleteTCB",
+            _ => "Unknown",
+        }
+    }
+
     let tcp_connections: Vec<PsTcpConnection> = run_powershell_json(
         "Get-NetTCPConnection | Select-Object State,LocalAddress,LocalPort,RemoteAddress,RemotePort,OwningProcess | ConvertTo-Json"
     ).unwrap_or_default();
 
     let mut sys = System::new();
-    sys.refresh_processes();
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All);
 
     let mut active_connections = Vec::new();
     let mut listening_ports = Vec::new();
@@ -369,8 +445,10 @@ pub fn get_network_info() -> Result<NetworkInfo, String> {
         let local_addr = format!("{}:{}", conn.local_address, conn.local_port);
         let remote_addr = format!("{}:{}", conn.remote_address, conn.remote_port);
         let pid = conn.owning_process;
+        let state_name = tcp_state_name(conn.state);
 
-        if conn.state == "Listen" {
+        if conn.state == 2 {
+            // Listen
             let process_name = sys.process(sysinfo::Pid::from_u32(pid))
                 .map(|p| p.name().to_string_lossy().to_string())
                 .unwrap_or_default();
@@ -385,7 +463,7 @@ pub fn get_network_info() -> Result<NetworkInfo, String> {
                 protocol: "TCP".to_string(),
                 local_addr,
                 remote_addr,
-                state: conn.state.clone(),
+                state: state_name.to_string(),
                 pid,
             });
         }
@@ -408,7 +486,7 @@ pub fn get_process_list() -> Result<Vec<ProcessItem>, String> {
 
     let mut sys = System::new_all();
     std::thread::sleep(std::time::Duration::from_millis(200));
-    sys.refresh_processes();
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All);
 
     let mut processes: Vec<ProcessItem> = sys.processes().iter().map(|(pid, process)| {
         let status = match process.status() {
@@ -435,7 +513,82 @@ pub fn get_process_list() -> Result<Vec<ProcessItem>, String> {
 
 #[tauri::command]
 pub fn get_hardware_info() -> Result<HardwareInfo, String> {
-    // GPU 信息
+    // === CPU 信息 ===
+    #[derive(Deserialize)]
+    struct PsCpu {
+        #[serde(rename = "Name")]
+        name: Option<String>,
+        #[serde(rename = "NumberOfCores")]
+        number_of_cores: Option<u32>,
+        #[serde(rename = "NumberOfLogicalProcessors")]
+        number_of_logical_processors: Option<u32>,
+        #[serde(rename = "MaxClockSpeed")]
+        max_clock_speed: Option<u32>,
+    }
+    let cpus_raw: Vec<PsCpu> = run_powershell_json(
+        "Get-CimInstance Win32_Processor | Select-Object Name,NumberOfCores,NumberOfLogicalProcessors,MaxClockSpeed | ConvertTo-Json"
+    ).unwrap_or_default();
+    let cpu = cpus_raw.first().map(|c| CpuSummary {
+        name: c.name.clone().unwrap_or_default(),
+        cores: c.number_of_cores.unwrap_or(0) as usize,
+        threads: c.number_of_logical_processors.unwrap_or(0) as usize,
+        frequency_mhz: c.max_clock_speed.unwrap_or(0) as u64,
+    }).unwrap_or(CpuSummary {
+        name: String::new(), cores: 0, threads: 0, frequency_mhz: 0,
+    });
+
+    // === 内存信息 ===
+    #[derive(Deserialize)]
+    struct PsMemory {
+        #[serde(rename = "TotalPhysicalMemory")]
+        total_physical_memory: Option<u64>,
+    }
+    #[derive(Deserialize)]
+    struct PsOsMemory {
+        #[serde(rename = "FreePhysicalMemory")]
+        free_physical_memory: Option<u64>,
+    }
+    let mem_total: u64 = run_powershell_json::<PsMemory>(
+        "Get-CimInstance Win32_ComputerSystem | Select-Object TotalPhysicalMemory | ConvertTo-Json"
+    ).ok().and_then(|v| v.first().and_then(|m| m.total_physical_memory)).unwrap_or(0);
+    let mem_free: u64 = run_powershell_json::<PsOsMemory>(
+        "Get-CimInstance Win32_OperatingSystem | Select-Object FreePhysicalMemory | ConvertTo-Json"
+    ).ok().and_then(|v| v.first().and_then(|m| m.free_physical_memory)).unwrap_or(0) * 1024;
+    let mem_used = mem_total.saturating_sub(mem_free);
+    let gb = 1024.0 * 1024.0 * 1024.0;
+    let memory = MemorySummary {
+        total_gb: mem_total as f64 / gb,
+        used_gb: mem_used as f64 / gb,
+        available_gb: mem_free as f64 / gb,
+    };
+
+    // === 磁盘信息 ===
+    #[derive(Deserialize)]
+    struct PsDisk {
+        #[serde(rename = "DeviceID")]
+        device_id: Option<String>,
+        #[serde(rename = "Model")]
+        model: Option<String>,
+        #[serde(rename = "Size")]
+        size: Option<u64>,
+        #[serde(rename = "MediaType")]
+        media_type: Option<String>,
+    }
+    let disks_raw: Vec<PsDisk> = run_powershell_json(
+        "Get-CimInstance Win32_DiskDrive | Select-Object DeviceID,Model,Size,MediaType | ConvertTo-Json"
+    ).unwrap_or_default();
+    let disks: Vec<DiskSummary> = disks_raw.into_iter().map(|d| {
+        let size_gb = d.size.unwrap_or(0) as f64 / 1024.0 / 1024.0 / 1024.0;
+        DiskSummary {
+            name: d.device_id.unwrap_or_default(),
+            model: d.model.unwrap_or_default(),
+            size_gb,
+            free_gb: 0.0,
+            fs_type: d.media_type.unwrap_or_default(),
+        }
+    }).collect();
+
+    // === GPU 信息 ===
     #[derive(Deserialize)]
     struct PsGpu {
         #[serde(rename = "Name")]
@@ -458,7 +611,7 @@ pub fn get_hardware_info() -> Result<HardwareInfo, String> {
         }
     }).collect();
 
-    // 显示器信息
+    // === 显示器信息 ===
     #[derive(Deserialize)]
     struct PsMonitor {
         #[serde(rename = "Name")]
@@ -482,7 +635,7 @@ pub fn get_hardware_info() -> Result<HardwareInfo, String> {
         }
     }).collect();
 
-    // 音频设备
+    // === 音频设备 ===
     #[derive(Deserialize)]
     struct PsAudio {
         #[serde(rename = "Name")]
@@ -498,10 +651,78 @@ pub fn get_hardware_info() -> Result<HardwareInfo, String> {
         status: a.status.clone().unwrap_or_default(),
     }).collect();
 
+    // === 主板信息 ===
+    #[derive(Deserialize)]
+    struct PsMotherboard {
+        #[serde(rename = "Manufacturer")]
+        manufacturer: Option<String>,
+        #[serde(rename = "Product")]
+        product: Option<String>,
+        #[serde(rename = "SerialNumber")]
+        serial_number: Option<String>,
+    }
+    let mb_raw: Vec<PsMotherboard> = run_powershell_json(
+        "Get-CimInstance Win32_BaseBoard | Select-Object Manufacturer,Product,SerialNumber | ConvertTo-Json"
+    ).unwrap_or_default();
+    let motherboard = mb_raw.first().map(|m| MotherboardInfo {
+        manufacturer: m.manufacturer.clone().unwrap_or_default(),
+        product: m.product.clone().unwrap_or_default(),
+        serial: m.serial_number.clone().unwrap_or_default(),
+    }).unwrap_or(MotherboardInfo {
+        manufacturer: String::new(), product: String::new(), serial: String::new(),
+    });
+
+    // === 电池信息（仅笔记本有） ===
+    #[derive(Deserialize)]
+    struct PsBattery {
+        #[serde(rename = "Status")]
+        status: Option<String>,
+        #[serde(rename = "EstimatedChargeRemaining")]
+        estimated_charge_remaining: Option<u32>,
+        #[serde(rename = "EstimatedRunTime")]
+        estimated_run_time: Option<u32>,
+    }
+    let battery_raw: Vec<PsBattery> = run_powershell_json(
+        "Get-CimInstance Win32_Battery | Select-Object Status,EstimatedChargeRemaining,EstimatedRunTime | ConvertTo-Json"
+    ).unwrap_or_default();
+    let battery = battery_raw.first().map(|b| {
+        let time_str = match b.estimated_run_time {
+            Some(mins) if mins > 0 => format!("{} 分钟", mins),
+            _ => "未知".to_string(),
+        };
+        BatteryInfo {
+            status: b.status.clone().unwrap_or_default(),
+            charge_percent: b.estimated_charge_remaining.unwrap_or(0),
+            estimated_time: time_str,
+        }
+    });
+
+    // === USB 设备 ===
+    #[derive(Deserialize)]
+    struct PsUsb {
+        #[serde(rename = "Name")]
+        name: Option<String>,
+        #[serde(rename = "DeviceID")]
+        device_id: Option<String>,
+    }
+    let usb_raw: Vec<PsUsb> = run_powershell_json(
+        "Get-CimInstance Win32_USBHub | Select-Object Name,DeviceID | ConvertTo-Json"
+    ).unwrap_or_default();
+    let usb_devices: Vec<UsbDevice> = usb_raw.into_iter().map(|u| UsbDevice {
+        name: u.name.unwrap_or_default(),
+        device_id: u.device_id.unwrap_or_default(),
+    }).collect();
+
     Ok(HardwareInfo {
+        cpu,
+        memory,
+        disks,
         gpus,
         displays,
         audio_devices,
+        motherboard,
+        battery,
+        usb_devices,
     })
 }
 
@@ -519,19 +740,41 @@ pub fn get_software_env() -> Result<SoftwareEnv, String> {
         #[serde(rename = "InstallDate")]
         install_date: Option<String>,
     }
-    let software_raw: Vec<PsSoftware> = run_powershell_json(
-        r#"$paths = @(
-            'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
-            'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
-        )
-        Get-ItemProperty $paths | Where-Object { $_.DisplayName } | Select-Object DisplayName,DisplayVersion,Publisher,InstallDate | ConvertTo-Json"#
-    ).unwrap_or_default();
-    let installed_software: Vec<SoftwareItem> = software_raw.iter().map(|s| SoftwareItem {
-        name: s.display_name.clone().unwrap_or_default(),
-        version: s.display_version.clone().unwrap_or_default(),
-        publisher: s.publisher.clone().unwrap_or_default(),
-        install_date: s.install_date.clone().unwrap_or_default(),
-    }).collect();
+    // ponytail: PowerShell 注册表访问在子进程中可能失败，改用 reg query 直接读取注册表
+    // reg query 输出为 OEM 编码（中文 Windows 为 CP936），需用 encoding_rs 解码
+    let mut installed_software: Vec<SoftwareItem> = Vec::new();
+    for reg_path in &["HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall", "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall"] {
+        let output = Command::new("reg")
+            .args(["query", reg_path, "/s"])
+            .output();
+        if let Ok(out) = output {
+            // ponytail: OEM 编码解码，中文 Windows 为 CP936
+            let (text, _, _) = encoding_rs::GBK.decode(&out.stdout);
+            let mut current = SoftwareItem::default();
+            let mut has_display_name = false;
+            for line in text.lines() {
+                if line.starts_with("HKEY_") {
+                    if has_display_name {
+                        installed_software.push(current);
+                    }
+                    current = SoftwareItem::default();
+                    has_display_name = false;
+                } else if let Some(val) = parse_reg_line(line, "DisplayName") {
+                    current.name = val;
+                    has_display_name = true;
+                } else if let Some(val) = parse_reg_line(line, "DisplayVersion") {
+                    current.version = val;
+                } else if let Some(val) = parse_reg_line(line, "Publisher") {
+                    current.publisher = val;
+                } else if let Some(val) = parse_reg_line(line, "InstallDate") {
+                    current.install_date = val;
+                }
+            }
+            if has_display_name {
+                installed_software.push(current);
+            }
+        }
+    }
 
     // 环境变量
     let environment_variables: Vec<EnvVar> = std::env::vars().map(|(key, value)| EnvVar { key, value }).collect();

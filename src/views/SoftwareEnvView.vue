@@ -48,18 +48,7 @@
           </div>
         </el-tab-pane>
 
-        <el-tab-pane :label="`启动项 (${data.startup_items.length})`" name="startup">
-          <div class="tool-card">
-            <div class="card-header"><span class="card-title">启动项</span></div>
-            <div class="card-body">
-              <el-table :data="data.startup_items" border size="small" max-height="500" style="width: 100%">
-                <el-table-column prop="name" label="名称" min-width="150" />
-                <el-table-column prop="command" label="命令" min-width="300" show-overflow-tooltip />
-                <el-table-column prop="location" label="位置" min-width="200" show-overflow-tooltip />
-              </el-table>
-            </div>
-          </div>
-        </el-tab-pane>
+
       </el-tabs>
     </template>
   </div>
