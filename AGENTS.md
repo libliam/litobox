@@ -119,6 +119,7 @@ litobox/
 - 页面销毁时清理监听器和缓存
 - 打包时不生成安装包 — `bundle.targets` 保持为空数组
 - 耗时操作必须显示加载提示 — 使用 `ElLoading.service()` + `finally` 确保关闭
+- **历史记录必须传 `inputFull` / `outputFull`** — `store.addHistory()` 调用时必须同时传入完整输入输出（`inputFull: 完整输入, outputFull: 完整输出`），否则操作历史页面的双击跳转功能无法还原数据。`inputPreview`/`outputPreview` 仅用于列表展示（截断50字符），`inputFull`/`outputFull` 用于详情还原
 
 ## 后端开发指南
 

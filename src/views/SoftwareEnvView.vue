@@ -95,6 +95,8 @@ const loadData = async () => {
       action: '查看软件环境',
       inputPreview: '',
       outputPreview: `${data.value.installed_software.length} 软件 | ${data.value.environment_variables.length} 环境变量`,
+      inputFull: '',
+      outputFull: JSON.stringify(data.value, null, 2),
     })
   } catch (e) {
     error.value = String(e)

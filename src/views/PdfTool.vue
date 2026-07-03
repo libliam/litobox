@@ -412,7 +412,9 @@ const handlePdfToImages = async () => {
       tool: 'pdf',
       action: `PDF转图片 (${dpi.value}DPI)`,
       inputPreview: pdfFile.value.name.slice(0, 50),
-      outputPreview: `${imageBlobs.value.length} 页`
+      outputPreview: `${imageBlobs.value.length} 页`,
+      inputFull: pdfFile.value.name,
+      outputFull: `${imageBlobs.value.length} 页`,
     })
   } catch (e: any) {
     error.value = e.message || '转换失败'
@@ -459,7 +461,9 @@ const handleOcrAll = async () => {
       tool: 'pdf',
       action: 'PDF转图片+OCR',
       inputPreview: pdfFile.value?.name.slice(0, 50) || '',
-      outputPreview: ocrFullText.value.slice(0, 50)
+      outputPreview: ocrFullText.value.slice(0, 50),
+      inputFull: pdfFile.value?.name || '',
+      outputFull: ocrFullText.value,
     })
   } catch (e: any) {
     error.value = `OCR 识别失败: ${e.message}`
@@ -543,7 +547,9 @@ const handleImagesToPdf = async () => {
       tool: 'pdf',
       action: '图片转PDF',
       inputPreview: `${imageFiles.value.length} 张图片`,
-      outputPreview: formatFileSize(generatedPdfBlob.value.size)
+      outputPreview: formatFileSize(generatedPdfBlob.value.size),
+      inputFull: imageFiles.value.map(f => f.name).join('\n'),
+      outputFull: formatFileSize(generatedPdfBlob.value.size),
     })
   } catch (e: any) {
     error.value = e.message || '生成失败'
@@ -601,7 +607,9 @@ const handleExtractText = async () => {
       tool: 'pdf',
       action: 'PDF文本提取',
       inputPreview: extractPdfFile.value.name.slice(0, 50),
-      outputPreview: extractedText.value.slice(0, 50)
+      outputPreview: extractedText.value.slice(0, 50),
+      inputFull: extractPdfFile.value.name,
+      outputFull: extractedText.value,
     })
   } catch (e: any) {
     error.value = e.message || '提取失败'
@@ -677,7 +685,9 @@ const handleQuickMerge = async (range: string) => {
       tool: 'pdf',
       action: `PDF合并 (${range})`,
       inputPreview: `${mergePdfFiles.value.length} 个文件`,
-      outputPreview: formatFileSize(mergedPdfBlob.value.size)
+      outputPreview: formatFileSize(mergedPdfBlob.value.size),
+      inputFull: mergePdfFiles.value.map(f => f.name).join('\n'),
+      outputFull: formatFileSize(mergedPdfBlob.value.size),
     })
   } catch (e: any) {
     error.value = e.message || '合并失败'
@@ -701,7 +711,9 @@ const handleCustomMerge = async () => {
       tool: 'pdf',
       action: 'PDF自定义合并',
       inputPreview: `${mergePdfFiles.value.length} 个文件`,
-      outputPreview: formatFileSize(mergedPdfBlob.value.size)
+      outputPreview: formatFileSize(mergedPdfBlob.value.size),
+      inputFull: mergePdfFiles.value.map((f, i) => `${f.name} [${mergePageRanges.value[i]}]`).join('\n'),
+      outputFull: formatFileSize(mergedPdfBlob.value.size),
     })
   } catch (e: any) {
     error.value = e.message || '合并失败'

@@ -279,7 +279,9 @@ const handleCalculate = () => {
       tool: 'calculator',
       action: '表达式计算',
       inputPreview: expr,
-      outputPreview: String(calcResult.value)
+      outputPreview: String(calcResult.value),
+      inputFull: expr,
+      outputFull: String(calcResult.value),
     })
   } catch (e: any) {
     calcResult.value = null
@@ -474,7 +476,9 @@ const handleDateDiff = () => {
     tool: 'calculator',
     action: '日期差计算',
     inputPreview: `${dateStart.value} ~ ${dateEnd.value}`,
-    outputPreview: `${days} 天`
+    outputPreview: `${days} 天`,
+    inputFull: `${dateStart.value} ~ ${dateEnd.value}`,
+    outputFull: `${days} 天 (${weeks} 周, ${months} 月)`,
   })
 }
 
@@ -502,7 +506,9 @@ const handleDateAdd = () => {
     tool: 'calculator',
     action: '日期加减',
     inputPreview: `${dateAddStart.value} ${dateAddOp.value} ${dateAddNum.value}${dateAddUnit.value}`,
-    outputPreview: dateAddResult.value
+    outputPreview: dateAddResult.value,
+    inputFull: `${dateAddStart.value} ${dateAddOp.value} ${dateAddNum.value}${dateAddUnit.value}`,
+    outputFull: dateAddResult.value,
   })
 }
 

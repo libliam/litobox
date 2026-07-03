@@ -285,7 +285,7 @@ const handleSave = async () => {
       })
       isEditing.value = false
       ElMessage.success('保存成功')
-      store.addHistory({ tool: 'snippet', action: 'save', inputPreview: snippet.title, outputPreview: snippet.lang })
+      store.addHistory({ tool: 'snippet', action: 'save', inputPreview: snippet.title, outputPreview: snippet.lang, inputFull: snippet.title, outputFull: snippet.content })
     } catch {
       ElMessage.error('保存失败')
     }
@@ -373,7 +373,7 @@ const handleFileImport = async (e: Event) => {
         }
       }
       ElMessage.success(`成功导入 ${added} 个片段`)
-      store.addHistory({ tool: 'snippet', action: 'import', inputPreview: `${added} snippets`, outputPreview: 'imported' })
+      store.addHistory({ tool: 'snippet', action: 'import', inputPreview: `${added} snippets`, outputPreview: 'imported', inputFull: file.name, outputFull: `${added} snippets imported` })
     } catch {
       ElMessage.error('导入失败，文件格式错误')
     }

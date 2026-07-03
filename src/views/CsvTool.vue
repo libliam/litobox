@@ -146,6 +146,8 @@ const handleParse = () => {
       action: 'CSV解析',
       inputPreview: input.value.slice(0, 50),
       outputPreview: `${csvData.value.rows.length} 行`,
+      inputFull: input.value,
+      outputFull: csvData.value.rows.map(r => r.join(',')).join('\n'),
     })
   } catch (e: any) {
     ElMessage.error('解析失败: ' + e.message)

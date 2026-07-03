@@ -151,7 +151,9 @@ const handleParse = () => {
     tool: 'jwt',
     action: 'JWT解析',
     inputPreview: token.slice(0, 30) + '...',
-    outputPreview: JSON.stringify(payload.value).slice(0, 50)
+    outputPreview: JSON.stringify(payload.value).slice(0, 50),
+    inputFull: token,
+    outputFull: JSON.stringify(payload.value, null, 2),
   })
   ElMessage.success('解析成功')
 }

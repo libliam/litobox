@@ -469,7 +469,7 @@ const handleTsToDatetime = () => {
     return
   }
   tsResult.value = date.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
-  store.addHistory({ tool: 'time', action: 'timestamp-to-date', inputPreview: tsInput.value, outputPreview: tsResult.value })
+  store.addHistory({ tool: 'time', action: 'timestamp-to-date', inputPreview: tsInput.value, outputPreview: tsResult.value, inputFull: tsInput.value, outputFull: tsResult.value })
   ElMessage.success('转换完成')
 }
 
@@ -484,7 +484,7 @@ const handleDatetimeToTs = () => {
   dtError.value = ''
   dtResultMs.value = String(date.getTime())
   dtResultS.value = String(Math.floor(date.getTime() / 1000))
-  store.addHistory({ tool: 'time', action: 'date-to-timestamp', inputPreview: dtInput.value, outputPreview: dtResultMs.value })
+  store.addHistory({ tool: 'time', action: 'date-to-timestamp', inputPreview: dtInput.value, outputPreview: dtResultMs.value, inputFull: dtInput.value, outputFull: `ms: ${dtResultMs.value}\ns: ${dtResultS.value}` })
   ElMessage.success('转换完成')
 }
 
@@ -499,7 +499,7 @@ const handleTimezoneConvert = () => {
   const utc = date.getTime() - fromOffset
   const target = new Date(utc + toOffset)
   tzResult.value = target.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
-  store.addHistory({ tool: 'time', action: 'timezone', inputPreview: tzDatetime.value, outputPreview: tzResult.value })
+  store.addHistory({ tool: 'time', action: 'timezone', inputPreview: tzDatetime.value, outputPreview: tzResult.value, inputFull: `${tzDatetime.value} (UTC${tzFrom.value})`, outputFull: tzResult.value })
   ElMessage.success('转换完成')
 }
 
@@ -529,7 +529,7 @@ const handleTimeDiff = () => {
     seconds: totalSeconds,
     detail: `${totalDays}天 ${remainingHours}小时 ${remainingMinutes}分钟 ${remainingSeconds}秒`
   }
-  store.addHistory({ tool: 'time', action: 'diff', inputPreview: `${diffStart.value} ~ ${diffEnd.value}`, outputPreview: diffResult.value.detail })
+  store.addHistory({ tool: 'time', action: 'diff', inputPreview: `${diffStart.value} ~ ${diffEnd.value}`, outputPreview: diffResult.value.detail, inputFull: `${diffStart.value} ~ ${diffEnd.value}`, outputFull: diffResult.value.detail })
   ElMessage.success('计算完成')
 }
 
@@ -661,7 +661,7 @@ const handleRelativeTime = () => {
 
   relativeError.value = ''
   relativeResult.value = getRelativeTime(date)
-  store.addHistory({ tool: 'time', action: 'relative', inputPreview: input, outputPreview: relativeResult.value.text })
+  store.addHistory({ tool: 'time', action: 'relative', inputPreview: input, outputPreview: relativeResult.value.text, inputFull: input, outputFull: relativeResult.value.text })
   ElMessage.success('转换完成')
 }
 

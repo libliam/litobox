@@ -706,7 +706,9 @@ const processImage = async (blob: Blob | File) => {
       tool: 'ocr',
       action: '文字识别',
       inputPreview: '[图片]',
-      outputPreview: text.substring(0, 100)
+      outputPreview: text.substring(0, 100),
+      inputFull: '[图片]',
+      outputFull: text,
     })
 
     ElMessage.success('识别完成')
@@ -756,7 +758,9 @@ const handleBatchRecognize = async () => {
         tool: 'ocr',
         action: `批量识别(${successImages.length}张)`,
         inputPreview: `[${successImages.length}张图片]`,
-        outputPreview: successImages[0].result?.substring(0, 100) || ''
+        outputPreview: successImages[0].result?.substring(0, 100) || '',
+        inputFull: `[${successImages.length}张图片]`,
+        outputFull: successImages.map(i => i.result || '').join('\n\n---\n\n'),
       })
     }
 
@@ -943,7 +947,9 @@ const processTableImage = async (blob: Blob | File) => {
       tool: 'ocr',
       action: '表格识别',
       inputPreview: '[表格图片]',
-      outputPreview: tableCsvText.value.substring(0, 100)
+      outputPreview: tableCsvText.value.substring(0, 100),
+      inputFull: '[表格图片]',
+      outputFull: tableCsvText.value,
     })
 
     ElMessage.success(`表格识别完成，${table.length}行${table[0]?.length || 0}列`)
@@ -1025,7 +1031,9 @@ const processMarkdownImage = async (blob: Blob | File) => {
       tool: 'ocr',
       action: 'Markdown转换',
       inputPreview: '[Markdown图片]',
-      outputPreview: mdText.substring(0, 100)
+      outputPreview: mdText.substring(0, 100),
+      inputFull: '[Markdown图片]',
+      outputFull: mdText,
     })
 
     ElMessage.success('Markdown转换完成')

@@ -109,7 +109,9 @@ const handleConvert = () => {
     tool: 'base',
     action: 'convert',
     inputPreview: `${inputValue.value} (base ${fromBase.value})`,
-    outputPreview: `DEC: ${result.decimal}`
+    outputPreview: `DEC: ${result.decimal}`,
+    inputFull: inputValue.value,
+    outputFull: `DEC: ${result.decimal}\nBIN: ${result.binary}\nOCT: ${result.octal}\nHEX: ${result.hexadecimal}`,
   })
 }
 

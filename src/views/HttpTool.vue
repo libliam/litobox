@@ -604,7 +604,9 @@ const handleSend = async () => {
       tool: 'http',
       action: `${method.value} ${url.value.slice(0, 50)}`,
       inputPreview: `${method.value} ${url.value.slice(0, 30)}`,
-      outputPreview: `${result.status} ${result.status_text}`
+      outputPreview: `${result.status} ${result.status_text}`,
+      inputFull: `${method.value} ${url.value}\nHeaders:\n${headers.value.map(h => `${h.key}: ${h.value}`).join('\n')}\nBody:\n${body.value}`,
+      outputFull: `${result.status} ${result.status_text}\n${result.body}`,
     })
 
     // 保存历史到 SQLite

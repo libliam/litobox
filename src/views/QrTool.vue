@@ -200,7 +200,7 @@ const handleGenerate = async () => {
       }
     })
     generateError.value = ''
-    store.addHistory({ tool: 'qr', action: 'generate', inputPreview: input.slice(0, 30), outputPreview: '二维码已生成' })
+    store.addHistory({ tool: 'qr', action: 'generate', inputPreview: input.slice(0, 30), outputPreview: '二维码已生成', inputFull: input, outputFull: qrDataUrl.value })
     ElMessage.success('二维码生成成功')
   } catch (e: any) {
     qrDataUrl.value = ''
@@ -271,7 +271,7 @@ const decodeQrFromImage = (dataUrl: string) => {
       tabState.decode.output = code.data
       tabState.decode.error = ''
       tabState.decode.isError = false
-      store.addHistory({ tool: 'qr', action: 'decode', inputPreview: '图片', outputPreview: code.data.slice(0, 30) })
+      store.addHistory({ tool: 'qr', action: 'decode', inputPreview: '图片', outputPreview: code.data.slice(0, 30), inputFull: '[图片]', outputFull: code.data })
       ElMessage.success('解析成功')
     } else {
       tabState.decode.output = ''

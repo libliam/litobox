@@ -93,6 +93,8 @@ const loadData = async () => {
       action: '查看网络信息',
       inputPreview: '',
       outputPreview: `${data.value.interfaces.length} 个接口 | ${data.value.listening_ports.length} 个监听端口`,
+      inputFull: '',
+      outputFull: JSON.stringify(data.value, null, 2),
     })
   } catch (e) {
     error.value = String(e)

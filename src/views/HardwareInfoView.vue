@@ -161,6 +161,8 @@ const loadData = async () => {
       action: '查看硬件外设',
       inputPreview: '',
       outputPreview: `${data.value.gpus.length} GPU | ${data.value.disks.length} 磁盘`,
+      inputFull: '',
+      outputFull: JSON.stringify(data.value, null, 2),
     })
   } catch (e) {
     error.value = String(e)

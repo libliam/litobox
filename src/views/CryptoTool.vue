@@ -345,7 +345,9 @@ const handleHash = () => {
     tool: 'crypto',
     action: 'hash',
     inputPreview: hashInput.value.slice(0, 50),
-    outputPreview: results.SHA256?.slice(0, 50) || ''
+    outputPreview: results.SHA256?.slice(0, 50) || '',
+    inputFull: hashInput.value,
+    outputFull: Object.entries(results).map(([k, v]) => `${k}: ${v}`).join('\n'),
   })
   ElMessage.success('计算完成')
 }
@@ -360,7 +362,9 @@ const handleHmac = () => {
     tool: 'crypto',
     action: 'hmac',
     inputPreview: hmacInput.value.slice(0, 50),
-    outputPreview: hmacResult.value.slice(0, 50)
+    outputPreview: hmacResult.value.slice(0, 50),
+    inputFull: hmacInput.value,
+    outputFull: hmacResult.value,
   })
   ElMessage.success('计算完成')
 }
@@ -382,7 +386,9 @@ const handleAesEncrypt = () => {
       tool: 'crypto',
       action: 'aes-encrypt',
       inputPreview: aesInput.value.slice(0, 50),
-      outputPreview: aesResult.value.slice(0, 50)
+      outputPreview: aesResult.value.slice(0, 50),
+      inputFull: aesInput.value,
+      outputFull: aesResult.value,
     })
     ElMessage.success('加密完成')
   } catch (e: any) {
@@ -408,7 +414,9 @@ const handleAesDecrypt = () => {
       tool: 'crypto',
       action: 'aes-decrypt',
       inputPreview: aesInput.value.slice(0, 50),
-      outputPreview: aesResult.value.slice(0, 50)
+      outputPreview: aesResult.value.slice(0, 50),
+      inputFull: aesInput.value,
+      outputFull: aesResult.value,
     })
     ElMessage.success('解密完成')
   }
@@ -424,7 +432,9 @@ const handleRsaEncrypt = () => {
     tool: 'crypto',
     action: 'rsa-encrypt',
     inputPreview: rsaInput.value.slice(0, 50),
-    outputPreview: rsaResult.value.slice(0, 50)
+    outputPreview: rsaResult.value.slice(0, 50),
+    inputFull: rsaInput.value,
+    outputFull: rsaResult.value,
   })
   ElMessage.success('加密完成')
 }

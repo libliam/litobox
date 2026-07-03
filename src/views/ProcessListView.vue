@@ -93,6 +93,8 @@ const loadData = async () => {
       action: '查看进程列表',
       inputPreview: '',
       outputPreview: `${data.value.length} 个进程`,
+      inputFull: '',
+      outputFull: data.value.map(p => `${p.name} (PID: ${p.pid})`).join('\n'),
     })
   } catch (e) {
     error.value = String(e)

@@ -114,6 +114,8 @@ const loadData = async () => {
       action: '查看系统信息',
       inputPreview: '',
       outputPreview: `${data.value.cpu.brand} | ${formatBytes(data.value.memory.total_bytes)}`,
+      inputFull: '',
+      outputFull: JSON.stringify(data.value, null, 2),
     })
   } catch (e) {
     error.value = String(e)

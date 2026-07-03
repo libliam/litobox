@@ -247,7 +247,7 @@ const handleColorConvert = () => {
     colorResult.value = result
     tabState.color.error = ''
     tabState.color.isError = false
-    store.addHistory({ tool: 'css', action: '颜色转换', inputPreview: input, outputPreview: result.hex })
+    store.addHistory({ tool: 'css', action: '颜色转换', inputPreview: input, outputPreview: result.hex, inputFull: input, outputFull: JSON.stringify(result, null, 2) })
     ElMessage.success('转换成功')
   } else {
     colorResult.value = null
@@ -277,7 +277,7 @@ const handleCssCompress = () => {
   tabState.compress.output = compressCss(input)
   tabState.compress.error = ''
   tabState.compress.isError = false
-  store.addHistory({ tool: 'css', action: 'CSS压缩', inputPreview: input.slice(0, 50), outputPreview: tabState.compress.output.slice(0, 50) })
+  store.addHistory({ tool: 'css', action: 'CSS压缩', inputPreview: input.slice(0, 50), outputPreview: tabState.compress.output.slice(0, 50), inputFull: input, outputFull: tabState.compress.output })
   ElMessage.success('压缩完成')
 }
 
@@ -290,7 +290,7 @@ const handleCssFormat = () => {
   tabState.compress.output = formatCss(input)
   tabState.compress.error = ''
   tabState.compress.isError = false
-  store.addHistory({ tool: 'css', action: 'CSS格式化', inputPreview: input.slice(0, 50), outputPreview: tabState.compress.output.slice(0, 50) })
+  store.addHistory({ tool: 'css', action: 'CSS格式化', inputPreview: input.slice(0, 50), outputPreview: tabState.compress.output.slice(0, 50), inputFull: input, outputFull: tabState.compress.output })
   ElMessage.success('格式化完成')
 }
 

@@ -197,6 +197,8 @@ const runDiff = () => {
     action: diffMode.value === 'line' ? '行级对比' : '字符级对比',
     inputPreview: leftText.value.slice(0, 50),
     outputPreview: `${lines.length} 行差异`,
+    inputFull: `LEFT:\n${leftText.value}\n\nRIGHT:\n${rightText.value}`,
+    outputFull: lines.map(l => `${l.type}: ${l.leftLine ?? l.rightLine ?? ''}`).join('\n'),
   })
 }
 

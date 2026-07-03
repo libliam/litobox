@@ -126,6 +126,8 @@ const handleDedup = () => {
       action: '文本去重',
       inputPreview: input.value.slice(0, 50),
       outputPreview: `${result.uniqueLines} 行`,
+      inputFull: input.value,
+      outputFull: output.value,
     })
   } catch (e: any) {
     ElMessage.error('去重失败: ' + e.message)
