@@ -137,23 +137,22 @@ litobox/
 ### 子进程沙箱避坑（PowerShell / reg）
 Tauri 2.x 子进程（`Command::new("powershell")` / `Command::new("reg")`）受沙箱限制：
 
-**禁止的操作**：
-- **PowerShell `$_` 变量**：`Where-Object { $_.Property -eq 'value' }` 中的 `$_` 被沙箱剥离
-- **PowerShell `Get-NetAdapter` / `Get-NetIPAddress`**：在子进程中返回空数据
-- **PowerShell `Get-ItemProperty` 多路径逗号分隔**：无法解析，需拆分为两次调用
-
-**推荐的替代方案**：
-1. **`Where-Object` 用属性名直写语法**：`Where-Object { $_.Status -eq 'Up' }` → `Where-Object Status -eq 'Up'`
-2. **WMI 查询用 `Get-CimInstance -Filter`**：不需要 `$_`
-3. **注册表查询用 `reg query`**：通过 `Command::new("reg")` 直接读取，绕过 PowerShell
-4. **中文编码处理**：`reg query` 输出用 `encoding_rs::GBK.decode()` 解码，不用 `String::from_utf8_lossy()`
-5. **获取全部数据在 Rust 侧过滤**：`reg query /s`（不加 `/f`）导出全部，Rust 里按字段过滤
+**核心原则**：
+- 子进程中不要依赖 `$_`、脚本块 `{ }` 等 PowerShell 高级特性
+- 过滤逻辑优先在服务端/数据源侧完成（如 WMI 的 `-Filter`），不要在 PowerShell 管道里过滤
+- 所有子进程输出用 `encoding_rs::GBK.decode()` 解码，中文 Windows 默认是 GBK 编码
+- 所有控制台子进程加 `CREATE_NO_WINDOW` 标志，避免弹黑框/蓝框
 
 ### 避坑指南
 1. **SQLite NULL 比较必须用 IS 而非 =**：`WHERE parent_id = ?` 在参数为 NULL 时永远返回空，必须用 `WHERE parent_id IS ?` 或拆分为 `IS NULL` / `= ?` 两种情况
 2. **with_conn 内禁止嵌套调用其他 with_conn 函数**：会导致死锁（应用卡死），应在当前连接上直接执行 SQL
 3. **do_note_create 必须实际写盘**：仅生成路径并存入数据库不够，必须调用 `std::fs::File::create(&path)` 创建空文件
 4. **Rust 后端修改后必须重启 Tauri 开发服务器**：`cargo check` 通过不代表热更新生效，必须 `Ctrl+C` 停止后重新 `npm run tauri dev`
+5. **控制台子进程必须加 `CREATE_NO_WINDOW`**：Tauri 是 GUI 应用，调用 `powershell` / `reg` / `ipconfig` 等控制台程序时会弹出终端窗口，加 `cmd.creation_flags(CREATE_NO_WINDOW)`（值 `0x08000000`）隐藏
+6. **Windows 子进程输出编码是 GBK 不是 UTF-8**：中文 Windows 控制台输出为 GBK/CP936 编码，`String::from_utf8()` 遇到中文会报错。统一用 `encoding_rs::GBK.decode()` 解码所有子进程输出
+7. **外部系统查询优先用原生过滤参数**：WMI 用 `-Filter`（WQL）、数据库用 `WHERE`，不要在管道里用 `Where-Object` 等后过滤，既慢又可能受环境限制
+8. **同一问题超过 2 次未解决，立即加日志定位**：不要靠猜调 bug。`unwrap_or_default()` 会吞掉错误，改用 `match` 分支输出错误日志。debug 模式用 `debug_log!()`，release 模式自动移除
+9. **依赖外部系统的数据查询必须有降级/回退**：WMI、注册表、网络接口等在不同环境下表现可能不同，主要路径失败时应有备选方案，确保至少展示部分数据而不是全空
 
 ## 工作流与变量池集成
 
