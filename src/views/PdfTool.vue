@@ -307,13 +307,24 @@
             </div>
           </div>
           <div class="action-group">
-            <div class="group-label">自定义</div>
-            <div class="group-buttons">
-              <el-button type="primary" size="small" :disabled="!mergePdfFiles.length" @click="handleCustomMerge">
-                生成 PDF
-              </el-button>
-            </div>
+            <div class="group-label">自定义页码</div>
+            <el-input
+              v-model="customPageRange"
+              size="small"
+              placeholder="如: 1-3,5,8-10"
+              style="width: 200px"
+              clearable
+            />
+            <el-button type="primary" size="small" :disabled="!mergePdfFiles.length || !customPageRange" @click="handleCustomMerge">
+              生成 PDF
+            </el-button>
           </div>
+        </div>
+        <div class="page-range-hint">
+          支持格式: <code>1-3,5,8-10</code>（连续范围用 <code>-</code>，多个用 <code>,</code> 分隔）
+          <span v-if="mergePdfFiles.length === 1 && singleFilePageCount > 0">
+            · 当前文件共 {{ singleFilePageCount }} 页
+          </span>
         </div>
         <div v-if="mergedPdfBlob" class="result-info">
           <span>PDF 大小: {{ formatFileSize(mergedPdfBlob.size) }}</span>
@@ -641,7 +652,9 @@ const handleDownloadExtractedText = async () => {
 const mergeInputRef = ref<HTMLInputElement | null>(null)
 const mergePdfFiles = ref<File[]>([])
 const mergePageRanges = ref<string[]>([])
+const customPageRange = ref('')
 const mergedPdfBlob = ref<Blob | null>(null)
+const singleFilePageCount = ref(0)
 
 const triggerMergeInput = () => mergeInputRef.value?.click()
 
@@ -654,18 +667,46 @@ const handleMergePdfSelect = async (e: Event) => {
   mergePageRanges.value = [...mergePageRanges.value, ...newFiles.map(() => 'all')]
   mergedPdfBlob.value = null
   input.value = ''
+
+  // 单文件时检测总页数，方便用户参考
+  if (mergePdfFiles.value.length === 1) {
+    try {
+      const buffer = await mergePdfFiles.value[0].arrayBuffer()
+      const doc = await loadPdfDocument(new Uint8Array(buffer))
+      singleFilePageCount.value = doc.numPages
+    } catch {
+      singleFilePageCount.value = 0
+    }
+  } else {
+    singleFilePageCount.value = 0
+  }
 }
 
-const handleRemoveMergePdf = (idx: number) => {
+const handleRemoveMergePdf = async (idx: number) => {
   mergePdfFiles.value.splice(idx, 1)
   mergePageRanges.value.splice(idx, 1)
   mergedPdfBlob.value = null
+
+  // 删除后如果只剩1个文件，重新检测页数
+  if (mergePdfFiles.value.length === 1) {
+    try {
+      const buffer = await mergePdfFiles.value[0].arrayBuffer()
+      const doc = await loadPdfDocument(new Uint8Array(buffer))
+      singleFilePageCount.value = doc.numPages
+    } catch {
+      singleFilePageCount.value = 0
+    }
+  } else {
+    singleFilePageCount.value = 0
+  }
 }
 
 const handleClearMergePdfs = () => {
   mergePdfFiles.value = []
   mergePageRanges.value = []
+  customPageRange.value = ''
   mergedPdfBlob.value = null
+  singleFilePageCount.value = 0
   error.value = ''
   if (mergeInputRef.value) mergeInputRef.value.value = ''
 }
@@ -673,6 +714,7 @@ const handleClearMergePdfs = () => {
 const handleQuickMerge = async (range: string) => {
   if (!mergePdfFiles.value.length) return
   error.value = ''
+  customPageRange.value = ''
   const loading = ElLoading.service({
     lock: true,
     text: `正在合并 PDF（${mergePdfFiles.value.length} 个文件），请稍候...`,
@@ -697,7 +739,7 @@ const handleQuickMerge = async (range: string) => {
 }
 
 const handleCustomMerge = async () => {
-  if (!mergePdfFiles.value.length) return
+  if (!mergePdfFiles.value.length || !customPageRange.value) return
   error.value = ''
   const loading = ElLoading.service({
     lock: true,
@@ -705,14 +747,16 @@ const handleCustomMerge = async () => {
     background: 'rgba(0, 0, 0, 0.7)',
   })
   try {
-    mergedPdfBlob.value = await mergePdf(mergePdfFiles.value, mergePageRanges.value)
+    // 自定义页码对所有文件统一应用
+    const ranges = mergePdfFiles.value.map(() => customPageRange.value)
+    mergedPdfBlob.value = await mergePdf(mergePdfFiles.value, ranges)
     ElMessage.success('PDF 生成完成')
     store.addHistory({
       tool: 'pdf',
-      action: 'PDF自定义合并',
+      action: `PDF自定义提取 [${customPageRange.value}]`,
       inputPreview: `${mergePdfFiles.value.length} 个文件`,
       outputPreview: formatFileSize(mergedPdfBlob.value.size),
-      inputFull: mergePdfFiles.value.map((f, i) => `${f.name} [${mergePageRanges.value[i]}]`).join('\n'),
+      inputFull: mergePdfFiles.value.map((f) => `${f.name} [${customPageRange.value}]`).join('\n'),
       outputFull: formatFileSize(mergedPdfBlob.value.size),
     })
   } catch (e: any) {
@@ -974,6 +1018,21 @@ html.light .pdf-tabs :deep(.el-tabs__header) {
 .image-list-size {
   color: var(--text-secondary);
   white-space: nowrap;
+}
+
+/* 页码范围提示 */
+.page-range-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.page-range-hint code {
+  background: var(--bg-input);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 12px;
 }
 
 /* 合并文件列表 */
