@@ -1,5 +1,20 @@
+// ponytail: debug 模式输出日志到 stderr，release 模式编译时移除（零开销）
+// 用法: debug_log!("查询失败: {}", err)
+macro_rules! debug_log {
+    ($($arg:tt)*) => {
+        #[cfg(debug_assertions)]
+        eprintln!($($arg)*)
+    };
+}
+
 use serde::{Deserialize, Serialize};
 use std::process::Command;
+
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 // ============ 数据结构 ============
 
@@ -193,16 +208,95 @@ pub struct StartupItem {
 
 // ============ PowerShell 辅助函数 ============
 
+fn get_interfaces_from_ipconfig() -> Vec<NetInterface> {
+    let mut cmd = Command::new("ipconfig");
+    cmd.args(["/all"]);
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    let output = match cmd.output() {
+        Ok(o) => o,
+        Err(e) => {
+            debug_log!("ipconfig 执行失败: {}", e);
+            return Vec::new();
+        }
+    };
+    
+    let (text, _, _) = encoding_rs::GBK.decode(&output.stdout);
+    let lines: Vec<&str> = text.lines().collect();
+    
+    let mut interfaces = Vec::new();
+    let mut current: Option<NetInterface> = None;
+    
+    for line in lines {
+        let trimmed = line.trim();
+        
+        if trimmed.starts_with("以太网适配器") || trimmed.starts_with("无线局域网适配器") {
+            if let Some(iface) = current.take() {
+                if !iface.ipv4.is_empty() || !iface.ipv6.is_empty() {
+                    interfaces.push(iface);
+                }
+            }
+            
+            let name_start = trimmed.find(' ').map_or(0, |i| i + 1);
+            let name = trimmed[name_start..].trim_end_matches(':').trim().to_string();
+            current = Some(NetInterface {
+                name,
+                mac: String::new(),
+                ipv4: Vec::new(),
+                ipv6: Vec::new(),
+                status: "Up".to_string(),
+            });
+        } else if let Some(ref mut iface) = current {
+            if trimmed.starts_with("物理地址") || trimmed.starts_with("Physical Address") {
+                let parts: Vec<&str> = trimmed.splitn(2, ':').collect();
+                if parts.len() == 2 {
+                    iface.mac = parts[1].trim().replace('-', "-").to_string();
+                }
+            } else if trimmed.starts_with("IPv4 地址") || trimmed.starts_with("IPv4 Address") {
+                let parts: Vec<&str> = trimmed.splitn(2, ':').collect();
+                if parts.len() == 2 {
+                    let ip = parts[1].trim().split_whitespace().next().unwrap_or("");
+                    if !ip.is_empty() && ip != "(首选)" && !ip.starts_with('(') {
+                        iface.ipv4.push(ip.to_string());
+                    }
+                }
+            } else if trimmed.starts_with("IPv6 地址") || trimmed.starts_with("IPv6 Address") {
+                let parts: Vec<&str> = trimmed.splitn(2, ':').collect();
+                if parts.len() == 2 {
+                    let ip = parts[1].trim().split_whitespace().next().unwrap_or("");
+                    if !ip.is_empty() && !ip.starts_with('%') && !ip.starts_with('(') {
+                        iface.ipv6.push(ip.to_string());
+                    }
+                }
+            }
+        }
+    }
+    
+    if let Some(iface) = current {
+        if !iface.ipv4.is_empty() || !iface.ipv6.is_empty() {
+            interfaces.push(iface);
+        }
+    }
+    
+    interfaces
+}
+
 fn run_powershell(script: &str) -> Result<String, String> {
-    let output = Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", script])
+    let mut cmd = Command::new("powershell");
+    cmd.args(["-NoProfile", "-NonInteractive", "-Command", script]);
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    let output = cmd
         .output()
         .map_err(|e| format!("PowerShell 执行失败: {}", e))?;
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        let (stderr, _, _) = encoding_rs::GBK.decode(&output.stderr);
         return Err(format!("PowerShell 错误: {}", stderr));
     }
-    String::from_utf8(output.stdout).map_err(|e| format!("UTF-8 转换失败: {}", e))
+    // ponytail: 中文 Windows PowerShell 输出为 GBK/CP936 编码，必须用 encoding_rs 解码
+    // 不能用 String::from_utf8()，否则遇到中文设备名会失败
+    let (text, _, _) = encoding_rs::GBK.decode(&output.stdout);
+    Ok(text.into_owned())
 }
 
 fn run_powershell_json<T: for<'de> Deserialize<'de>>(script: &str) -> Result<Vec<T>, String> {
@@ -243,6 +337,22 @@ fn parse_reg_line(line: &str, field: &str) -> Option<String> {
 }
 
 // ============ 命令实现（后续 Task 填充） ============
+
+#[tauri::command]
+pub fn is_admin() -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        let output = run_powershell("[Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)");
+        match output {
+            Ok(s) => s.trim().to_lowercase() == "true",
+            Err(_) => false,
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        false
+    }
+}
 
 #[tauri::command]
 pub fn get_system_info() -> Result<SystemInfo, String> {
@@ -313,8 +423,6 @@ pub fn get_network_info() -> Result<NetworkInfo, String> {
 
     let hostname = System::host_name().unwrap_or_default();
 
-    // ponytail: 沙箱剥离所有 $_ 导致 PowerShell 脚本块失效；Get-NetAdapter/Get-NetIPAddress 在沙箱中返回空
-    // 改用 Get-CimInstance -Filter（不需要 $_），直接获取启用的网络适配器配置
     #[derive(Deserialize)]
     struct CimAdapter {
         #[serde(rename = "Description")]
@@ -323,40 +431,51 @@ pub fn get_network_info() -> Result<NetworkInfo, String> {
         mac_address: Option<String>,
         #[serde(rename = "IPAddress")]
         ip_address: Vec<String>,
-        #[serde(rename = "DefaultIPGateway")]
-        default_ip_gateway: Vec<String>,
     }
 
-    let cim_adapters: Vec<CimAdapter> = run_powershell_json(
+    let cim_adapters: Vec<CimAdapter> = match run_powershell_json(
         "Get-CimInstance -ClassName Win32_NetworkAdapterConfiguration -Filter 'IPEnabled=True' | Select-Object Description,MACAddress,IPAddress,DefaultIPGateway | ConvertTo-Json"
-    ).unwrap_or_default();
+    ) {
+        Ok(v) => {
+            if v.is_empty() {
+                debug_log!("Win32_NetworkAdapterConfiguration 返回空，尝试 ipconfig");
+            }
+            v
+        }
+        Err(e) => {
+            debug_log!("Win32_NetworkAdapterConfiguration 查询失败: {}", e);
+            Vec::new()
+        }
+    };
 
-    let interfaces: Vec<NetInterface> = cim_adapters.into_iter()
-        .map(|adapter| {
-            let mut ipv4 = Vec::new();
-            let mut ipv6 = Vec::new();
-            for ip in &adapter.ip_address {
-                if ip.contains(':') {
-                    ipv6.push(ip.clone());
-                } else {
-                    ipv4.push(ip.clone());
+    let interfaces: Vec<NetInterface> = if !cim_adapters.is_empty() {
+        cim_adapters.into_iter()
+            .map(|adapter| {
+                let mut ipv4 = Vec::new();
+                let mut ipv6 = Vec::new();
+                for ip in &adapter.ip_address {
+                    if ip.contains(':') {
+                        ipv6.push(ip.clone());
+                    } else {
+                        ipv4.push(ip.clone());
+                    }
                 }
-            }
-            NetInterface {
-                name: adapter.description,
-                mac: adapter.mac_address.unwrap_or_default().replace(':', "-"),
-                ipv4,
-                ipv6,
-                status: "Up".to_string(),
-            }
-        })
-        .collect();
+                NetInterface {
+                    name: adapter.description,
+                    mac: adapter.mac_address.unwrap_or_default().replace(':', "-"),
+                    ipv4,
+                    ipv6,
+                    status: "Up".to_string(),
+                }
+            })
+            .collect()
+    } else {
+        get_interfaces_from_ipconfig()
+    };
 
     // 默认网关 — ponytail: IPv4DefaultGateway 返回 WMI 对象字符串，改用 Get-NetRoute 直接取 NextHop
     #[derive(Deserialize)]
     struct PsGateway {
-        #[serde(rename = "InterfaceAlias")]
-        interface_alias: String,
         #[serde(rename = "NextHop")]
         next_hop: String,
     }
@@ -371,8 +490,6 @@ pub fn get_network_info() -> Result<NetworkInfo, String> {
     // DNS 服务器
     #[derive(Deserialize)]
     struct PsDns {
-        #[serde(rename = "InterfaceAlias")]
-        interface_alias: String,
         #[serde(rename = "ServerAddresses")]
         server_addresses: Vec<String>,
     }
@@ -624,18 +741,45 @@ pub fn get_hardware_info() -> Result<HardwareInfo, String> {
     let monitors_raw: Vec<PsMonitor> = run_powershell_json(
         "Get-CimInstance Win32_DesktopMonitor | Select-Object Name,ScreenWidth,ScreenHeight | ConvertTo-Json"
     ).unwrap_or_default();
-    let displays: Vec<DisplayInfo> = monitors_raw.iter().map(|m| {
-        let resolution = match (m.screen_width, m.screen_height) {
-            (Some(w), Some(h)) if w > 0 && h > 0 => format!("{}x{}", w, h),
-            _ => String::new(),
-        };
-        DisplayInfo {
-            name: m.name.clone().unwrap_or_else(|| "显示器".to_string()),
-            resolution,
+    
+    let mut displays: Vec<DisplayInfo> = monitors_raw.iter().filter_map(|m| {
+        match (m.screen_width, m.screen_height) {
+            (Some(w), Some(h)) if w > 0 && h > 0 => {
+                Some(DisplayInfo {
+                    name: m.name.clone().unwrap_or_else(|| "显示器".to_string()),
+                    resolution: format!("{}x{}", w, h),
+                })
+            }
+            _ => None,
         }
     }).collect();
+    
+    if displays.is_empty() {
+        #[derive(Deserialize)]
+        struct PsVideoCurrentMode {
+            #[serde(rename = "Name")]
+            name: Option<String>,
+            #[serde(rename = "CurrentHorizontalResolution")]
+            width: Option<u32>,
+            #[serde(rename = "CurrentVerticalResolution")]
+            height: Option<u32>,
+        }
+        let video_modes: Vec<PsVideoCurrentMode> = run_powershell_json(
+            "Get-CimInstance Win32_VideoController | Where-Object CurrentHorizontalResolution -ne $null | Select-Object Name,CurrentHorizontalResolution,CurrentVerticalResolution | ConvertTo-Json"
+        ).unwrap_or_default();
+        displays = video_modes.iter().map(|m| {
+            DisplayInfo {
+                name: m.name.clone().unwrap_or_else(|| "显示器".to_string()),
+                resolution: match (m.width, m.height) {
+                    (Some(w), Some(h)) if w > 0 && h > 0 => format!("{}x{}", w, h),
+                    _ => String::new(),
+                },
+            }
+        }).collect();
+    }
 
     // === 音频设备 ===
+    // ponytail: Where-Object 在 Tauri 子进程沙箱中可能失效，改用 WMI -Filter (WQL) 在服务端过滤
     #[derive(Deserialize)]
     struct PsAudio {
         #[serde(rename = "Name")]
@@ -643,13 +787,36 @@ pub fn get_hardware_info() -> Result<HardwareInfo, String> {
         #[serde(rename = "Status")]
         status: Option<String>,
     }
-    let audio_raw: Vec<PsAudio> = run_powershell_json(
+    let audio_raw: Vec<PsAudio> = match run_powershell_json(
         "Get-CimInstance Win32_SoundDevice | Select-Object Name,Status | ConvertTo-Json"
-    ).unwrap_or_default();
-    let audio_devices: Vec<AudioDevice> = audio_raw.iter().map(|a| AudioDevice {
+    ) {
+        Ok(v) => v,
+        Err(e) => {
+            debug_log!("音频设备查询失败: {}", e);
+            Vec::new()
+        }
+    };
+    
+    let mut audio_devices: Vec<AudioDevice> = audio_raw.iter().map(|a| AudioDevice {
         name: a.name.clone().unwrap_or_default(),
         status: a.status.clone().unwrap_or_default(),
     }).collect();
+    
+    if audio_devices.is_empty() {
+        let pnp_audio: Vec<PsAudio> = match run_powershell_json(
+            "Get-CimInstance Win32_PnPEntity -Filter \"PNPClass='MEDIA'\" | Select-Object Name,Status | ConvertTo-Json"
+        ) {
+            Ok(v) => v,
+            Err(e) => {
+                debug_log!("音频设备 PnP 查询失败: {}", e);
+                Vec::new()
+            }
+        };
+        audio_devices = pnp_audio.iter().map(|a| AudioDevice {
+            name: a.name.clone().unwrap_or_default(),
+            status: a.status.clone().unwrap_or_default(),
+        }).collect();
+    }
 
     // === 主板信息 ===
     #[derive(Deserialize)]
@@ -698,6 +865,7 @@ pub fn get_hardware_info() -> Result<HardwareInfo, String> {
     });
 
     // === USB 设备 ===
+    // ponytail: Where-Object 在 Tauri 子进程沙箱中可能失效，改用 WMI -Filter (WQL) 在服务端过滤
     #[derive(Deserialize)]
     struct PsUsb {
         #[serde(rename = "Name")]
@@ -705,10 +873,19 @@ pub fn get_hardware_info() -> Result<HardwareInfo, String> {
         #[serde(rename = "DeviceID")]
         device_id: Option<String>,
     }
-    let usb_raw: Vec<PsUsb> = run_powershell_json(
-        "Get-CimInstance Win32_USBHub | Select-Object Name,DeviceID | ConvertTo-Json"
-    ).unwrap_or_default();
-    let usb_devices: Vec<UsbDevice> = usb_raw.into_iter().map(|u| UsbDevice {
+    let usb_raw: Vec<PsUsb> = match run_powershell_json(
+        "Get-CimInstance Win32_PnPEntity -Filter \"DeviceID LIKE '%USB%'\" | Select-Object Name,DeviceID | ConvertTo-Json"
+    ) {
+        Ok(v) => v,
+        Err(e) => {
+            debug_log!("USB 查询失败: {}", e);
+            Vec::new()
+        }
+    };
+    
+    let usb_devices: Vec<UsbDevice> = usb_raw.into_iter().filter(|u| {
+        u.name.as_ref().map_or(false, |n| !n.is_empty())
+    }).map(|u| UsbDevice {
         name: u.name.unwrap_or_default(),
         device_id: u.device_id.unwrap_or_default(),
     }).collect();
@@ -728,25 +905,15 @@ pub fn get_hardware_info() -> Result<HardwareInfo, String> {
 
 #[tauri::command]
 pub fn get_software_env() -> Result<SoftwareEnv, String> {
-    // 已安装软件（查询注册表卸载列表）
-    #[derive(Deserialize)]
-    struct PsSoftware {
-        #[serde(rename = "DisplayName")]
-        display_name: Option<String>,
-        #[serde(rename = "DisplayVersion")]
-        display_version: Option<String>,
-        #[serde(rename = "Publisher")]
-        publisher: Option<String>,
-        #[serde(rename = "InstallDate")]
-        install_date: Option<String>,
-    }
     // ponytail: PowerShell 注册表访问在子进程中可能失败，改用 reg query 直接读取注册表
     // reg query 输出为 OEM 编码（中文 Windows 为 CP936），需用 encoding_rs 解码
     let mut installed_software: Vec<SoftwareItem> = Vec::new();
     for reg_path in &["HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall", "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall"] {
-        let output = Command::new("reg")
-            .args(["query", reg_path, "/s"])
-            .output();
+        let mut cmd = Command::new("reg");
+        cmd.args(["query", reg_path, "/s"]);
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        let output = cmd.output();
         if let Ok(out) = output {
             // ponytail: OEM 编码解码，中文 Windows 为 CP936
             let (text, _, _) = encoding_rs::GBK.decode(&out.stdout);

@@ -90,6 +90,7 @@ fn main() {
             note_manager::note_read,
             note_manager::note_write,
             db::cmd_db_register_shortcuts,
+            system_info::is_admin,
             system_info::get_system_info,
             system_info::get_network_info,
             system_info::get_process_list,
