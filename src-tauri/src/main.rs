@@ -105,6 +105,18 @@ fn main() {
             sqlite_viewer::sqlite_table_preview,
             sqlite_viewer::sqlite_export_csv,
             sqlite_viewer::sqlite_get_app_db_path,
+            // 磁盘分析命令
+            disk_analyzer::disk_scan_start,
+            disk_analyzer::disk_scan_cancel,
+            disk_analyzer::disk_scan_status,
+            disk_analyzer::disk_get_summary,
+            disk_analyzer::disk_get_folders,
+            disk_analyzer::disk_get_top_files,
+            disk_analyzer::disk_get_extension_stats,
+            disk_analyzer::disk_get_duplicates,
+            disk_analyzer::disk_delete_files,
+            disk_analyzer::disk_clear_scan,
+            disk_analyzer::disk_locate_in_explorer,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

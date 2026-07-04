@@ -571,6 +571,253 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
+// ============ Tauri 命令 ============
+
+#[tauri::command]
+pub async fn disk_scan_start(
+    app: AppHandle,
+    path: String,
+    opts: Option<ScanOptions>,
+) -> Result<String, String> {
+    let opts = opts.unwrap_or_default();
+    let path_canonical = PathBuf::from(&path)
+        .canonicalize()
+        .map_err(|e| format!("路径无法访问: {}", e))?
+        .to_string_lossy()
+        .to_string();
+
+    let scan_id = uuid::Uuid::new_v4().to_string();
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    let results = ScanResults {
+        scan_id: scan_id.clone(),
+        root_path: path_canonical.clone(),
+        started_at: now_ms(),
+        finished_at: None,
+        status: ScanStatus::Running,
+        cancel_flag: cancel_flag.clone(),
+        files_scanned: 0,
+        bytes_scanned: 0,
+        current_path: None,
+        skipped_dirs: Vec::new(),
+        skipped_total: 0,
+        folders: Vec::new(),
+        top_files: Vec::new(),
+        ext_stats: Vec::new(),
+        duplicates: Vec::new(),
+    };
+    let results_arc = Arc::new(Mutex::new(results));
+    insert_scan(scan_id.clone(), results_arc.clone());
+
+    debug_log!(
+        "disk_analyzer: scan_start id={} path={}",
+        scan_id,
+        path_canonical
+    );
+
+    let app_clone = app.clone();
+    let scan_id_clone = scan_id.clone();
+    std::thread::spawn(move || {
+        if let Err(e) = run_scan(results_arc.clone(), app_clone, opts) {
+            debug_log!("disk_analyzer: scan 失败 id={} err={}", scan_id_clone, e);
+            let mut r = results_arc.lock().unwrap();
+            r.status = ScanStatus::Failed { error: e };
+            r.finished_at = Some(now_ms());
+        }
+    });
+
+    Ok(scan_id)
+}
+
+#[tauri::command]
+pub fn disk_scan_cancel(scan_id: String) -> Result<(), String> {
+    debug_log!("disk_analyzer: cancel id={}", scan_id);
+    if let Some(arc) = get_scan(&scan_id) {
+        let r = arc.lock().unwrap();
+        r.cancel_flag.store(true, Ordering::SeqCst);
+        Ok(())
+    } else {
+        Err("scan not found or expired".into())
+    }
+}
+
+#[tauri::command]
+pub fn disk_scan_status(scan_id: String) -> Result<ScanStatus, String> {
+    let arc = get_scan(&scan_id).ok_or("scan not found or expired")?;
+    let r = arc.lock().unwrap();
+    Ok(r.status.clone())
+}
+
+#[tauri::command]
+pub fn disk_get_summary(scan_id: String) -> Result<ScanSummary, String> {
+    let arc = get_scan(&scan_id).ok_or("scan not found or expired")?;
+    let r = arc.lock().unwrap();
+    let dup_wasted = if r.duplicates.is_empty() {
+        None
+    } else {
+        Some(r.duplicates.iter().map(|g| g.wastedBytes).sum())
+    };
+    Ok(ScanSummary {
+        totalFiles: r.files_scanned,
+        totalDirs: r.folders.len() as u64,
+        totalSize: r.bytes_scanned,
+        skippedCount: r.skipped_total,
+        durationMs: r
+            .finished_at
+            .map(|f| (f - r.started_at) as u64)
+            .unwrap_or(0),
+        duplicatesWastedBytes: dup_wasted,
+    })
+}
+
+#[tauri::command]
+pub fn disk_get_folders(
+    scan_id: String,
+    parent: Option<String>,
+    limit: Option<u32>,
+    offset: Option<u32>,
+) -> Result<FolderPage, String> {
+    let arc = get_scan(&scan_id).ok_or("scan not found or expired")?;
+    let r = arc.lock().unwrap();
+    let limit = limit.unwrap_or(100).min(500) as usize;
+    let offset = offset.unwrap_or(0) as usize;
+
+    let target_parent = parent.unwrap_or_else(|| r.root_path.clone());
+
+    let filtered: Vec<&FolderInfo> = r
+        .folders
+        .iter()
+        .filter(|f| f.parent.as_deref() == Some(&target_parent) && f.path != r.root_path)
+        .collect();
+    let total = filtered.len() as u64;
+    let items: Vec<FolderInfo> = filtered
+        .into_iter()
+        .skip(offset)
+        .take(limit)
+        .cloned()
+        .collect();
+    Ok(FolderPage { items, total })
+}
+
+#[tauri::command]
+pub fn disk_get_top_files(
+    scan_id: String,
+    limit: Option<u32>,
+    offset: Option<u32>,
+) -> Result<FilePage, String> {
+    let arc = get_scan(&scan_id).ok_or("scan not found or expired")?;
+    let r = arc.lock().unwrap();
+    let limit = limit.unwrap_or(100).min(500) as usize;
+    let offset = offset.unwrap_or(0) as usize;
+    let total = r.top_files.len() as u64;
+    let items: Vec<FileInfo> = r.top_files.iter().skip(offset).take(limit).cloned().collect();
+    Ok(FilePage { items, total })
+}
+
+#[tauri::command]
+pub fn disk_get_extension_stats(
+    scan_id: String,
+    limit: Option<u32>,
+    offset: Option<u32>,
+) -> Result<ExtStatPage, String> {
+    let arc = get_scan(&scan_id).ok_or("scan not found or expired")?;
+    let r = arc.lock().unwrap();
+    let limit = limit.unwrap_or(100).min(500) as usize;
+    let offset = offset.unwrap_or(0) as usize;
+    let total = r.ext_stats.len() as u64;
+    let items: Vec<ExtensionStat> = r
+        .ext_stats
+        .iter()
+        .skip(offset)
+        .take(limit)
+        .cloned()
+        .collect();
+    Ok(ExtStatPage { items, total })
+}
+
+#[tauri::command]
+pub fn disk_get_duplicates(
+    scan_id: String,
+    limit: Option<u32>,
+    offset: Option<u32>,
+) -> Result<DupPage, String> {
+    let arc = get_scan(&scan_id).ok_or("scan not found or expired")?;
+    let r = arc.lock().unwrap();
+    let limit = limit.unwrap_or(50).min(200) as usize;
+    let offset = offset.unwrap_or(0) as usize;
+    let total = r.duplicates.len() as u64;
+    let items: Vec<DuplicateGroup> = r
+        .duplicates
+        .iter()
+        .skip(offset)
+        .take(limit)
+        .cloned()
+        .collect();
+    Ok(DupPage { items, total })
+}
+
+#[tauri::command]
+pub async fn disk_delete_files(paths: Vec<String>) -> Result<DeleteResult, String> {
+    debug_log!("disk_analyzer: delete_files count={}", paths.len());
+    let mut succeeded = Vec::new();
+    let mut failed = Vec::new();
+    for path in paths {
+        match trash::delete(&path) {
+            Ok(_) => {
+                debug_log!("disk_analyzer: 已入回收站 {}", path);
+                succeeded.push(path);
+            }
+            Err(e) => {
+                debug_log!("disk_analyzer: 删除失败 {}: {}", path, e);
+                failed.push(DeleteFailure {
+                    path,
+                    error: e.to_string(),
+                });
+            }
+        }
+    }
+    Ok(DeleteResult { succeeded, failed })
+}
+
+#[tauri::command]
+pub fn disk_clear_scan(scan_id: String) -> Result<(), String> {
+    debug_log!("disk_analyzer: clear_scan id={}", scan_id);
+    if remove_scan(&scan_id) {
+        Ok(())
+    } else {
+        Err("scan not found".into())
+    }
+}
+
+#[tauri::command]
+pub fn disk_locate_in_explorer(path: String) -> Result<(), String> {
+    use std::process::Command;
+    #[cfg(target_os = "windows")]
+    use std::os::windows::process::CommandExt;
+    #[cfg(target_os = "windows")]
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+    let pb = PathBuf::from(&path);
+    if !pb.exists() {
+        return Err(format!("路径不存在: {}", path));
+    }
+    let parent = pb.parent().unwrap_or_else(|| std::path::Path::new("."));
+    let file_name = pb
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    let mut cmd = Command::new("explorer.exe");
+    cmd.arg(format!("/select,{}", file_name));
+    cmd.current_dir(parent);
+    #[cfg(target_os = "windows")]
+    {
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd.spawn()
+        .map_err(|e| format!("无法打开资源管理器: {}", e))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
