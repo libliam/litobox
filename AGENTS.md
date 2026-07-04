@@ -26,6 +26,8 @@ Rules:
 - Question complex requests: "Do you actually need X, or does Y cover it?"
 - Pick the edge-case-correct option when two stdlib approaches are the same size, lazy means less code, not the flimsier algorithm.
 - Mark intentional simplifications with a `ponytail:` comment. If the shortcut has a known ceiling (global lock, O(n²) scan, naive heuristic), the comment names the ceiling and the upgrade path.
+- **版本号更新必须同步更新 README**：每次更新版本号意味着新增了功能，必须在 README.md 的功能阶段记录中添加新功能条目。
+- **经验总结注重通用性**：当需要总结经验、提炼解决方法时，要考虑通用性和可复用性，避免只针对特定场景。
 
 Not lazy about: understanding the problem (read it fully and trace the real flow before picking a rung, a small diff you don't understand is just laziness dressed up as efficiency), input validation at trust boundaries, error handling that prevents data loss, security, accessibility, the calibration real hardware needs (the platform is never the spec ideal, a clock drifts, a sensor reads off), anything explicitly requested. Lazy code without its check is unfinished: non-trivial logic leaves ONE runnable check behind, the smallest thing that fails if the logic breaks (an assert-based demo/self-check or one small test file; no frameworks, no fixtures). Trivial one-liners need no test.
 
@@ -133,6 +135,7 @@ litobox/
 - Rust 函数参数为 snake_case（如 `note_type`）时，必须在 `#[tauri::command]` 上添加 `rename_all = "snake_case"`
 - boa_engine API 使用注意 `unsafe` 块和引用链式调用
 - 多线程日志使用 `Arc<Mutex<Vec<LogEntry>>>` 安全共享
+- **后端新增功能代码必须添加 debug 日志**：在关键逻辑分支、错误处理路径和性能敏感点添加 `debug_log!()` 日志，用于后续调试和问题定位，release 模式下自动移除。
 
 ### 子进程沙箱避坑（PowerShell / reg）
 Tauri 2.x 子进程（`Command::new("powershell")` / `Command::new("reg")`）受沙箱限制：
