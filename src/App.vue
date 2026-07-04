@@ -48,6 +48,7 @@
           <HardwareInfoView v-else-if="activeTool === 'hardwareInfo'" :key="'hardwareInfo'" />
           <SoftwareEnvView v-else-if="activeTool === 'softwareEnv'" :key="'softwareEnv'" />
           <SqliteViewerView v-else-if="activeTool === 'sqliteViewer'" :key="'sqliteViewer'" />
+          <DiskSpaceAnalyzer v-else-if="activeTool === 'diskAnalyzer'" :key="'diskAnalyzer'" />
         </KeepAlive>
       </main>
       
@@ -107,6 +108,7 @@ import ProcessListView from '@/views/ProcessListView.vue'
 import HardwareInfoView from '@/views/HardwareInfoView.vue'
 import SoftwareEnvView from '@/views/SoftwareEnvView.vue'
 import SqliteViewerView from '@/views/SqliteViewerView.vue'
+import DiskSpaceAnalyzer from '@/views/DiskSpaceAnalyzer.vue'
 
 const store = useToolboxStore()
 const { activeTool } = storeToRefs(store)

@@ -29,7 +29,7 @@
             <div v-for="file in row.files" :key="file.path" class="group-file-row">
               <el-checkbox
                 :model-value="isChecked(row.groupId, file.path)"
-                @change="(val) => toggleCheck(row.groupId, file.path, val as boolean)"
+                @change="(val: boolean | string | number) => toggleCheck(row.groupId, file.path, !!val)"
               />
               <span class="file-path" :title="file.path">{{ file.path }}</span>
               <el-button size="small" link @click="locate(file.path)">定位</el-button>
