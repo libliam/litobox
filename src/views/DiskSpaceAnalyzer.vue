@@ -286,7 +286,6 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-@import '../style/tool-card.css';
 .progress-info {
   display: flex;
   flex-direction: column;
