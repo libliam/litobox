@@ -5,7 +5,7 @@
         <span class="logo-icon">⚡</span>
         <div class="logo-text">
           <h1 class="app-title">栗的百宝箱</h1>
-          <span class="app-version">v4.0</span>
+          <span class="app-version">v4.1</span>
         </div>
       </div>
     </div>
