@@ -189,7 +189,7 @@ const loadTables = async () => {
 
 const handleSelectTable = async (tableName: string) => {
   selectedTable.value = tableName
-  sqlText.value = `SELECT * FROM "${tableName}" LIMIT 100`
+  sqlText.value = `SELECT * FROM "${tableName.replace(/"/g, '""')}" LIMIT 100`
   queryError.value = ''
 
   const loading = ElLoading.service({ text: '加载数据...' })
@@ -220,7 +220,7 @@ const handleExecuteQuery = async () => {
     lastResult.value = await sqliteQuery(dbPath.value, sqlText.value)
     queryError.value = ''
     store.addHistory({
-      tool: 'sqlite-viewer',
+      tool: 'sqliteViewer',
       action: '执行查询',
       inputPreview: sqlText.value.slice(0, 50),
       outputPreview: `${lastResult.value.rows.length}行结果`,
