@@ -8,6 +8,7 @@ mod js_executor;
 mod http_cmd;
 mod note_manager;
 mod system_info;
+mod sqlite_viewer;
 
 use tauri::{Manager, Emitter};
 use tauri_plugin_dialog::{DialogExt, MessageDialogBuilder, MessageDialogButtons, MessageDialogKind};
@@ -96,6 +97,12 @@ fn main() {
             system_info::get_process_list,
             system_info::get_hardware_info,
             system_info::get_software_env,
+            // SQLite 查看器命令
+            sqlite_viewer::sqlite_list_tables,
+            sqlite_viewer::sqlite_get_schema,
+            sqlite_viewer::sqlite_query,
+            sqlite_viewer::sqlite_table_preview,
+            sqlite_viewer::sqlite_export_csv,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
