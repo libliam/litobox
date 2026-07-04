@@ -47,6 +47,7 @@
           <ProcessListView v-else-if="activeTool === 'processList'" :key="'processList'" />
           <HardwareInfoView v-else-if="activeTool === 'hardwareInfo'" :key="'hardwareInfo'" />
           <SoftwareEnvView v-else-if="activeTool === 'softwareEnv'" :key="'softwareEnv'" />
+          <SqliteViewerView v-else-if="activeTool === 'sqliteViewer'" :key="'sqliteViewer'" />
         </KeepAlive>
       </main>
       
@@ -105,6 +106,7 @@ import NetworkInfoView from '@/views/NetworkInfoView.vue'
 import ProcessListView from '@/views/ProcessListView.vue'
 import HardwareInfoView from '@/views/HardwareInfoView.vue'
 import SoftwareEnvView from '@/views/SoftwareEnvView.vue'
+import SqliteViewerView from '@/views/SqliteViewerView.vue'
 
 const store = useToolboxStore()
 const { activeTool } = storeToRefs(store)
