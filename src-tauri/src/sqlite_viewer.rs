@@ -31,11 +31,14 @@ pub struct QueryResult {
 
 /// 以只读模式打开数据库文件
 fn open_db(path: &str) -> Result<Connection, String> {
-    Connection::open_with_flags(
+    let conn = Connection::open_with_flags(
         path,
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )
-    .map_err(|e| format!("无法打开数据库文件: {}", e))
+    .map_err(|e| format!("无法打开数据库文件: {}", e))?;
+    conn.busy_timeout(std::time::Duration::from_secs(5))
+        .map_err(|e| e.to_string())?;
+    Ok(conn)
 }
 
 /// 将 rusqlite 的值转为 serde_json::Value
@@ -49,11 +52,10 @@ fn value_to_json(value: ValueRef) -> serde_json::Value {
         }
         ValueRef::Blob(bytes) => {
             // ponytail: BLOB 转 hex 字符串展示，避免二进制数据破坏 JSON
-            // 天花板：hex 截断到前 100 字符（约 50 字节），大 BLOB 仅显示前缀；
-            //         且 hex 后体积翻倍，MB 级 BLOB 会显著放大 JSON 体积
-            // 升级路径：如需完整 BLOB 查看或下载，应改为流式导出或单独的 BLOB 端点
-            let hex: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
-            serde_json::json!(format!("BLOB:{}bytes:{}", bytes.len(), hex.chars().take(100).collect::<String>()))
+            // 天花板：只展示前 50 字节（100 hex 字符），大 BLOB 截断
+            // 升级路径：前端按需展开或下载原始 blob
+            let hex: String = bytes.iter().take(50).map(|b| format!("{:02x}", b)).collect();
+            serde_json::json!(format!("BLOB:{}bytes:{}", bytes.len(), hex))
         }
     }
 }
@@ -186,8 +188,6 @@ pub fn sqlite_query(
         return Err("仅支持 SELECT 或 WITH 查询".to_string());
     }
     let conn = open_db(&db_path)?;
-    conn.busy_timeout(std::time::Duration::from_secs(5))
-        .map_err(|e| e.to_string())?;
     // ponytail: 强制钳制到 1000 上限，防止前端传入大值导致内存爆炸
     // 升级路径：如需更大结果集，应走 sqlite_export_csv 流式导出而非 JSON 直返
     let max_rows = limit.unwrap_or(1000).min(1000);
@@ -229,11 +229,17 @@ pub fn sqlite_export_csv(
                 match v {
                     serde_json::Value::Null => String::new(),
                     serde_json::Value::String(s) => {
-                        // CSV 转义：含逗号/引号/换行的用双引号包裹，内部引号翻倍
-                        if s.contains(',') || s.contains('"') || s.contains('\n') {
-                            format!("\"{}\"", s.replace('"', "\"\""))
+                        // 防止 CSV 公式注入：以 = + - @ 开头的值前缀单引号
+                        let safe = if s.starts_with('=') || s.starts_with('+') || s.starts_with('-') || s.starts_with('@') {
+                            format!("'{}", s)
                         } else {
                             s.clone()
+                        };
+                        // CSV 转义：含逗号/引号/换行的用双引号包裹，内部引号翻倍
+                        if safe.contains(',') || safe.contains('"') || safe.contains('\n') {
+                            format!("\"{}\"", safe.replace('"', "\"\""))
+                        } else {
+                            safe
                         }
                     }
                     other => other.to_string(),

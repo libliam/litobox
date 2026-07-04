@@ -43,6 +43,7 @@
           <div class="card-header">
             <span class="card-title">SQL 查询</span>
             <div class="card-actions">
+              <VariablePicker @select="handleInsertVariable" />
               <el-button type="primary" size="small" @click="handleExecuteQuery">执行</el-button>
               <el-button size="small" @click="handleClearSql">清空</el-button>
               <el-button size="small" @click="handleExportCsv" :disabled="!lastResult">导出CSV</el-button>
@@ -122,7 +123,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElLoading } from 'element-plus'
 import { open, save } from '@tauri-apps/plugin-dialog'
 import {
@@ -136,6 +137,7 @@ import {
   type QueryResult,
 } from '@/utils/sqliteClient'
 import { useToolboxStore } from '@/store'
+import VariablePicker from '@/components/VariablePicker.vue'
 
 const store = useToolboxStore()
 
@@ -157,6 +159,15 @@ const tableData = computed(() => {
     })
     return obj
   })
+})
+
+// 历史记录还原：从历史记录页双击跳转时恢复 SQL
+onMounted(() => {
+  const restore = store.pendingHistoryRestore
+  if (restore && restore.tool === 'sqliteViewer') {
+    sqlText.value = restore.input
+    store.clearHistoryRestore()
+  }
 })
 
 const handleSelectFile = async () => {
@@ -235,6 +246,10 @@ const handleExecuteQuery = async () => {
   } finally {
     loading.close()
   }
+}
+
+const handleInsertVariable = (value: string) => {
+  sqlText.value = value
 }
 
 const handleClearSql = () => {
@@ -386,7 +401,7 @@ const handleRefresh = async () => {
 }
 
 .truncated-hint {
-  color: #eab308;
+  color: var(--accent-orange, #eab308);
 }
 
 .result-body {
