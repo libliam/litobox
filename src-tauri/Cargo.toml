@@ -26,5 +26,8 @@ dirs = "5.0"
 chardetng = "0.1"
 sysinfo = "0.31"
 
+[dev-dependencies]
+tempfile = "3.10"
+
 [features]
 custom-protocol = ["tauri/custom-protocol"]

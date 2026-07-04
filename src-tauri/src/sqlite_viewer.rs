@@ -248,3 +248,96 @@ pub fn sqlite_export_csv(
         .map_err(|e| format!("文件写入失败: {}", e))?;
     Ok(result.rows.len())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_test_db() -> tempfile::NamedTempFile {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let conn = Connection::open(file.path()).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL, email TEXT);
+             INSERT INTO users (name, email) VALUES ('张三', 'zhang@san.com'), ('李四', 'li@si.com');
+             CREATE TABLE orders (id INTEGER PRIMARY KEY, user_id INTEGER, amount REAL);",
+        )
+        .unwrap();
+        file
+    }
+
+    #[test]
+    fn test_list_tables() {
+        let db = create_test_db();
+        let path = db.path().to_str().unwrap();
+        let tables = sqlite_list_tables(path.to_string()).unwrap();
+        assert_eq!(tables.len(), 2);
+        assert_eq!(tables[0].name, "orders"); // 字母序
+        assert_eq!(tables[1].name, "users");
+    }
+
+    #[test]
+    fn test_get_schema() {
+        let db = create_test_db();
+        let path = db.path().to_str().unwrap();
+        let cols = sqlite_get_schema(path.to_string(), "users".to_string()).unwrap();
+        assert_eq!(cols.len(), 3);
+        assert_eq!(cols[0].name, "id");
+        assert!(cols[0].is_primary_key);
+        assert_eq!(cols[1].name, "name");
+        assert!(cols[1].not_null);
+        assert_eq!(cols[2].name, "email");
+        assert!(!cols[2].not_null);
+    }
+
+    #[test]
+    fn test_query_select() {
+        let db = create_test_db();
+        let path = db.path().to_str().unwrap();
+        let result = sqlite_query(
+            path.to_string(),
+            "SELECT name, email FROM users ORDER BY id".to_string(),
+            None,
+        )
+        .unwrap();
+        assert_eq!(result.columns, vec!["name", "email"]);
+        assert_eq!(result.rows.len(), 2);
+        assert_eq!(result.rows[0][0], serde_json::json!("张三"));
+        assert_eq!(result.rows[1][0], serde_json::json!("李四"));
+    }
+
+    #[test]
+    fn test_query_rejects_non_select() {
+        let db = create_test_db();
+        let path = db.path().to_str().unwrap();
+        let result = sqlite_query(
+            path.to_string(),
+            "DELETE FROM users".to_string(),
+            None,
+        );
+        assert!(result.is_err());
+        // ponytail: 用 .err().unwrap() 而非 unwrap_err()，避免给生产结构 QueryResult 派生 Debug
+        assert!(result.err().unwrap().contains("仅支持 SELECT"));
+    }
+
+    #[test]
+    fn test_query_limit() {
+        let db = create_test_db();
+        let path = db.path().to_str().unwrap();
+        let result = sqlite_query(
+            path.to_string(),
+            "SELECT * FROM users".to_string(),
+            Some(1),
+        )
+        .unwrap();
+        assert_eq!(result.rows.len(), 1);
+    }
+
+    #[test]
+    fn test_table_preview() {
+        let db = create_test_db();
+        let path = db.path().to_str().unwrap();
+        let result = sqlite_table_preview(path.to_string(), "users".to_string()).unwrap();
+        assert_eq!(result.columns, vec!["id", "name", "email"]);
+        assert_eq!(result.rows.len(), 2);
+    }
+}
