@@ -103,6 +103,7 @@ fn main() {
             sqlite_viewer::sqlite_query,
             sqlite_viewer::sqlite_table_preview,
             sqlite_viewer::sqlite_export_csv,
+            sqlite_viewer::sqlite_get_app_db_path,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

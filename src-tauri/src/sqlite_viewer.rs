@@ -1,6 +1,7 @@
 use rusqlite::{Connection, OpenFlags, types::ValueRef};
 use serde::Serialize;
 use std::time::Instant;
+use crate::db;
 
 // ============ 数据结构 ============
 
@@ -253,6 +254,13 @@ pub fn sqlite_export_csv(
     std::fs::write(&save_path, csv_content.as_bytes())
         .map_err(|e| format!("文件写入失败: {}", e))?;
     Ok(result.rows.len())
+}
+
+#[tauri::command]
+pub fn sqlite_get_app_db_path() -> Result<String, String> {
+    db::get_db_path()
+        .map(|p| p.to_string_lossy().to_string())
+        .map_err(|e| e)
 }
 
 #[cfg(test)]

@@ -43,3 +43,7 @@ export function sqliteTablePreview(dbPath: string, tableName: string): Promise<Q
 export function sqliteExportCsv(dbPath: string, sql: string, savePath: string): Promise<number> {
   return invoke<number>('sqlite_export_csv', { dbPath, sql, savePath })
 }
+
+export function sqliteGetAppDbPath(): Promise<string> {
+  return invoke<string>('sqlite_get_app_db_path')
+}

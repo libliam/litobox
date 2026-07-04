@@ -6,6 +6,7 @@
         <span class="card-title">数据库文件</span>
         <div class="card-actions">
           <el-button size="small" @click="handleSelectFile">选择 .db 文件</el-button>
+          <el-button size="small" type="success" @click="handleOpenAppDb">打开应用数据库</el-button>
           <el-button v-if="dbPath" size="small" @click="handleRefresh">刷新</el-button>
         </div>
       </div>
@@ -132,6 +133,7 @@ import {
   sqliteQuery,
   sqliteTablePreview,
   sqliteExportCsv,
+  sqliteGetAppDbPath,
   type TableInfo,
   type ColumnInfo,
   type QueryResult,
@@ -179,6 +181,20 @@ const handleSelectFile = async () => {
 
   dbPath.value = selected
   await loadTables()
+}
+
+const handleOpenAppDb = async () => {
+  const loading = ElLoading.service({ text: '打开应用数据库...' })
+  try {
+    const appDbPath = await sqliteGetAppDbPath()
+    dbPath.value = appDbPath
+    await loadTables()
+    ElMessage.success('已打开应用数据库')
+  } catch (e) {
+    ElMessage.error(String(e))
+  } finally {
+    loading.close()
+  }
 }
 
 const loadTables = async () => {
