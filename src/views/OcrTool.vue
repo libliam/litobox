@@ -155,8 +155,8 @@
           v-model="mergedResult"
           type="textarea"
           :rows="12"
-          readonly
           class="result-textarea"
+          placeholder="编辑识别结果后，点击保存按钮更新..."
         />
       </div>
     </div>
@@ -178,6 +178,7 @@
           <el-button size="small" :disabled="!resultText" @click="handleCopy">复制</el-button>
           <el-button size="small" :disabled="!resultText" @click="handleCleanText">清理空行</el-button>
           <el-button size="small" :disabled="!resultText" @click="handleExport">导出txt</el-button>
+          <el-button size="small" type="success" :disabled="!resultText" @click="handleSaveEdit">保存修改</el-button>
         </div>
       </div>
       <div class="card-body" v-loading="isRecognizing" element-loading-text="正在识别中...">
@@ -186,7 +187,6 @@
           type="textarea"
           :rows="12"
           placeholder="上传图片或粘贴剪贴板后，自动进行OCR识别..."
-          readonly
           class="result-textarea"
         />
         <div v-if="error" class="error-message">{{ error }}</div>
@@ -290,6 +290,7 @@
               <div class="card-actions">
                 <el-button size="small" :disabled="!tableCsvText" @click="handleCopyTableCsv">复制CSV</el-button>
                 <el-button size="small" :disabled="!tableCsvText" @click="handleExportTableCsv">导出CSV</el-button>
+                <el-button size="small" type="success" :disabled="!tableCsvText" @click="handleSaveTableEdit">保存修改</el-button>
               </div>
             </div>
             <div class="card-body" v-loading="isTableRecognizing" element-loading-text="正在识别表格...">
@@ -298,7 +299,6 @@
                 type="textarea"
                 :rows="8"
                 placeholder="上传图片后，自动识别表格并输出CSV..."
-                readonly
                 class="result-textarea"
               />
               <div v-if="tableError" class="error-message">{{ tableError }}</div>
@@ -414,6 +414,7 @@
               <div class="card-actions">
                 <el-button size="small" @click="handleCopyMarkdown">复制Markdown</el-button>
                 <el-button size="small" @click="handleExportMarkdown">导出.md文件</el-button>
+                <el-button size="small" type="success" :disabled="!markdownMdText" @click="handleSaveMarkdownEdit">保存修改</el-button>
               </div>
             </div>
             <div class="card-body" v-loading="isMarkdownRecognizing" element-loading-text="正在转换Markdown...">
@@ -424,7 +425,6 @@
                     v-model="markdownMdText"
                     type="textarea"
                     :rows="16"
-                    readonly
                     class="markdown-textarea"
                   />
                 </div>
@@ -883,6 +883,23 @@ const handleExport = async () => {
   await exportAsTxt(resultText.value)
 }
 
+// 保存文字识别修改
+const handleSaveEdit = async () => {
+  if (!resultText.value) return
+  if (originalImageUrl.value) {
+    await saveHistory(imagePreview.value, originalImageUrl.value, resultText.value)
+  }
+  store.addHistory({
+    tool: 'ocr',
+    action: '文字识别(已编辑)',
+    inputPreview: '[图片]',
+    outputPreview: resultText.value.substring(0, 100),
+    inputFull: '[图片]',
+    outputFull: resultText.value,
+  })
+  ElMessage.success('修改已保存')
+}
+
 // 加载历史记录
 const handleLoadHistory = (record: OcrHistoryRecord) => {
   resultText.value = record.text
@@ -985,6 +1002,20 @@ const handleExportTableCsv = async () => {
   await saveFileWithDialog(blob, 'table-result.csv', 'csv')
 }
 
+// 保存表格识别修改
+const handleSaveTableEdit = () => {
+  if (!tableCsvText.value) return
+  store.addHistory({
+    tool: 'ocr',
+    action: '表格识别(已编辑)',
+    inputPreview: '[表格图片]',
+    outputPreview: tableCsvText.value.substring(0, 100),
+    inputFull: '[表格图片]',
+    outputFull: tableCsvText.value,
+  })
+  ElMessage.success('修改已保存')
+}
+
 // Markdown转换相关函数
 const triggerMarkdownFileInput = () => {
   markdownFileInputRef.value?.click()
@@ -1071,6 +1102,20 @@ const handleCopyMarkdown = async () => {
 
 const handleExportMarkdown = async () => {
   await exportAsMd(markdownMdText.value, 'markdown-result.md')
+}
+
+// 保存Markdown转换修改
+const handleSaveMarkdownEdit = () => {
+  if (!markdownMdText.value) return
+  store.addHistory({
+    tool: 'ocr',
+    action: 'Markdown转换(已编辑)',
+    inputPreview: '[Markdown图片]',
+    outputPreview: markdownMdText.value.substring(0, 100),
+    inputFull: '[Markdown图片]',
+    outputFull: markdownMdText.value,
+  })
+  ElMessage.success('修改已保存')
 }
 
 /** 加载从其他工具（PDF）传入的图片 */
