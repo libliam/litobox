@@ -56,43 +56,67 @@
 
       <!-- 分类工具 -->
       <div v-for="category in categorizedTools" :key="category.name" class="nav-section">
-        <div class="nav-section-title">{{ category.name }}</div>
-        <div
-          v-for="tool in category.tools"
-          :key="tool.id"
-          class="nav-item"
-          :class="{ active: modelValue === tool.id }"
-          @click="handleSelect(tool.id)"
+        <div 
+          class="nav-section-header"
+          @click="toggleCollapse(category.key)"
         >
-          <span class="nav-icon" v-html="tool.iconSvg"></span>
-          <span class="nav-label">{{ tool.name }}</span>
-          <span
-            class="fav-btn"
-            :class="{ active: isFavorite(tool.id) }"
-            @click.stop="handleToggleFavorite(tool.id)"
-            title="收藏/取消收藏"
-          >★</span>
+          <span class="nav-section-title">{{ category.name }}</span>
+          <span class="collapse-icon" :class="{ collapsed: !isCategoryExpanded(category.key) }">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </span>
+        </div>
+        <div v-show="isCategoryExpanded(category.key)" class="nav-section-content">
+          <div
+            v-for="tool in category.tools"
+            :key="tool.id"
+            class="nav-item"
+            :class="{ active: modelValue === tool.id }"
+            @click="handleSelect(tool.id)"
+          >
+            <span class="nav-icon" v-html="tool.iconSvg"></span>
+            <span class="nav-label">{{ tool.name }}</span>
+            <span
+              class="fav-btn"
+              :class="{ active: isFavorite(tool.id) }"
+              @click.stop="handleToggleFavorite(tool.id)"
+              title="收藏/取消收藏"
+            >★</span>
+          </div>
         </div>
       </div>
 
       <!-- 未分类工具 -->
       <div v-if="uncategorizedTools.length > 0" class="nav-section">
-        <div class="nav-section-title">工具</div>
-        <div
-          v-for="tool in uncategorizedTools"
-          :key="tool.id"
-          class="nav-item"
-          :class="{ active: modelValue === tool.id }"
-          @click="handleSelect(tool.id)"
+        <div 
+          class="nav-section-header"
+          @click="toggleCollapse('uncategorized')"
         >
-          <span class="nav-icon" v-html="tool.iconSvg"></span>
-          <span class="nav-label">{{ tool.name }}</span>
-          <span
-            class="fav-btn"
-            :class="{ active: isFavorite(tool.id) }"
-            @click.stop="handleToggleFavorite(tool.id)"
-            title="收藏/取消收藏"
-          >★</span>
+          <span class="nav-section-title">工具</span>
+          <span class="collapse-icon" :class="{ collapsed: !isCategoryExpanded('uncategorized') }">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </span>
+        </div>
+        <div v-show="isCategoryExpanded('uncategorized')" class="nav-section-content">
+          <div
+            v-for="tool in uncategorizedTools"
+            :key="tool.id"
+            class="nav-item"
+            :class="{ active: modelValue === tool.id }"
+            @click="handleSelect(tool.id)"
+          >
+            <span class="nav-icon" v-html="tool.iconSvg"></span>
+            <span class="nav-label">{{ tool.name }}</span>
+            <span
+              class="fav-btn"
+              :class="{ active: isFavorite(tool.id) }"
+              @click.stop="handleToggleFavorite(tool.id)"
+              title="收藏/取消收藏"
+            >★</span>
+          </div>
         </div>
       </div>
     </nav>
@@ -164,6 +188,8 @@ const emit = defineEmits<{
 const store = useToolboxStore()
 const currentTheme = ref(store.config.theme)
 const isPinned = ref(false)
+
+const expandedCategories = ref<Record<string, boolean>>({})
 
 // ============ 快捷键设置 ============
 const showShortcutSettings = ref(false)
@@ -279,24 +305,23 @@ onMounted(async () => {
   }
 })
 
-// 固定工具（首页、剪贴板、历史、工作流）
+// 固定工具（首页、剪贴板、历史）
 const fixedTools = computed(() => {
-  return TOOL_LIST.filter(t => t.id === 'home' || t.id === 'clipboard' || t.id === 'history' || t.id === 'workflow')
+  return TOOL_LIST.filter(t => t.id === 'home' || t.id === 'clipboard' || t.id === 'history')
 })
 
 // 收藏工具（排除固定工具）
 const favoritedTools = computed(() => {
   const favorites = store.config.favorites
   return TOOL_LIST.filter(t =>
-    t.id !== 'home' && t.id !== 'clipboard' && t.id !== 'history' && t.id !== 'workflow' && favorites.includes(t.id)
+    t.id !== 'home' && t.id !== 'clipboard' && t.id !== 'history' && favorites.includes(t.id)
   )
 })
 
-// 分类工具（有 category 字段的，排除固定和收藏）
+// 分类工具（有 category 字段的，排除固定工具）
 const categorizedTools = computed(() => {
-  const favorites = store.config.favorites
   const categorized = TOOL_LIST.filter(t =>
-    t.category && t.id !== 'home' && t.id !== 'clipboard' && t.id !== 'history' && t.id !== 'workflow' && !favorites.includes(t.id)
+    t.category && t.id !== 'home' && t.id !== 'clipboard' && t.id !== 'history'
   )
 
   const categoryMap = new Map<string, typeof TOOL_LIST>()
@@ -308,6 +333,8 @@ const categorizedTools = computed(() => {
     system: '系统工具'
   }
 
+  const categoryOrder = ['utility', 'text', 'dev', 'security', 'system']
+
   for (const tool of categorized) {
     const cat = tool.category!
     if (!categoryMap.has(cat)) {
@@ -316,22 +343,32 @@ const categorizedTools = computed(() => {
     categoryMap.get(cat)!.push(tool)
   }
 
-  return Array.from(categoryMap.entries()).map(([key, tools]) => ({
-    name: categoryNames[key] || key,
-    tools
-  }))
+  return categoryOrder
+    .filter(key => categoryMap.has(key))
+    .map(key => ({
+      name: categoryNames[key] || key,
+      key,
+      tools: categoryMap.get(key)!
+    }))
 })
 
-// 未分类工具（没有 category 字段，排除固定和收藏）
+// 未分类工具（没有 category 字段，排除固定工具）
 const uncategorizedTools = computed(() => {
-  const favorites = store.config.favorites
   return TOOL_LIST.filter(t =>
-    !t.category && t.id !== 'home' && t.id !== 'clipboard' && t.id !== 'history' && !favorites.includes(t.id)
+    !t.category && t.id !== 'home' && t.id !== 'clipboard' && t.id !== 'history'
   )
 })
 
 const isFavorite = (toolId: string) => {
   return store.config.favorites.includes(toolId)
+}
+
+const isCategoryExpanded = (categoryKey: string) => {
+  return expandedCategories.value[categoryKey] === true
+}
+
+const toggleCollapse = (categoryKey: string) => {
+  expandedCategories.value[categoryKey] = !isCategoryExpanded(categoryKey)
 }
 
 const handleSelect = (toolId: string) => {
@@ -436,12 +473,36 @@ const applyTheme = (theme: string) => {
   padding: 0 8px;
 }
 
+.nav-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
 .nav-section-title {
   font-size: 11px;
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 1px;
   padding: 8px 12px 6px;
+}
+
+.collapse-icon {
+  color: var(--text-muted);
+  transition: transform 0.2s;
+  margin-right: 4px;
+  flex-shrink: 0;
+}
+
+.collapse-icon.collapsed {
+  transform: rotate(-90deg);
+}
+
+.nav-section-content {
+  overflow: hidden;
+  transition: all 0.2s;
 }
 
 .nav-item {
