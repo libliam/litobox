@@ -180,6 +180,17 @@ export function getProcessList(): Promise<ProcessItem[]> {
   return invoke<ProcessItem[]>('get_process_list')
 }
 
+export interface KillResult {
+  success: boolean
+  pid: number
+  process_name: string
+  message: string
+}
+
+export function killProcess(pid: number): Promise<KillResult> {
+  return invoke<KillResult>('kill_process', { pid })
+}
+
 export function getHardwareInfo(): Promise<HardwareInfo> {
   return invoke<HardwareInfo>('get_hardware_info')
 }
