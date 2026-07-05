@@ -62,6 +62,15 @@
             <el-table-column prop="local_addr" label="地址" min-width="160" />
             <el-table-column prop="pid" label="PID" width="70" />
             <el-table-column prop="process_name" label="进程" min-width="120" />
+            <el-table-column label="操作" width="100" fixed="right">
+              <template #default="{ row }">
+                <el-button type="danger" size="small" link
+                  :loading="killingPids.has(row.pid)"
+                  @click="handleReleasePort(row)">
+                  释放
+                </el-button>
+              </template>
+            </el-table-column>
           </el-table>
         </div>
       </div>
@@ -71,8 +80,8 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { ElLoading } from 'element-plus'
-import { getNetworkInfo, formatTimestamp, type NetworkInfo } from '@/utils/systemInfoClient'
+import { ElLoading, ElMessageBox, ElMessage } from 'element-plus'
+import { getNetworkInfo, killProcess, formatTimestamp, type NetworkInfo, type ListeningPort } from '@/utils/systemInfoClient'
 import { useToolboxStore } from '@/store'
 
 const store = useToolboxStore()
@@ -80,6 +89,45 @@ const data = ref<NetworkInfo | null>(null)
 const loading = ref(false)
 const error = ref('')
 const lastRefresh = ref('')
+
+const killingPids = ref(new Set<number>())
+
+const handleReleasePort = async (row: ListeningPort) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定释放端口 ${row.local_addr}？\n将强制结束占用进程 "${row.process_name}" (PID: ${row.pid})。`,
+      '释放端口确认',
+      { type: 'warning', confirmButtonText: '释放', cancelButtonText: '取消' }
+    )
+  } catch {
+    return  // 用户取消
+  }
+
+  killingPids.value.add(row.pid)
+  try {
+    const result = await killProcess(row.pid)
+    store.addHistory({
+      tool: 'networkInfo',
+      action: '释放端口',
+      inputPreview: `${row.local_addr} (${row.process_name} PID: ${row.pid})`,
+      outputPreview: result.message,
+      inputFull: JSON.stringify({ local_addr: row.local_addr, pid: row.pid, process_name: row.process_name }),
+      outputFull: JSON.stringify(result),
+    })
+    if (result.success) {
+      ElMessage.success(result.message)
+    } else if (result.message.includes('管理员')) {
+      ElMessage.error(result.message)
+    } else {
+      ElMessage.warning(result.message)
+    }
+    await loadData()  // 刷新列表
+  } catch (e) {
+    ElMessage.error(String(e))
+  } finally {
+    killingPids.value.delete(row.pid)
+  }
+}
 
 const loadData = async () => {
   loading.value = true
