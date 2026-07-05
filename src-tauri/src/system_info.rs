@@ -102,6 +102,14 @@ pub struct ProcessItem {
     pub command: String,
 }
 
+#[derive(Serialize, Debug)]
+pub struct KillResult {
+    pub success: bool,
+    pub pid: u32,
+    pub process_name: String,
+    pub message: String,
+}
+
 #[derive(Serialize)]
 pub struct HardwareInfo {
     pub cpu: CpuSummary,
@@ -316,6 +324,54 @@ fn run_powershell_json<T: for<'de> Deserialize<'de>>(script: &str) -> Result<Vec
                 .map_err(|e| e.to_string())?)
         }
         _ => Ok(vec![]),
+    }
+}
+
+// ============ 进程 kill 辅助函数 ============
+
+/// 解析 taskkill 命令输出，构造友好的 KillResult
+/// ponytail: 依赖中文 Windows taskkill 输出关键词匹配，英文系统需额外适配
+fn parse_taskkill_output(
+    exit_code: i32,
+    stdout: &str,
+    stderr: &str,
+    pid: u32,
+    process_name: &str,
+) -> KillResult {
+    // taskkill 成功时 exit_code == 0
+    if exit_code == 0 {
+        let message = if process_name.is_empty() {
+            format!("已结束 PID: {}", pid)
+        } else {
+            format!("已结束 {} (PID: {})", process_name, pid)
+        };
+        return KillResult {
+            success: true,
+            pid,
+            process_name: process_name.to_string(),
+            message,
+        };
+    }
+
+    // 失败时合并 stdout + stderr 做关键词匹配
+    let combined = format!("{}\n{}", stdout, stderr);
+
+    let message = if combined.contains("拒绝访问") || combined.contains("Access is denied") {
+        "拒绝访问，可能需要管理员权限".to_string()
+    } else if combined.contains("没有找到") || combined.contains("找不到") || combined.contains("not found") {
+        "进程不存在或已退出".to_string()
+    } else {
+        // 未知错误，返回原始输出（截断 200 字符避免过长）
+        let raw = combined.trim();
+        let truncated = if raw.len() > 200 { &raw[..200] } else { raw };
+        format!("未知错误: {}", truncated)
+    };
+
+    KillResult {
+        success: false,
+        pid,
+        process_name: process_name.to_string(),
+        message,
     }
 }
 
@@ -970,4 +1026,49 @@ pub fn get_software_env() -> Result<SoftwareEnv, String> {
         environment_variables,
         startup_items,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_taskkill_success() {
+        let r = parse_taskkill_output(0, "成功: 已终止 PID 为 1234 的进程。", "", 1234, "notepad.exe");
+        assert!(r.success);
+        assert_eq!(r.pid, 1234);
+        assert_eq!(r.process_name, "notepad.exe");
+        assert!(r.message.contains("notepad.exe"));
+        assert!(r.message.contains("1234"));
+    }
+
+    #[test]
+    fn parse_taskkill_success_without_name() {
+        let r = parse_taskkill_output(0, "成功: 已终止 PID 为 1234 的进程。", "", 1234, "");
+        assert!(r.success);
+        assert_eq!(r.process_name, "");
+        assert!(r.message.contains("1234"));
+        assert!(!r.message.contains("notepad"));
+    }
+
+    #[test]
+    fn parse_taskkill_access_denied() {
+        let r = parse_taskkill_output(1, "", "错误: 无法终止 PID 1234 的进程。拒绝访问。", 1234, "");
+        assert!(!r.success);
+        assert!(r.message.contains("管理员"));
+    }
+
+    #[test]
+    fn parse_taskkill_not_found() {
+        let r = parse_taskkill_output(128, "", "错误: 没有找到进程 \"9999\"。", 9999, "");
+        assert!(!r.success);
+        assert!(r.message.contains("不存在"));
+    }
+
+    #[test]
+    fn parse_taskkill_unknown_error() {
+        let r = parse_taskkill_output(1, "", "未知错误输出内容", 1234, "");
+        assert!(!r.success);
+        assert!(r.message.contains("未知错误"));
+    }
 }
