@@ -15,4 +15,9 @@ Task 3: complete (commit a40fd43, one-line registration, cargo check clean)
 Task 4: complete (commit f8f626d, KillResult type + killProcess wrapper, vue-tsc clean)
 Task 5: complete (commit 230bfe2, ProcessListView 加结束按钮 + handleKill + 二次确认 + Toast)
 Task 6: complete (commit fd3d0db, NetworkInfoView 监听端口表加释放按钮 + handleReleasePort)
-Task 7: complete (version bump 4.3.0 → 4.4.0 + README 同步进程 kill 与端口释放功能)
+Task 7: complete (commit ac9da72, version bump 4.3.0 → 4.4.0 + README 同步进程 kill 与端口释放功能)
+
+Final review: APPROVED_WITH_MINOR_FIXES (commit a883a4f)
+- Fix 1: README 系统工具表第 91-92 行补全"支持结束进程"/"监听端口支持释放"描述
+- Fix 2: taskkill 子进程失败路径补 debug_log! 调用
+- Minor (non-blocking, from Task 2 review): taskkill error path debug_log — 已在 final review 修复
