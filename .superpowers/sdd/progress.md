@@ -21,3 +21,15 @@ Final review: APPROVED_WITH_MINOR_FIXES (commit a883a4f)
 - Fix 1: README 系统工具表第 91-92 行补全"支持结束进程"/"监听端口支持释放"描述
 - Fix 2: taskkill 子进程失败路径补 debug_log! 调用
 - Minor (non-blocking, from Task 2 review): taskkill error path debug_log — 已在 final review 修复
+
+Post-review additions (commit af5309f):
+- kill_process_by_name 命令 + KillBatchResult + parse_taskkill_im_output
+- ProcessListView "全部结束"按钮（同名进程 >1 时显示）
+- systemInfoClient killProcessByName 封装
+
+Verification fixes + UX polish (last commit before merge):
+- 系统关键进程关键词匹配 ("系统关键进程" → "系统关键进程，无法结束"，红色 error Toast)
+- Toast 延迟 300ms 再刷新，避免被 ElLoading 遮盖（ProcessListView + NetworkInfoView）
+- 监听端口区域上移到活动连接之前
+- 监听端口列表加搜索框（端口/进程/PID/协议）
+- 手动验收：8 项场景全部通过
