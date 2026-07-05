@@ -301,6 +301,7 @@ Vibe Coding 不是一次性的对话，而是**持续进化的工程实践**：
 | V4.1 | ✅ | SQLite 查看器（只读查询/表结构/CSV导出/历史记录） |
 | V4.2 | ✅ | OCR/PDF/QR 结果支持编辑校正、PDF 转 Markdown（文本提取+OCR双模式）、PDF 文本提取保留段落换行 |
 | V4.3 | ✅ | 磁盘空间分析器（文件夹大小/大文件Top N/按类型统计/重复文件检测，可入回收站删除） |
+| V4.4 | ✅ | 进程 kill 与端口释放（ProcessListView 加结束按钮、NetworkInfoView 监听端口加释放按钮，共享 kill_process 后端命令） |
 
 ---
 
