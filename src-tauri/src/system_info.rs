@@ -694,6 +694,53 @@ pub fn get_process_list() -> Result<Vec<ProcessItem>, String> {
 }
 
 #[tauri::command]
+pub fn kill_process(pid: u32) -> Result<KillResult, String> {
+    debug_log!("kill_process: pid={}", pid);
+
+    // 1. best-effort 预查进程名（查不到也继续，taskkill 是真相源）
+    use sysinfo::System;
+    let mut sys = System::new();
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All);
+    let process_name = sys
+        .process(sysinfo::Pid::from_u32(pid))
+        .map(|p| p.name().to_string_lossy().to_string())
+        .unwrap_or_default();
+    debug_log!("kill_process: 预查进程名 = {:?}", process_name);
+
+    // 2. 调用 taskkill /PID <pid> /F 强制结束
+    let mut cmd = Command::new("taskkill");
+    cmd.args(["/PID", &pid.to_string(), "/F"]);
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    let output = cmd
+        .output()
+        .map_err(|e| format!("taskkill 执行失败: {}", e))?;
+
+    // 3. GBK 解码输出（中文 Windows taskkill 输出为 GBK 编码）
+    let (stdout, _, _) = encoding_rs::GBK.decode(&output.stdout);
+    let (stderr, _, _) = encoding_rs::GBK.decode(&output.stderr);
+    let exit_code = output.status.code().unwrap_or(-1);
+    debug_log!(
+        "kill_process: exit_code={}, stdout={}, stderr={}",
+        exit_code,
+        stdout,
+        stderr
+    );
+
+    // 4. 解析输出构造结果
+    let result = parse_taskkill_output(
+        exit_code,
+        &stdout,
+        &stderr,
+        pid,
+        &process_name,
+    );
+    debug_log!("kill_process result: {:?}", result);
+
+    Ok(result)
+}
+
+#[tauri::command]
 pub fn get_hardware_info() -> Result<HardwareInfo, String> {
     // === CPU 信息 ===
     #[derive(Deserialize)]
