@@ -191,6 +191,17 @@ export function killProcess(pid: number): Promise<KillResult> {
   return invoke<KillResult>('kill_process', { pid })
 }
 
+export interface KillBatchResult {
+  success: boolean
+  process_name: string
+  killed_count: number
+  message: string
+}
+
+export function killProcessByName(processName: string): Promise<KillBatchResult> {
+  return invoke<KillBatchResult>('kill_process_by_name', { processName })
+}
+
 export function getHardwareInfo(): Promise<HardwareInfo> {
   return invoke<HardwareInfo>('get_hardware_info')
 }

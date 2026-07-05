@@ -110,6 +110,14 @@ pub struct KillResult {
     pub message: String,
 }
 
+#[derive(Serialize, Debug)]
+pub struct KillBatchResult {
+    pub success: bool,
+    pub process_name: String,
+    pub killed_count: u32,
+    pub message: String,
+}
+
 #[derive(Serialize)]
 pub struct HardwareInfo {
     pub cpu: CpuSummary,
@@ -737,6 +745,100 @@ pub fn kill_process(pid: u32) -> Result<KillResult, String> {
         &process_name,
     );
     debug_log!("kill_process result: {:?}", result);
+
+    Ok(result)
+}
+
+/// 解析 taskkill /IM 输出，构造 KillBatchResult
+/// taskkill /IM 成功时会输出类似 "成功: 给进程 "notepad.exe" 发送了终止信号..." 并显示进程数
+fn parse_taskkill_im_output(
+    exit_code: i32,
+    stdout: &str,
+    stderr: &str,
+    process_name: &str,
+) -> KillBatchResult {
+    let combined = format!("{}\n{}", stdout, stderr);
+
+    if exit_code == 0 {
+        // taskkill /IM 成功输出会包含进程 PID 列表，数一下有多少个 "PID" 来估算 kill 数
+        // 中文: "成功: 给进程 "xxx.exe" (PID 1234) 发送了终止信号。"
+        // 英文: "SUCCESS: Sent termination signal to the process "xxx.exe" with PID 1234."
+        let count = combined.matches("PID").count() as u32;
+        let killed = if count > 0 { count } else { 1 };
+        KillBatchResult {
+            success: true,
+            process_name: process_name.to_string(),
+            killed_count: killed,
+            message: format!("已结束 {} 个 \"{}\" 进程", killed, process_name),
+        }
+    } else if combined.contains("没有找到") || combined.contains("找不到") || combined.contains("not found") {
+        KillBatchResult {
+            success: false,
+            process_name: process_name.to_string(),
+            killed_count: 0,
+            message: "没有找到同名进程".to_string(),
+        }
+    } else if combined.contains("拒绝访问") || combined.contains("Access is denied") {
+        KillBatchResult {
+            success: false,
+            process_name: process_name.to_string(),
+            killed_count: 0,
+            message: "拒绝访问，可能需要管理员权限".to_string(),
+        }
+    } else {
+        let raw = combined.trim();
+        let truncated = if raw.len() > 200 {
+            let mut end = 200;
+            while end < raw.len() && !raw.is_char_boundary(end) {
+                end += 1;
+            }
+            &raw[..end]
+        } else {
+            raw
+        };
+        KillBatchResult {
+            success: false,
+            process_name: process_name.to_string(),
+            killed_count: 0,
+            message: format!("未知错误: {}", truncated),
+        }
+    }
+}
+
+#[tauri::command]
+pub fn kill_process_by_name(process_name: String) -> Result<KillBatchResult, String> {
+    debug_log!("kill_process_by_name: name={}", process_name);
+
+    // 确保进程名带 .exe 后缀（taskkill /IM 需要完整镜像名）
+    let image_name = if process_name.to_lowercase().ends_with(".exe") {
+        process_name.clone()
+    } else {
+        format!("{}.exe", process_name)
+    };
+
+    // 调用 taskkill /IM <image_name> /F 结束所有同名进程
+    let mut cmd = Command::new("taskkill");
+    cmd.args(["/IM", &image_name, "/F"]);
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    let output = cmd.output().map_err(|e| {
+        debug_log!("kill_process_by_name: taskkill 执行失败: {}", e);
+        format!("taskkill 执行失败: {}", e)
+    })?;
+
+    // GBK 解码输出
+    let (stdout, _, _) = encoding_rs::GBK.decode(&output.stdout);
+    let (stderr, _, _) = encoding_rs::GBK.decode(&output.stderr);
+    let exit_code = output.status.code().unwrap_or(-1);
+    debug_log!(
+        "kill_process_by_name: exit_code={}, stdout={}, stderr={}",
+        exit_code,
+        stdout,
+        stderr
+    );
+
+    let result = parse_taskkill_im_output(exit_code, &stdout, &stderr, &process_name);
+    debug_log!("kill_process_by_name result: {:?}", result);
 
     Ok(result)
 }

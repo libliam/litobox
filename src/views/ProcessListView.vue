@@ -34,12 +34,18 @@
             <template #default="{ row }">{{ formatBytes(row.memory_bytes) }}</template>
           </el-table-column>
           <el-table-column prop="status" label="状态" width="80" />
-          <el-table-column label="操作" width="100" fixed="right">
+          <el-table-column label="操作" width="160" fixed="right">
             <template #default="{ row }">
               <el-button type="danger" size="small" link
                 :loading="killingPids.has(row.pid)"
                 @click="handleKill(row)">
                 结束
+              </el-button>
+              <el-button type="danger" size="small" link
+                v-if="getSameNameCount(row.name) > 1"
+                :loading="killingNames.has(row.name)"
+                @click="handleKillAll(row)">
+                全部结束
               </el-button>
             </template>
           </el-table-column>
@@ -52,7 +58,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { ElLoading, ElMessageBox, ElMessage } from 'element-plus'
-import { getProcessList, killProcess, formatBytes, formatTimestamp, type ProcessItem } from '@/utils/systemInfoClient'
+import { getProcessList, killProcess, killProcessByName, formatBytes, formatTimestamp, type ProcessItem } from '@/utils/systemInfoClient'
 import { useToolboxStore } from '@/store'
 
 const store = useToolboxStore()
@@ -64,6 +70,49 @@ const searchQuery = ref('')
 const sortBy = ref('cpu')
 
 const killingPids = ref(new Set<number>())
+const killingNames = ref(new Set<string>())
+
+const getSameNameCount = (name: string) => {
+  return data.value.filter(p => p.name === name).length
+}
+
+const handleKillAll = async (row: ProcessItem) => {
+  const count = getSameNameCount(row.name)
+  try {
+    await ElMessageBox.confirm(
+      `确定结束所有 "${row.name}" 进程？共 ${count} 个进程。\n强制结束可能导致未保存的数据丢失。`,
+      '批量结束进程确认',
+      { type: 'warning', confirmButtonText: '全部结束', cancelButtonText: '取消' }
+    )
+  } catch {
+    return
+  }
+
+  killingNames.value.add(row.name)
+  try {
+    const result = await killProcessByName(row.name)
+    store.addHistory({
+      tool: 'processList',
+      action: '结束全部同名进程',
+      inputPreview: `${row.name} (${count} 个)`,
+      outputPreview: result.message,
+      inputFull: JSON.stringify({ name: row.name, count }),
+      outputFull: JSON.stringify(result),
+    })
+    if (result.success) {
+      ElMessage.success(result.message)
+    } else if (result.message.includes('管理员')) {
+      ElMessage.error(result.message)
+    } else {
+      ElMessage.warning(result.message)
+    }
+    await loadData()
+  } catch (e) {
+    ElMessage.error(String(e))
+  } finally {
+    killingNames.value.delete(row.name)
+  }
+}
 
 const handleKill = async (row: ProcessItem) => {
   try {

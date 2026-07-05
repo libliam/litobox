@@ -99,6 +99,7 @@ fn main() {
             system_info::get_hardware_info,
             system_info::get_software_env,
             system_info::kill_process,
+            system_info::kill_process_by_name,
             // SQLite 查看器命令
             sqlite_viewer::sqlite_list_tables,
             sqlite_viewer::sqlite_get_schema,
