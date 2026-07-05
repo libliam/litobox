@@ -34,6 +34,15 @@
             <template #default="{ row }">{{ formatBytes(row.memory_bytes) }}</template>
           </el-table-column>
           <el-table-column prop="status" label="状态" width="80" />
+          <el-table-column label="操作" width="100" fixed="right">
+            <template #default="{ row }">
+              <el-button type="danger" size="small" link
+                :loading="killingPids.has(row.pid)"
+                @click="handleKill(row)">
+                结束
+              </el-button>
+            </template>
+          </el-table-column>
         </el-table>
       </div>
     </div>
@@ -42,8 +51,8 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import { ElLoading } from 'element-plus'
-import { getProcessList, formatBytes, formatTimestamp, type ProcessItem } from '@/utils/systemInfoClient'
+import { ElLoading, ElMessageBox, ElMessage } from 'element-plus'
+import { getProcessList, killProcess, formatBytes, formatTimestamp, type ProcessItem } from '@/utils/systemInfoClient'
 import { useToolboxStore } from '@/store'
 
 const store = useToolboxStore()
@@ -53,6 +62,45 @@ const error = ref('')
 const lastRefresh = ref('')
 const searchQuery = ref('')
 const sortBy = ref('cpu')
+
+const killingPids = ref(new Set<number>())
+
+const handleKill = async (row: ProcessItem) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定结束进程 "${row.name}" (PID: ${row.pid})？\n强制结束可能导致未保存的数据丢失。`,
+      '结束进程确认',
+      { type: 'warning', confirmButtonText: '结束', cancelButtonText: '取消' }
+    )
+  } catch {
+    return  // 用户取消
+  }
+
+  killingPids.value.add(row.pid)
+  try {
+    const result = await killProcess(row.pid)
+    store.addHistory({
+      tool: 'processList',
+      action: '结束进程',
+      inputPreview: `${row.name} (PID: ${row.pid})`,
+      outputPreview: result.message,
+      inputFull: JSON.stringify({ pid: row.pid, name: row.name }),
+      outputFull: JSON.stringify(result),
+    })
+    if (result.success) {
+      ElMessage.success(result.message)
+    } else if (result.message.includes('管理员')) {
+      ElMessage.error(result.message)
+    } else {
+      ElMessage.warning(result.message)
+    }
+    await loadData()  // 刷新列表
+  } catch (e) {
+    ElMessage.error(String(e))
+  } finally {
+    killingPids.value.delete(row.pid)
+  }
+}
 
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 const searchTrigger = ref('')
