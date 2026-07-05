@@ -363,7 +363,16 @@ fn parse_taskkill_output(
     } else {
         // 未知错误，返回原始输出（截断 200 字符避免过长）
         let raw = combined.trim();
-        let truncated = if raw.len() > 200 { &raw[..200] } else { raw };
+        // ponytail: 按 UTF-8 字符边界截断，避免 &raw[..200] 在中文字符中间 panic
+        let truncated = if raw.len() > 200 {
+            let mut end = 200;
+            while end < raw.len() && !raw.is_char_boundary(end) {
+                end += 1;
+            }
+            &raw[..end]
+        } else {
+            raw
+        };
         format!("未知错误: {}", truncated)
     };
 
@@ -1070,5 +1079,16 @@ mod tests {
         let r = parse_taskkill_output(1, "", "未知错误输出内容", 1234, "");
         assert!(!r.success);
         assert!(r.message.contains("未知错误"));
+    }
+
+    #[test]
+    fn parse_taskkill_long_output_truncation() {
+        // 验证长输出截断不会 panic，且保留 UTF-8 字符边界
+        let long_msg = "未知错误：".to_string() + &"测试".repeat(200);
+        let r = parse_taskkill_output(1, "", &long_msg, 1234, "");
+        assert!(!r.success);
+        assert!(r.message.contains("未知错误"));
+        // 截断后消息不应超过 250 字符（200 字节上限 + "未知错误: " 前缀的字符数）
+        assert!(r.message.chars().count() < 250);
     }
 }
