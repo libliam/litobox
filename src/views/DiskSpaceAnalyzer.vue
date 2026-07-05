@@ -286,21 +286,128 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* ===== 工具卡片（项目标准样式，与 _ToolTemplate.vue 一致） ===== */
+.tool-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  margin-bottom: 16px;
+  overflow: hidden;
+  transition: border-color 0.3s;
+}
+.tool-card:last-child {
+  margin-bottom: 0;
+}
+.tool-card:hover {
+  border-color: rgba(0, 212, 255, 0.3);
+}
+
+.sticky-card {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  background: rgba(0, 0, 0, 0.2);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.card-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--accent-cyan);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.card-body {
+  padding: 16px 20px;
+}
+
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 操作按钮网格 */
+.action-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  align-items: center;
+}
+
+.action-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.group-label {
+  color: var(--text-secondary);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.group-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+/* ===== 本页面专属样式 ===== */
 .progress-info {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
   font-size: 13px;
-  color: var(--text-secondary, #888);
+  color: var(--text-secondary);
   word-break: break-all;
+  line-height: 1.5;
 }
+
 .summary-text {
   font-size: 13px;
-  color: var(--text-secondary, #888);
+  color: var(--text-secondary);
 }
+
 .warn-text {
-  color: var(--warning-color, #e6a23c);
+  color: var(--accent-orange);
   margin-left: 8px;
+}
+
+.error-message {
+  padding: 10px 14px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid var(--accent-red);
+  border-radius: 4px;
+  color: var(--accent-red);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* 结果卡片内 Tab 内边距收紧 */
+:deep(.el-tabs__header) {
+  margin-bottom: 12px;
+}
+:deep(.el-tabs__nav-wrap::after) {
+  background-color: var(--border-color);
+}
+:deep(.el-tabs__item) {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+:deep(.el-tabs__item.is-active) {
+  color: var(--accent-cyan);
+}
+:deep(.el-tabs__active-bar) {
+  background-color: var(--accent-cyan);
 }
 </style>
