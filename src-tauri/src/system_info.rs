@@ -712,9 +712,10 @@ pub fn kill_process(pid: u32) -> Result<KillResult, String> {
     cmd.args(["/PID", &pid.to_string(), "/F"]);
     #[cfg(target_os = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);
-    let output = cmd
-        .output()
-        .map_err(|e| format!("taskkill 执行失败: {}", e))?;
+    let output = cmd.output().map_err(|e| {
+        debug_log!("kill_process: taskkill 执行失败: {}", e);
+        format!("taskkill 执行失败: {}", e)
+    })?;
 
     // 3. GBK 解码输出（中文 Windows taskkill 输出为 GBK 编码）
     let (stdout, _, _) = encoding_rs::GBK.decode(&output.stdout);
