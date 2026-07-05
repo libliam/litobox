@@ -66,17 +66,61 @@ export async function extractPdfText(pdfFile: File): Promise<string> {
   const pdfDocument = await loadPdfDocument(new Uint8Array(buffer))
   const totalPages = pdfDocument.numPages
 
-  let text = ''
+  const allLines: string[] = []
+
   for (let i = 1; i <= totalPages; i++) {
     const page = await pdfDocument.getPage(i)
     const content = await page.getTextContent()
-    const pageText = content.items
-      .map((item: any) => item.str)
-      .join('')
-    text += pageText + '\n'
+
+    const items: Array<{ str: string; y: number; height: number; x: number }> = []
+    for (const item of content.items as any[]) {
+      if (!item.str || !item.str.trim()) continue
+      const transform = item.transform || []
+      const y = transform[5] || 0
+      const height = transform[3] || 12
+      const x = transform[4] || 0
+      items.push({ str: item.str, y, height, x })
+    }
+
+    if (items.length === 0) continue
+
+    const avgHeight = items.reduce((sum, it) => sum + it.height, 0) / items.length
+    const rowTolerance = avgHeight * 0.5
+
+    const rows: Array<typeof items[0][]> = []
+    const sortedByY = [...items].sort((a, b) => b.y - a.y)
+
+    for (const item of sortedByY) {
+      const existingRow = rows.find(row => Math.abs(row[0].y - item.y) <= rowTolerance)
+      if (existingRow) {
+        existingRow.push(item)
+      } else {
+        rows.push([item])
+      }
+    }
+
+    const avgLineHeight = avgHeight * 1.5
+    const pageLines: string[] = []
+    let prevY: number | null = null
+
+    for (const row of rows) {
+      const rowY = row[0].y
+      const sortedByX = [...row].sort((a, b) => a.x - b.x)
+      const lineText = sortedByX.map(r => r.str).join('')
+
+      if (prevY !== null && Math.abs(prevY - rowY) > avgLineHeight * 2) {
+        pageLines.push('')
+      }
+
+      pageLines.push(lineText)
+      prevY = rowY
+    }
+
+    if (allLines.length > 0) allLines.push('')
+    allLines.push(...pageLines)
   }
 
-  return text.trim()
+  return allLines.join('\n').trim()
 }
 
 // ============ 图片转 PDF ============

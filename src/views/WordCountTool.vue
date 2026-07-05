@@ -140,7 +140,9 @@ const handleCount = () => {
     tool: 'wordCount',
     action: '字数统计',
     inputPreview: input.value.slice(0, 50),
-    outputPreview: `字符数: ${stats.value.charCount}`
+    outputPreview: `字符数: ${stats.value.charCount}`,
+    inputFull: input.value,
+    outputFull: `字符数: ${stats.value.charCount}\n单词数: ${stats.value.englishWords}\n行数: ${stats.value.lineCount}\n中文字数: ${stats.value.chineseCount}`,
   })
   ElMessage.success('统计完成')
 }

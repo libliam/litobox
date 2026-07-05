@@ -1,238 +1,252 @@
 <template>
   <div class="tool-container">
-    <!-- 工作流列表 -->
-    <div class="tool-card">
-      <div class="card-header">
-        <div class="header-left">
-          <span class="card-title">工作流</span>
-          <el-tooltip placement="top" effect="dark">
-            <template #content>
-              <div class="tooltip-content">
-                <p>编排多个处理步骤，一键执行连续转换</p>
-                <p>• 支持字符串处理、JSON格式化、编码转换等</p>
-                <p>• 上一步输出自动作为下一步输入</p>
-                <p>• 可保存常用流程，随时调用</p>
-              </div>
-            </template>
-            <el-icon class="hint-icon"><QuestionFilled /></el-icon>
-          </el-tooltip>
-        </div>
-        <div class="card-actions">
-          <el-button type="primary" size="small" @click="handleNewWorkflow">新建工作流</el-button>
-        </div>
-      </div>
-      <div class="card-body">
-        <div v-if="workflows.length === 0" class="empty-state">
-          暂无工作流，点击上方"新建工作流"创建
-        </div>
-        <div v-else class="workflow-list">
-          <div
-            v-for="wf in workflows"
-            :key="wf.id"
-            class="workflow-item"
-            :class="{ active: selectedWorkflow?.id === wf.id }"
-          >
-            <div class="workflow-item-header">
-              <span class="workflow-item-name">{{ wf.name }}</span>
-              <div class="workflow-item-actions">
-                <el-button size="small" type="primary" @click.stop="handleRunWorkflow(wf)">执行</el-button>
-                <el-button size="small" @click.stop="handleEditWorkflow(wf)">编辑</el-button>
-                <el-button size="small" type="danger" @click.stop="handleDeleteWorkflow(wf)">删除</el-button>
-              </div>
+    <!-- Tab切换 -->
+    <el-tabs v-model="activeTab" class="workflow-tabs">
+      <!-- 工作流Tab -->
+      <el-tab-pane label="工作流" name="workflow">
+        <!-- 工作流列表 -->
+        <div class="tool-card">
+          <div class="card-header">
+            <div class="header-left">
+              <span class="card-title">工作流</span>
+              <el-tooltip placement="top" effect="dark">
+                <template #content>
+                  <div class="tooltip-content">
+                    <p>编排多个处理步骤，一键执行连续转换</p>
+                    <p>• 支持字符串处理、JSON格式化、编码转换等</p>
+                    <p>• 上一步输出自动作为下一步输入</p>
+                    <p>• 可保存常用流程，随时调用</p>
+                  </div>
+                </template>
+                <el-icon class="hint-icon"><QuestionFilled /></el-icon>
+              </el-tooltip>
             </div>
-            <div class="workflow-item-desc">{{ wf.description || '暂无描述' }}</div>
-            <div class="workflow-item-steps">
-              <span class="step-badge" v-for="(step, i) in parseSteps(wf.steps_json)" :key="i">
-                {{ step.tool }}
-              </span>
+            <div class="card-actions">
+              <el-button type="primary" size="small" @click="handleNewWorkflow">新建工作流</el-button>
             </div>
           </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 工作流编辑区 -->
-    <div v-if="editingWorkflow" class="tool-card">
-      <div class="card-header">
-        <span class="card-title">编辑工作流</span>
-        <div class="card-actions">
-          <el-button size="small" @click="handleCancelEdit">取消</el-button>
-          <el-button type="primary" size="small" @click="handleSaveWorkflow">保存</el-button>
-        </div>
-      </div>
-      <div class="card-body">
-        <div class="edit-form">
-          <div class="form-row">
-            <label>名称</label>
-            <el-input v-model="editingWorkflow.name" placeholder="工作流名称" size="small" />
+          <div class="card-body">
+            <div v-if="workflows.length === 0" class="empty-state">
+              暂无工作流，点击上方"新建工作流"创建
+            </div>
+            <div v-else class="workflow-list">
+              <div
+                v-for="wf in workflows"
+                :key="wf.id"
+                class="workflow-item"
+                :class="{ active: selectedWorkflow?.id === wf.id }"
+              >
+                <div class="workflow-item-header">
+                  <span class="workflow-item-name">{{ wf.name }}</span>
+                  <div class="workflow-item-actions">
+                    <el-button size="small" type="primary" @click.stop="handleRunWorkflow(wf)">执行</el-button>
+                    <el-button size="small" @click.stop="handleClipboardExecute(wf)" title="从剪贴板读取并执行，结果写回剪贴板">
+                      📋快捷
+                    </el-button>
+                    <el-button size="small" @click.stop="handleEditWorkflow(wf)">编辑</el-button>
+                    <el-button size="small" type="danger" @click.stop="handleDeleteWorkflow(wf)">删除</el-button>
+                  </div>
+                </div>
+                <div class="workflow-item-desc">{{ wf.description || '暂无描述' }}</div>
+                <div class="workflow-item-steps">
+                  <span class="step-badge" v-for="(step, i) in parseSteps(wf.steps_json)" :key="i">
+                    {{ step.tool }}
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="form-row">
-            <label>描述</label>
-            <el-input v-model="editingWorkflow.description" placeholder="可选描述" size="small" />
-          </div>
         </div>
 
-        <div class="steps-editor">
-          <div class="steps-header">
-            <span class="card-title" style="font-size: 13px;">步骤编排</span>
-            <el-button type="primary" size="small" @click="handleAddStep">添加步骤</el-button>
+        <!-- 工作流编辑区 -->
+        <div v-if="editingWorkflow" class="tool-card">
+          <div class="card-header">
+            <span class="card-title">编辑工作流</span>
+            <div class="card-actions">
+              <el-button size="small" @click="handleCancelEdit">取消</el-button>
+              <el-button type="primary" size="small" @click="handleSaveWorkflow">保存</el-button>
+            </div>
           </div>
+          <div class="card-body">
+            <div class="edit-form">
+              <div class="form-row">
+                <label>名称</label>
+                <el-input v-model="editingWorkflow.name" placeholder="工作流名称" size="small" />
+              </div>
+              <div class="form-row">
+                <label>描述</label>
+                <el-input v-model="editingWorkflow.description" placeholder="可选描述" size="small" />
+              </div>
+            </div>
 
-          <div
-            v-for="(step, index) in editingSteps"
-            :key="index"
-            class="step-item"
-          >
-            <div class="step-number">{{ index + 1 }}</div>
-            <div class="step-content">
-              <div class="step-row">
-                <el-select v-model="step.tool" placeholder="选择工具" size="small" style="width: 140px">
-                  <el-option label="字符串处理" value="string" />
-                  <el-option label="JSON格式化" value="json" />
-                  <el-option label="编码转换" value="encode" />
-                  <el-option label="正则替换" value="regex" />
-                  <el-option label="SQL转换" value="sql" />
-                  <el-option label="Base64编解码" value="base64" />
-                </el-select>
-                <el-select v-model="step.action" placeholder="选择操作" size="small" style="width: 140px">
-                  <el-option
-                    v-for="action in getActionsForTool(step.tool)"
-                    :key="action"
-                    :label="action"
-                    :value="action"
-                  />
-                </el-select>
-                <el-select v-model="step.input" placeholder="输入来源" size="small" style="width: 120px">
-                  <el-option v-if="index === 0" label="执行输入" value="exec_input" />
-                  <el-option v-if="index > 0" label="上一步输出" value="prev_output" />
-                  <el-option label="手动输入" value="manual" />
-                  <el-option label="变量池" value="variable" />
-                </el-select>
-                <el-input
-                  v-if="step.input === 'manual'"
-                  v-model="step.manualInput"
-                  placeholder="输入内容"
+            <div class="steps-editor">
+              <div class="steps-header">
+                <span class="card-title" style="font-size: 13px;">步骤编排</span>
+                <el-button type="primary" size="small" @click="handleAddStep">添加步骤</el-button>
+              </div>
+
+              <div
+                v-for="(step, index) in editingSteps"
+                :key="index"
+                class="step-item"
+              >
+                <div class="step-number">{{ index + 1 }}</div>
+                <div class="step-content">
+                  <div class="step-row">
+                    <el-select v-model="step.tool" placeholder="选择工具" size="small" style="width: 140px">
+                      <el-option label="字符串处理" value="string" />
+                      <el-option label="JSON格式化" value="json" />
+                      <el-option label="编码转换" value="encode" />
+                      <el-option label="正则替换" value="regex" />
+                      <el-option label="SQL转换" value="sql" />
+                      <el-option label="Base64编解码" value="base64" />
+                      <el-option label="计算器" value="calculator" />
+                    </el-select>
+                    <el-select v-model="step.action" placeholder="选择操作" size="small" style="width: 140px">
+                      <el-option
+                        v-for="action in getActionsForTool(step.tool)"
+                        :key="action"
+                        :label="action"
+                        :value="action"
+                      />
+                    </el-select>
+                    <el-select v-model="step.input" placeholder="输入来源" size="small" style="width: 120px">
+                      <el-option v-if="index === 0" label="执行输入" value="exec_input" />
+                      <el-option v-if="index > 0" label="上一步输出" value="prev_output" />
+                      <el-option label="手动输入" value="manual" />
+                      <el-option label="变量池" value="variable" />
+                    </el-select>
+                    <el-input
+                      v-if="step.input === 'manual'"
+                      v-model="step.manualInput"
+                      placeholder="输入内容"
+                      size="small"
+                      class="step-manual-input"
+                    />
+                    <el-select
+                      v-else-if="step.input === 'variable'"
+                      v-model="step.variableName"
+                      placeholder="选择变量"
+                      size="small"
+                      class="step-var-input"
+                    >
+                      <el-option
+                        v-for="v in variables"
+                        :key="v.id"
+                        :label="v.name"
+                        :value="v.name"
+                      />
+                    </el-select>
+                  </div>
+                </div>
+                <el-button
                   size="small"
-                  class="step-manual-input"
-                />
-                <el-select
-                  v-else-if="step.input === 'variable'"
-                  v-model="step.variableName"
-                  placeholder="选择变量"
-                  size="small"
-                  class="step-var-input"
+                  type="danger"
+                  :icon="null"
+                  @click="handleRemoveStep(index)"
+                  style="margin-left: 8px; flex-shrink: 0;"
                 >
-                  <el-option
-                    v-for="v in variables"
-                    :key="v.id"
-                    :label="v.name"
-                    :value="v.name"
-                  />
-                </el-select>
+                  ×
+                </el-button>
               </div>
-            </div>
-            <el-button
-              size="small"
-              type="danger"
-              :icon="null"
-              @click="handleRemoveStep(index)"
-              style="margin-left: 8px; flex-shrink: 0;"
-            >
-              ×
-            </el-button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 执行输入 -->
-    <div v-if="executingWorkflow" class="tool-card">
-      <div class="card-header">
-        <span class="card-title">执行输入</span>
-        <div class="card-actions">
-          <el-button size="small" @click="handleClearExecInput">清空</el-button>
-          <el-button size="small" @click="handlePasteExecInput">粘贴</el-button>
-          <el-button type="primary" size="small" @click="handleExecute">执行</el-button>
-          <el-button size="small" @click="handleCloseExec">关闭</el-button>
-        </div>
-      </div>
-      <div class="card-body">
-        <el-input
-          v-model="execInput"
-          type="textarea"
-          :rows="6"
-          placeholder="输入初始数据..."
-          resize="vertical"
-        />
-      </div>
-    </div>
-
-    <!-- 执行输出 -->
-    <div v-if="executingWorkflow && (execLoading || execOutput || execError)" class="tool-card">
-      <div class="card-header">
-        <span class="card-title">执行结果</span>
-        <div class="card-actions">
-          <el-button size="small" @click="handleCopyExecOutput">复制</el-button>
-          <el-button size="small" @click="handleCloseExec">关闭</el-button>
-        </div>
-      </div>
-      <div class="card-body">
-        <div v-if="execLoading" class="exec-progress">
-          <el-progress :percentage="execProgress" :stroke-width="8" />
-          <div class="exec-step-text">正在执行第 {{ execCurrentStep + 1 }}/{{ executingWorkflow.steps.length }} 步: {{ executingWorkflow.steps[execCurrentStep]?.tool }}</div>
-        </div>
-        <el-input
-          v-else
-          :model-value="execOutput"
-          type="textarea"
-          :rows="8"
-          readonly
-          placeholder="执行结果将显示在这里..."
-        />
-        <div v-if="execError" class="error-message">{{ execError }}</div>
-      </div>
-    </div>
-
-    <!-- 变量池面板 -->
-    <div class="tool-card">
-      <div class="card-header">
-        <div class="header-left">
-          <span class="card-title">变量池</span>
-          <el-tooltip placement="top" effect="dark">
-            <template #content>
-              <div class="tooltip-content">
-                <p>跨工具共享的临时变量存储</p>
-                <p>• 手动命名并保存变量值</p>
-                <p>• 工作流步骤可引用变量池中的数据</p>
-                <p>• 在步骤编排中选择"变量池"作为输入来源</p>
-              </div>
-            </template>
-            <el-icon class="hint-icon"><QuestionFilled /></el-icon>
-          </el-tooltip>
-        </div>
-        <div class="card-actions">
-          <el-button type="primary" size="small" @click="handleAddVariable">添加变量</el-button>
-        </div>
-      </div>
-      <div class="card-body">
-        <div v-if="variables.length === 0" class="empty-state">
-          暂无变量
-        </div>
-        <div v-else class="variable-list">
-          <div v-for="v in variables" :key="v.id" class="variable-item">
-            <div class="variable-info">
-              <span class="variable-name">{{ v.name }}</span>
-              <span class="variable-value">{{ truncate(v.value, 50) }}</span>
-              <span class="variable-source" :class="v.source">{{ v.source === 'auto' ? '自动缓存' : '手动' }}</span>
-            </div>
-            <div class="variable-actions">
-              <el-button size="small" @click="handleCopyVariable(v.value)">复制</el-button>
-              <el-button size="small" type="danger" @click="handleDeleteVariable(v.name)">删除</el-button>
             </div>
           </div>
         </div>
+      </el-tab-pane>
+
+      <!-- 变量池Tab -->
+      <el-tab-pane label="变量池" name="variables">
+        <div class="tool-card">
+          <div class="card-header">
+            <div class="header-left">
+              <span class="card-title">变量池</span>
+              <el-tooltip placement="top" effect="dark">
+                <template #content>
+                  <div class="tooltip-content">
+                    <p>跨工具共享的临时变量存储</p>
+                    <p>• 手动命名并保存变量值</p>
+                    <p>• 工作流步骤可引用变量池中的数据</p>
+                    <p>• 在步骤编排中选择"变量池"作为输入来源</p>
+                  </div>
+                </template>
+                <el-icon class="hint-icon"><QuestionFilled /></el-icon>
+              </el-tooltip>
+            </div>
+            <div class="card-actions">
+              <el-button type="primary" size="small" @click="handleAddVariable">添加变量</el-button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div v-if="variables.length === 0" class="empty-state">
+              暂无变量
+            </div>
+            <div v-else class="variable-list">
+              <div v-for="v in variables" :key="v.id" class="variable-item">
+                <div class="variable-info">
+                  <span class="variable-name">{{ v.name }}</span>
+                  <span class="variable-value">{{ truncate(v.value, 50) }}</span>
+                  <span class="variable-source" :class="v.source">{{ v.source === 'auto' ? '自动缓存' : '手动' }}</span>
+                </div>
+                <div class="variable-actions">
+                  <el-button size="small" @click="handleCopyVariable(v.value)">复制</el-button>
+                  <el-button size="small" type="danger" @click="handleDeleteVariable(v.name)">删除</el-button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </el-tab-pane>
+    </el-tabs>
+
+    <!-- 执行弹窗 -->
+    <el-dialog v-model="showExecDialog" :title="executingWorkflow?.name || '执行工作流'" width="600px" top="5vh">
+      <div class="exec-dialog-content">
+        <!-- 执行输入 -->
+        <div class="exec-section">
+          <div class="exec-section-header">
+            <span class="exec-section-title">输入数据</span>
+            <div class="exec-section-actions">
+              <el-button size="small" @click="handleClearExecInput">清空</el-button>
+              <el-button size="small" @click="handlePasteExecInput">粘贴</el-button>
+            </div>
+          </div>
+          <el-input
+            v-model="execInput"
+            type="textarea"
+            :rows="6"
+            placeholder="输入初始数据..."
+            resize="vertical"
+          />
+        </div>
+
+        <!-- 执行输出 -->
+        <div class="exec-section" v-if="execLoading || execOutput || execError">
+          <div class="exec-section-header">
+            <span class="exec-section-title">执行结果</span>
+            <div class="exec-section-actions">
+              <el-button v-if="execOutput" size="small" @click="handleCopyExecOutput">复制</el-button>
+            </div>
+          </div>
+          <div v-if="execLoading" class="exec-progress">
+            <el-progress :percentage="execProgress" :stroke-width="8" />
+            <div class="exec-step-text">正在执行第 {{ execCurrentStep + 1 }}/{{ executingWorkflow?.steps.length }} 步: {{ executingWorkflow?.steps[execCurrentStep]?.tool }}</div>
+          </div>
+          <el-input
+            v-else
+            :model-value="execOutput"
+            type="textarea"
+            :rows="8"
+            readonly
+            placeholder="执行结果将显示在这里..."
+          />
+          <div v-if="execError" class="error-message">{{ execError }}</div>
+        </div>
       </div>
-    </div>
+      <template #footer>
+        <el-button size="small" @click="handleCloseExec">关闭</el-button>
+        <el-button type="primary" size="small" @click="handleExecute">执行</el-button>
+      </template>
+    </el-dialog>
 
     <!-- 添加变量对话框 -->
     <el-dialog v-model="showAddVariable" title="添加变量" width="400px">
@@ -266,6 +280,8 @@ import {
 import { formatJson, compressJson, validateJson } from '@/utils/jsonUtils'
 import { urlEncode, urlDecode, base64Encode, base64Decode } from '@/utils/encodeUtils'
 import { convertToSqlIn } from '@/utils/sqlUtils'
+import { create, all } from 'mathjs'
+const workflowMath = create(all, {})
 
 // 工作流列表
 const workflows = ref<db.Workflow[]>([])
@@ -273,8 +289,12 @@ const selectedWorkflow = ref<db.Workflow | null>(null)
 const editingWorkflow = ref<db.Workflow | null>(null)
 const editingSteps = ref<WorkflowStep[]>([])
 
+// Tab状态
+const activeTab = ref('workflow')
+
 // 执行状态
 const executingWorkflow = ref<WorkflowWithSteps | null>(null)
+const showExecDialog = ref(false)
 const execInput = ref('')
 const execOutput = ref('')
 const execError = ref('')
@@ -308,10 +328,83 @@ const TOOL_ACTIONS: Record<string, string[]> = {
   ],
   json: ['格式化', '压缩', '校验'],
   encode: ['Base64编码', 'Base64解码', 'URL编码', 'URL解码'],
-  regex: ['正则匹配', '正则替换'],
+  regex: ['去除HTML标签', '提取URL', '提取邮箱', '去除空白字符'],
   sql: ['转SQL IN', '转SQL VALUES'],
   base64: ['编码', '解码'],
+  calculator: ['表达式计算'],
 }
+
+// 预置工作流模板
+const PRESET_WORKFLOWS: db.Workflow[] = [
+  {
+    id: 'wf_preset_b64_json',
+    name: 'Base64解码→JSON格式化',
+    description: '将Base64编码的JSON字符串解码并格式化，便于阅读',
+    steps_json: JSON.stringify([
+      { tool: 'base64', action: '解码', input: 'exec_input', manualInput: '', variableName: '' },
+      { tool: 'json', action: '格式化', input: 'prev_output', manualInput: '', variableName: '' },
+    ]),
+    created_at: '',
+    updated_at: '',
+  },
+  {
+    id: 'wf_preset_url_json',
+    name: 'URL解码→JSON格式化',
+    description: '解码URL编码的JSON字符串并格式化',
+    steps_json: JSON.stringify([
+      { tool: 'encode', action: 'URL解码', input: 'exec_input', manualInput: '', variableName: '' },
+      { tool: 'json', action: '格式化', input: 'prev_output', manualInput: '', variableName: '' },
+    ]),
+    created_at: '',
+    updated_at: '',
+  },
+  {
+    id: 'wf_preset_csv_sql',
+    name: 'CSV列表→SQL IN',
+    description: '将换行分隔的值列表转换为SQL IN子句',
+    steps_json: JSON.stringify([
+      { tool: 'string', action: '去除空行', input: 'exec_input', manualInput: '', variableName: '' },
+      { tool: 'sql', action: '转SQL IN', input: 'prev_output', manualInput: '', variableName: '' },
+    ]),
+    created_at: '',
+    updated_at: '',
+  },
+  {
+    id: 'wf_preset_clean_sort',
+    name: '清理→去重→排序',
+    description: '去除空行、去重后按行号排序',
+    steps_json: JSON.stringify([
+      { tool: 'string', action: '去除空行', input: 'exec_input', manualInput: '', variableName: '' },
+      { tool: 'string', action: '去重', input: 'prev_output', manualInput: '', variableName: '' },
+      { tool: 'string', action: '行号排序', input: 'prev_output', manualInput: '', variableName: '' },
+    ]),
+    created_at: '',
+    updated_at: '',
+  },
+  {
+    id: 'wf_preset_text_encode',
+    name: '文本→Base64→URL编码',
+    description: '将文本依次进行Base64编码和URL编码',
+    steps_json: JSON.stringify([
+      { tool: 'base64', action: '编码', input: 'exec_input', manualInput: '', variableName: '' },
+      { tool: 'encode', action: 'URL编码', input: 'prev_output', manualInput: '', variableName: '' },
+    ]),
+    created_at: '',
+    updated_at: '',
+  },
+  {
+    id: 'wf_preset_clean_json',
+    name: '清理文本→JSON格式化',
+    description: '去除首尾空格、空行后格式化JSON',
+    steps_json: JSON.stringify([
+      { tool: 'string', action: '去除首尾空格', input: 'exec_input', manualInput: '', variableName: '' },
+      { tool: 'string', action: '去除空行', input: 'prev_output', manualInput: '', variableName: '' },
+      { tool: 'json', action: '格式化', input: 'prev_output', manualInput: '', variableName: '' },
+    ]),
+    created_at: '',
+    updated_at: '',
+  },
+]
 
 function getActionsForTool(tool: string): string[] {
   return TOOL_ACTIONS[tool] || []
@@ -333,6 +426,18 @@ function truncate(str: string, len: number): string {
 async function loadWorkflows() {
   try {
     workflows.value = await db.listWorkflows()
+    
+    if (workflows.value.length === 0) {
+      for (const preset of PRESET_WORKFLOWS) {
+        const now = new Date().toISOString()
+        await db.saveWorkflow({
+          ...preset,
+          created_at: now,
+          updated_at: now,
+        })
+      }
+      workflows.value = await db.listWorkflows()
+    }
   } catch (e: any) {
     ElMessage.error('加载工作流失败: ' + (e.message || e))
   }
@@ -451,6 +556,46 @@ function handleRunWorkflow(wf: db.Workflow) {
   execLoading.value = false
   execProgress.value = 0
   execCurrentStep.value = 0
+  showExecDialog.value = true
+}
+
+// 一键剪贴板执行
+async function handleClipboardExecute(wf: db.Workflow) {
+  try {
+    const clipboardContent = await navigator.clipboard.readText()
+    if (!clipboardContent.trim()) {
+      ElMessage.warning('剪贴板为空')
+      return
+    }
+
+    const steps = parseSteps(wf.steps_json)
+    if (steps.length === 0) {
+      ElMessage.warning('工作流没有步骤')
+      return
+    }
+
+    let result = clipboardContent
+
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i]
+      let input = result
+      if (step.input === 'variable') {
+        try {
+          input = await db.getVariable(step.variableName)
+        } catch {
+          input = ''
+        }
+      } else if (step.input === 'manual') {
+        input = step.manualInput || result
+      }
+      result = await executeStep(step.tool, step.action, input)
+    }
+
+    await navigator.clipboard.writeText(result)
+    ElMessage.success(`执行完成！结果已复制到剪贴板（${result.length} 字符）`)
+  } catch (e: any) {
+    ElMessage.error('执行失败: ' + (e.message || e))
+  }
 }
 
 // 清空执行输入
@@ -460,13 +605,16 @@ function handleClearExecInput() {
 
 // 关闭执行面板
 function handleCloseExec() {
-  executingWorkflow.value = null
-  execInput.value = ''
-  execOutput.value = ''
-  execError.value = ''
-  execLoading.value = false
-  execProgress.value = 0
-  execCurrentStep.value = 0
+  showExecDialog.value = false
+  setTimeout(() => {
+    executingWorkflow.value = null
+    execInput.value = ''
+    execOutput.value = ''
+    execError.value = ''
+    execLoading.value = false
+    execProgress.value = 0
+    execCurrentStep.value = 0
+  }, 300)
 }
 
 // 粘贴执行输入
@@ -560,6 +708,8 @@ async function executeStep(tool: string, action: string, input: string): Promise
       return executeRegexAction(action, input)
     case 'sql':
       return executeSqlAction(action, input)
+    case 'calculator':
+      return executeCalculatorAction(action, input)
     default:
       return input
   }
@@ -622,10 +772,22 @@ function executeBase64Action(action: string, input: string): string {
   }
 }
 
-// 正则处理 — 复用 regexUtils
-function executeRegexAction(_action: string, input: string): string {
-  // 工作流中暂不支持正则（需要额外配置 pattern/flags）
-  return input
+// 正则处理
+function executeRegexAction(action: string, input: string): string {
+  switch (action) {
+    case '去除HTML标签':
+      return input.replace(/<[^>]*>/g, '')
+    case '提取URL':
+      const urls = input.match(/https?:\/\/[^\s]+/g)
+      return urls ? urls.join('\n') : ''
+    case '提取邮箱':
+      const emails = input.match(/[\w.-]+@[\w.-]+\.\w+/g)
+      return emails ? emails.join('\n') : ''
+    case '去除空白字符':
+      return input.replace(/\s+/g, '')
+    default:
+      return input
+  }
 }
 
 // SQL处理 — 复用 sqlUtils
@@ -637,6 +799,17 @@ function executeSqlAction(action: string, input: string): string {
       return items.map(s => `('${s}')`).join(',\n')
     }
     default: return input
+  }
+}
+
+// 计算器执行 — 复用 mathjs
+function executeCalculatorAction(_action: string, input: string): string {
+  if (!input.trim()) return ''
+  try {
+    const result = workflowMath.evaluate(input.trim())
+    return String(result)
+  } catch (e: any) {
+    return `计算错误: ${e.message}`
   }
 }
 
@@ -956,5 +1129,86 @@ onMounted(() => {
 }
 :deep(.el-dialog__footer) {
   padding: 12px 20px;
+}
+
+/* Tab布局 */
+.workflow-tabs :deep(.el-tabs__header) {
+  margin-bottom: 16px;
+  padding-left: 8px;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--bg-primary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+html.light .workflow-tabs :deep(.el-tabs__header) {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.workflow-tabs :deep(.el-tabs__nav-wrap) {
+  padding-left: 4px;
+}
+
+.workflow-tabs :deep(.el-tabs__item) {
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.workflow-tabs :deep(.el-tabs__item.is-active) {
+  color: var(--accent-cyan);
+}
+
+.workflow-tabs :deep(.el-tabs__active-bar) {
+  background-color: var(--accent-cyan);
+}
+
+.workflow-tabs :deep(.el-tabs__nav-wrap::after) {
+  background-color: var(--border-color);
+}
+
+.workflow-tabs :deep(.el-tabs__content) {
+  padding: 0;
+}
+
+/* 执行弹窗 */
+.exec-dialog-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.exec-section {
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.exec-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: rgba(0, 0, 0, 0.1);
+  border-bottom: 1px solid var(--border-color);
+}
+.exec-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-cyan);
+}
+.exec-section-actions {
+  display: flex;
+  gap: 8px;
+}
+.exec-section :deep(.el-textarea) {
+  border: none;
+  resize: vertical;
+}
+.exec-section :deep(.el-textarea__inner) {
+  padding: 12px 16px;
+  background: transparent;
+  font-family: monospace;
+  font-size: 13px;
 }
 </style>

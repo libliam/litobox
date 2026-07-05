@@ -131,14 +131,16 @@
         <div class="tool-card">
           <div class="card-header">
             <span class="card-title">解析结果</span>
-            <el-button size="small" @click="handleCopy('decode')">复制</el-button>
+            <div class="card-actions">
+              <el-button size="small" @click="handleCopy('decode')">复制</el-button>
+              <el-button size="small" type="success" :disabled="!tabState.decode.output" @click="handleSaveDecodeEdit">保存修改</el-button>
+            </div>
           </div>
           <div class="card-body">
             <el-input
-              :model-value="tabState.decode.output"
+              v-model="tabState.decode.output"
               type="textarea"
               :rows="6"
-              readonly
               resize="vertical"
               :class="{ 'error': tabState.decode.isError }"
             />
@@ -200,7 +202,7 @@ const handleGenerate = async () => {
       }
     })
     generateError.value = ''
-    store.addHistory({ tool: 'qr', action: 'generate', inputPreview: input.slice(0, 30), outputPreview: '二维码已生成' })
+    store.addHistory({ tool: 'qr', action: 'generate', inputPreview: input.slice(0, 30), outputPreview: '二维码已生成', inputFull: input, outputFull: qrDataUrl.value })
     ElMessage.success('二维码生成成功')
   } catch (e: any) {
     qrDataUrl.value = ''
@@ -271,7 +273,7 @@ const decodeQrFromImage = (dataUrl: string) => {
       tabState.decode.output = code.data
       tabState.decode.error = ''
       tabState.decode.isError = false
-      store.addHistory({ tool: 'qr', action: 'decode', inputPreview: '图片', outputPreview: code.data.slice(0, 30) })
+      store.addHistory({ tool: 'qr', action: 'decode', inputPreview: '图片', outputPreview: code.data.slice(0, 30), inputFull: '[图片]', outputFull: code.data })
       ElMessage.success('解析成功')
     } else {
       tabState.decode.output = ''
@@ -322,6 +324,19 @@ const handleCopy = async (tab: string) => {
   } catch {
     ElMessage.error('复制失败')
   }
+}
+
+const handleSaveDecodeEdit = () => {
+  if (!tabState.decode.output) return
+  store.addHistory({
+    tool: 'qr',
+    action: '二维码解码(已编辑)',
+    inputPreview: '图片',
+    outputPreview: tabState.decode.output.slice(0, 50),
+    inputFull: '[图片]',
+    outputFull: tabState.decode.output,
+  })
+  ElMessage.success('修改已保存')
 }
 </script>
 

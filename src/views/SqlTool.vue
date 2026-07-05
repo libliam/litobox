@@ -575,7 +575,9 @@ const addHistory = (action: string) => {
     tool: 'sql',
     action,
     inputPreview: currentInput.value.slice(0, 50),
-    outputPreview: currentOutput.value.slice(0, 50)
+    outputPreview: currentOutput.value.slice(0, 50),
+    inputFull: currentInput.value,
+    outputFull: currentOutput.value,
   })
 }
 

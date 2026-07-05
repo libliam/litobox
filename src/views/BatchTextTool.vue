@@ -321,7 +321,9 @@ const handleBatchReplace = async () => {
       tool: 'batchText',
       action: 'replace',
       inputPreview: `${replaceFiles.value.length} 个文件, 查找: ${searchText.value.slice(0, 30)}`,
-      outputPreview: `${successCount}/${replaceFiles.value.length} 成功`
+      outputPreview: `${successCount}/${replaceFiles.value.length} 成功`,
+      inputFull: `${replaceFiles.value.length} 个文件, 查找: ${searchText.value}, 替换: ${replaceText.value}`,
+      outputFull: `${successCount}/${replaceFiles.value.length} 成功`,
     })
   } catch (error) {
     ElMessage.error(`批量替换失败: ${error}`)

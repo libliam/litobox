@@ -377,7 +377,9 @@ const addHistory = (action: string) => {
     tool: 'markdown',
     action,
     inputPreview: tabState[activeTab.value].input.slice(0, 50),
-    outputPreview: tabState[activeTab.value].output.slice(0, 50)
+    outputPreview: tabState[activeTab.value].output.slice(0, 50),
+    inputFull: tabState[activeTab.value].input,
+    outputFull: tabState[activeTab.value].output,
   })
 }
 

@@ -70,7 +70,21 @@ export async function recognizeImage(image: Blob | File): Promise<string> {
     throw new Error('未识别到文字，请检查图片是否清晰')
   }
 
-  return results.map(r => r.text).join('\n')
+  const avgHeight = results.reduce((sum, r) => sum + getBlockHeight(r), 0) / results.length
+  const rowTolerance = avgHeight * 0.5
+  const rows = groupByY(results, rowTolerance)
+
+  const lines: string[] = []
+  for (const row of rows) {
+    const sortedByX = [...row].sort((a, b) => {
+      const xA = Math.min(...a.box.map(p => p[0]))
+      const xB = Math.min(...b.box.map(p => p[0]))
+      return xA - xB
+    })
+    lines.push(sortedByX.map(r => r.text).join(''))
+  }
+
+  return lines.join('\n')
 }
 
 /**
@@ -302,37 +316,36 @@ function getHeadingPrefix(height: number, avgHeight: number): string {
 export function convertToMarkdown(ocrResults: OcrResult[]): string {
   if (ocrResults.length === 0) return ''
 
-  // 1. 计算平均高度
   const avgHeight = ocrResults.reduce((sum, r) => sum + getBlockHeight(r), 0) / ocrResults.length
 
-  // 2. 按Y坐标排序
-  const sorted = [...ocrResults].sort((a, b) => {
-    const yA = Math.min(...a.box.map(p => p[1]))
-    const yB = Math.min(...b.box.map(p => p[1]))
-    return yA - yB
-  })
+  const rowTolerance = avgHeight * 0.5
+  const rows = groupByY(ocrResults, rowTolerance)
 
-  // 3. 计算平均行高（用于段落分组）
-  const avgLineHeight = avgHeight
+  const avgLineHeight = avgHeight * 1.5
 
-  // 4. 构建Markdown
   const lines: string[] = []
   let prevY: number | null = null
 
-  for (const item of sorted) {
-    const y = Math.min(...item.box.map(p => p[1]))
-    const height = getBlockHeight(item)
+  for (const row of rows) {
+    const rowY = Math.min(...row.map(r => Math.min(...r.box.map(p => p[1]))))
+    const rowHeight = row.reduce((sum, r) => sum + getBlockHeight(r), 0) / row.length
 
-    // 判断是否需要插入段落分隔（间距大于平均行高的2倍）
-    if (prevY !== null && (y - prevY) > avgLineHeight * 2) {
-      lines.push('') // 空行表示新段落
+    const sortedByX = [...row].sort((a, b) => {
+      const xA = Math.min(...a.box.map(p => p[0]))
+      const xB = Math.min(...b.box.map(p => p[0]))
+      return xA - xB
+    })
+
+    const lineText = sortedByX.map(r => r.text).join('')
+
+    if (prevY !== null && (rowY - prevY) > avgLineHeight * 2) {
+      lines.push('')
     }
 
-    // 获取标题前缀
-    const prefix = getHeadingPrefix(height, avgHeight)
-    lines.push(`${prefix}${item.text}`)
+    const prefix = getHeadingPrefix(rowHeight, avgHeight)
+    lines.push(`${prefix}${lineText}`)
 
-    prevY = y
+    prevY = rowY
   }
 
   return lines.join('\n')

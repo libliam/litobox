@@ -253,7 +253,9 @@ const handleTest = () => {
     tool: 'regex',
     action: 'test',
     inputPreview: pattern.value.slice(0, 50),
-    outputPreview: `${result.matches.length} matches`
+    outputPreview: `${result.matches.length} matches`,
+    inputFull: `Pattern: ${pattern.value}\nFlags: ${getFlags()}\nText: ${testText.value}`,
+    outputFull: result.matches.map(m => m.text).join('\n'),
   })
 }
 
@@ -276,7 +278,9 @@ const handleReplace = () => {
     tool: 'regex',
     action: 'replace',
     inputPreview: pattern.value.slice(0, 50),
-    outputPreview: replacedText.value.slice(0, 50)
+    outputPreview: replacedText.value.slice(0, 50),
+    inputFull: `Pattern: ${pattern.value}\nText: ${testText.value}\nReplace: ${replacePattern.value}`,
+    outputFull: replacedText.value,
   })
 }
 

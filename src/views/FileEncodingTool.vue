@@ -265,7 +265,9 @@ const convertFile = async () => {
       tool: 'fileEncoding',
       action: `${fromEnc} -> ${targetEncoding.value}`,
       inputPreview: filePath.value,
-      outputPreview: result
+      outputPreview: result,
+      inputFull: filePath.value,
+      outputFull: result,
     })
   } catch (error) {
     ElMessage.error(`转换失败: ${error}`)
@@ -337,7 +339,9 @@ const handleBatchConvert = async () => {
       tool: 'fileEncoding',
       action: `batch ${batchFromEncoding.value} -> ${batchToEncoding.value}`,
       inputPreview: `${batchFiles.value.length} 个文件`,
-      outputPreview: `${successCount}/${batchFiles.value.length} 成功`
+      outputPreview: `${successCount}/${batchFiles.value.length} 成功`,
+      inputFull: batchFiles.value.join('\n'),
+      outputFull: batchResults.value.map(r => `${r.path}: ${r.success ? 'OK' : r.error}`).join('\n'),
     })
   } catch (error) {
     ElMessage.error(`批量转换失败: ${error}`)

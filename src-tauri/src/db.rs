@@ -28,7 +28,7 @@ fn with_conn<T, F: FnOnce(&mut Connection) -> Result<T, String>>(f: F) -> Result
     f(&mut conn)
 }
 
-fn get_db_path() -> Result<PathBuf, String> {
+pub fn get_db_path() -> Result<PathBuf, String> {
     let app_dir = dirs::config_dir()
         .ok_or("无法获取应用数据目录")?;
     let db_dir = app_dir.join("com.dev.toolbox");

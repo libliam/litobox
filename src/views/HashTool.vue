@@ -128,6 +128,8 @@ const handleHash = () => {
     action: hmacKey.value ? 'HMAC计算' : '哈希计算',
     inputPreview: text.slice(0, 50),
     outputPreview: results.value.map(r => r.hash.slice(0, 16)).join(', '),
+    inputFull: text,
+    outputFull: results.value.map(r => `${r.algorithm}: ${r.hash}`).join('\n'),
   })
 
   ElMessage.success('计算完成')

@@ -6,6 +6,7 @@
         <el-tab-pane label="PDF转图片" name="pdfToImages" />
         <el-tab-pane label="图片转PDF" name="imagesToPdf" />
         <el-tab-pane label="PDF文本提取" name="textExtract" />
+        <el-tab-pane label="PDF转Markdown" name="pdfToMarkdown" />
         <el-tab-pane label="PDF合并/拆分" name="mergeSplit" />
       </el-tabs>
     </div>
@@ -71,6 +72,22 @@
               <el-button size="small" :disabled="!imageBlobs.length" @click="handleDownloadAllImages">
                 全部下载
               </el-button>
+              <el-button
+                size="small"
+                type="success"
+                :disabled="!imageBlobs.length || isOcrRunning"
+                :loading="isOcrRunning"
+                @click="handleOcrAll"
+              >
+                OCR 识别
+              </el-button>
+              <el-button
+                size="small"
+                :disabled="!imageBlobs.length"
+                @click="handleJumpToOcr"
+              >
+                跳转到OCR
+              </el-button>
             </div>
           </div>
         </div>
@@ -85,6 +102,27 @@
             <el-button size="small" @click="handleDownloadSingleImage(blob, idx + 1)">下载</el-button>
           </div>
         </div>
+
+        <!-- OCR 结果 -->
+        <div v-if="ocrResults.length > 0" class="ocr-result-section">
+          <el-divider />
+          <div class="ocr-result-header">
+            <span class="ocr-result-title">OCR 识别结果 ({{ ocrResults.length }} 页)</span>
+            <div class="ocr-actions">
+              <el-button size="small" @click="handleCopyOcrResult">复制全部</el-button>
+              <el-button size="small" @click="handleExportOcrResult">导出 .txt</el-button>
+              <el-button size="small" type="success" :disabled="!ocrEditableText" @click="handleSaveOcrEdit">保存修改</el-button>
+              <el-button size="small" @click="handleClearOcrResult">清除</el-button>
+            </div>
+          </div>
+          <el-input
+            v-model="ocrEditableText"
+            type="textarea"
+            :rows="10"
+            class="ocr-textarea"
+          />
+        </div>
+
         <div v-if="error" class="error-message">{{ error }}</div>
       </div>
     </div>
@@ -189,6 +227,7 @@
         <div class="card-actions">
           <el-button size="small" :disabled="!extractedText" @click="handleCopyExtractedText">复制</el-button>
           <el-button size="small" :disabled="!extractedText" @click="handleDownloadExtractedText">下载 .txt</el-button>
+          <el-button size="small" type="success" :disabled="!extractedText" @click="handleSaveExtractedEdit">保存修改</el-button>
         </div>
       </div>
       <div class="card-body">
@@ -207,9 +246,110 @@
           type="textarea"
           :rows="12"
           placeholder="提取的文本将在此处显示..."
-          readonly
         />
         <div v-if="error" class="error-message">{{ error }}</div>
+      </div>
+    </div>
+
+    <!-- Tab 5: PDF转Markdown -->
+    <div v-if="activeTab === 'pdfToMarkdown'" class="tool-card">
+      <div class="card-header">
+        <span class="card-title">PDF 输入</span>
+        <div class="card-actions">
+          <el-button size="small" type="primary" @click="triggerMarkdownInput">上传 PDF</el-button>
+          <el-button v-if="markdownPdfFile" size="small" @click="handleClearMarkdownPdf">移除</el-button>
+        </div>
+      </div>
+      <div class="card-body">
+        <input
+          ref="markdownInputRef"
+          type="file"
+          accept=".pdf"
+          style="display: none"
+          @change="handleMarkdownPdfSelect"
+        />
+        <div v-if="markdownPdfFile" class="file-info">
+          <span class="file-name">{{ markdownPdfFile.name }}</span>
+          <span class="file-size">{{ formatFileSize(markdownPdfFile.size) }}</span>
+          <span v-if="markdownPageCount" class="file-pages">{{ markdownPageCount }} 页</span>
+        </div>
+        <div v-else class="upload-hint">点击「上传 PDF」选择文件</div>
+      </div>
+    </div>
+
+    <div v-if="activeTab === 'pdfToMarkdown'" class="tool-card">
+      <div class="card-header">
+        <span class="card-title">转换设置</span>
+      </div>
+      <div class="card-body">
+        <div class="action-grid">
+          <div class="action-group">
+            <div class="group-label">转换模式</div>
+            <el-select v-model="markdownMode" size="small" style="width: 160px">
+              <el-option label="自动检测" value="auto" />
+              <el-option label="文本提取（快速）" value="text" />
+              <el-option label="OCR 识别（精确）" value="ocr" />
+            </el-select>
+          </div>
+          <div class="action-group">
+            <div class="group-label">OCR DPI</div>
+            <el-select v-model="markdownDpi" size="small" style="width: 120px">
+              <el-option label="150 (标准)" :value="150" />
+              <el-option label="200 (清晰)" :value="200" />
+              <el-option label="300 (高清)" :value="300" />
+            </el-select>
+          </div>
+          <div class="action-group">
+            <div class="group-label">执行</div>
+            <div class="group-buttons">
+              <el-button
+                type="primary"
+                size="small"
+                :disabled="!markdownPdfFile || isMarkdownConverting"
+                :loading="isMarkdownConverting"
+                @click="handlePdfToMarkdown"
+              >
+                开始转换
+              </el-button>
+            </div>
+          </div>
+        </div>
+        <div v-if="markdownMode === 'ocr'" class="ocr-hint">
+          <el-icon><Warning /></el-icon>
+          <span>OCR 模式会逐页识别，速度较慢，适合扫描版 PDF</span>
+        </div>
+        <div v-if="markdownError" class="error-message">{{ markdownError }}</div>
+      </div>
+    </div>
+
+    <div v-if="activeTab === 'pdfToMarkdown' && markdownOutput" class="tool-card">
+      <div class="card-header">
+        <div class="header-left">
+          <span class="card-title">Markdown 结果</span>
+        </div>
+        <div class="card-actions">
+          <el-button size="small" @click="handleCopyMarkdownOutput">复制</el-button>
+          <el-button size="small" @click="handleExportMarkdownOutput">导出 .md</el-button>
+          <el-button size="small" type="success" @click="handleSaveMarkdownEdit">保存修改</el-button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="markdown-output-grid">
+          <div class="markdown-source-panel">
+            <div class="panel-label">源码（可编辑）</div>
+            <el-input
+              v-model="markdownOutput"
+              type="textarea"
+              :rows="20"
+              resize="vertical"
+              class="markdown-textarea"
+            />
+          </div>
+          <div class="markdown-preview-panel">
+            <div class="panel-label">预览</div>
+            <div class="markdown-preview" v-html="markdownHtmlPreview"></div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -270,13 +410,24 @@
             </div>
           </div>
           <div class="action-group">
-            <div class="group-label">自定义</div>
-            <div class="group-buttons">
-              <el-button type="primary" size="small" :disabled="!mergePdfFiles.length" @click="handleCustomMerge">
-                生成 PDF
-              </el-button>
-            </div>
+            <div class="group-label">自定义页码</div>
+            <el-input
+              v-model="customPageRange"
+              size="small"
+              placeholder="如: 1-3,5,8-10"
+              style="width: 200px"
+              clearable
+            />
+            <el-button type="primary" size="small" :disabled="!mergePdfFiles.length || !customPageRange" @click="handleCustomMerge">
+              生成 PDF
+            </el-button>
           </div>
+        </div>
+        <div class="page-range-hint">
+          支持格式: <code>1-3,5,8-10</code>（连续范围用 <code>-</code>，多个用 <code>,</code> 分隔）
+          <span v-if="mergePdfFiles.length === 1 && singleFilePageCount > 0">
+            · 当前文件共 {{ singleFilePageCount }} 页
+          </span>
         </div>
         <div v-if="mergedPdfBlob" class="result-info">
           <span>PDF 大小: {{ formatFileSize(mergedPdfBlob.size) }}</span>
@@ -289,9 +440,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed } from 'vue'
 import { ElMessage, ElLoading } from 'element-plus'
-import { QuestionFilled } from '@element-plus/icons-vue'
+import { QuestionFilled, Warning } from '@element-plus/icons-vue'
 import {
   pdfToImages,
   extractPdfText,
@@ -302,11 +453,20 @@ import {
   formatFileSize,
   type ImageToPdfOptions
 } from '@/utils/pdfUtils'
+import { recognizeImage, recognizeMarkdown } from '@/utils/ocrUtils'
 import { useToolboxStore } from '@/store'
 
 const store = useToolboxStore()
 const activeTab = ref('pdfToImages')
 const error = ref('')
+
+// ============ OCR 识别 ============
+const ocrResults = ref<string[]>([])
+const isOcrRunning = ref(false)
+const ocrEditableText = ref('')
+const ocrFullText = computed(() =>
+  ocrResults.value.map((text, idx) => `--- 第 ${idx + 1} 页 ---\n${text}`).join('\n\n')
+)
 
 // ============ Tab 1: PDF转图片 ============
 const pdfInputRef = ref<HTMLInputElement | null>(null)
@@ -367,7 +527,9 @@ const handlePdfToImages = async () => {
       tool: 'pdf',
       action: `PDF转图片 (${dpi.value}DPI)`,
       inputPreview: pdfFile.value.name.slice(0, 50),
-      outputPreview: `${imageBlobs.value.length} 页`
+      outputPreview: `${imageBlobs.value.length} 页`,
+      inputFull: pdfFile.value.name,
+      outputFull: `${imageBlobs.value.length} 页`,
     })
   } catch (e: any) {
     error.value = e.message || '转换失败'
@@ -387,6 +549,84 @@ const handleDownloadAllImages = async () => {
     const blob = imageBlobs.value[idx]
     await saveFileWithDialog(blob, `page_${idx + 1}.png`, 'png')
   }
+}
+
+// ============ OCR 识别 ============
+const handleOcrAll = async () => {
+  if (imageBlobs.value.length === 0) return
+  error.value = ''
+  ocrResults.value = []
+  isOcrRunning.value = true
+
+  const loading = ElLoading.service({
+    lock: true,
+    text: `正在 OCR 识别 ${imageBlobs.value.length} 页...`,
+    background: 'rgba(0, 0, 0, 0.7)',
+  })
+
+  try {
+    for (let idx = 0; idx < imageBlobs.value.length; idx++) {
+      const blob = imageBlobs.value[idx]
+      const blobFile = new File([blob], `page_${idx + 1}.png`, { type: 'image/png' })
+      const text = await recognizeImage(blobFile)
+      ocrResults.value.push(text)
+    }
+    ocrEditableText.value = ocrFullText.value
+    ElMessage.success(`OCR 识别完成，共 ${ocrResults.value.length} 页`)
+    store.addHistory({
+      tool: 'pdf',
+      action: 'PDF转图片+OCR',
+      inputPreview: pdfFile.value?.name.slice(0, 50) || '',
+      outputPreview: ocrEditableText.value.slice(0, 50),
+      inputFull: pdfFile.value?.name || '',
+      outputFull: ocrEditableText.value,
+    })
+  } catch (e: any) {
+    error.value = `OCR 识别失败: ${e.message}`
+  } finally {
+    isOcrRunning.value = false
+    loading.close()
+  }
+}
+
+const handleCopyOcrResult = async () => {
+  if (!ocrEditableText.value) return
+  try {
+    await navigator.clipboard.writeText(ocrEditableText.value)
+    ElMessage.success('已复制')
+  } catch {
+    ElMessage.error('复制失败')
+  }
+}
+
+const handleExportOcrResult = async () => {
+  if (!ocrEditableText.value) return
+  const blob = new Blob([ocrEditableText.value], { type: 'text/plain' })
+  await saveFileWithDialog(blob, 'pdf-ocr-result.txt', 'txt')
+}
+
+const handleSaveOcrEdit = () => {
+  if (!ocrEditableText.value) return
+  store.addHistory({
+    tool: 'pdf',
+    action: 'PDF转图片+OCR(已编辑)',
+    inputPreview: pdfFile.value?.name.slice(0, 50) || '',
+    outputPreview: ocrEditableText.value.slice(0, 50),
+    inputFull: pdfFile.value?.name || '',
+    outputFull: ocrEditableText.value,
+  })
+  ElMessage.success('修改已保存')
+}
+
+const handleClearOcrResult = () => {
+  ocrResults.value = []
+  ocrEditableText.value = ''
+}
+
+const handleJumpToOcr = () => {
+  if (imageBlobs.value.length === 0) return
+  ;(window as any).__pendingOcrBlobs = imageBlobs.value.slice()
+  store.activeTool = 'ocr'
 }
 
 // ============ Tab 2: 图片转PDF ============
@@ -437,7 +677,9 @@ const handleImagesToPdf = async () => {
       tool: 'pdf',
       action: '图片转PDF',
       inputPreview: `${imageFiles.value.length} 张图片`,
-      outputPreview: formatFileSize(generatedPdfBlob.value.size)
+      outputPreview: formatFileSize(generatedPdfBlob.value.size),
+      inputFull: imageFiles.value.map(f => f.name).join('\n'),
+      outputFull: formatFileSize(generatedPdfBlob.value.size),
     })
   } catch (e: any) {
     error.value = e.message || '生成失败'
@@ -495,7 +737,9 @@ const handleExtractText = async () => {
       tool: 'pdf',
       action: 'PDF文本提取',
       inputPreview: extractPdfFile.value.name.slice(0, 50),
-      outputPreview: extractedText.value.slice(0, 50)
+      outputPreview: extractedText.value.slice(0, 50),
+      inputFull: extractPdfFile.value.name,
+      outputFull: extractedText.value,
     })
   } catch (e: any) {
     error.value = e.message || '提取失败'
@@ -523,11 +767,250 @@ const handleDownloadExtractedText = async () => {
   await saveFileWithDialog(blob, 'extracted-text.txt', 'txt')
 }
 
+const handleSaveExtractedEdit = () => {
+  if (!extractedText.value) return
+  store.addHistory({
+    tool: 'pdf',
+    action: 'PDF文本提取(已编辑)',
+    inputPreview: extractPdfFile.value?.name.slice(0, 50) || '',
+    outputPreview: extractedText.value.slice(0, 50),
+    inputFull: extractPdfFile.value?.name || '',
+    outputFull: extractedText.value,
+  })
+  ElMessage.success('修改已保存')
+}
+
+// ============ Tab 5: PDF转Markdown ============
+const markdownInputRef = ref<HTMLInputElement | null>(null)
+const markdownPdfFile = ref<File | null>(null)
+const markdownPageCount = ref(0)
+const markdownMode = ref<'auto' | 'text' | 'ocr'>('auto')
+const markdownDpi = ref(150)
+const markdownOutput = ref('')
+const markdownError = ref('')
+const isMarkdownConverting = ref(false)
+
+const markdownHtmlPreview = computed(() => {
+  if (!markdownOutput.value) return ''
+  return markdownOutput.value
+    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^#### (.+)$/gm, '<h4>$1</h4>')
+    .replace(/\n\n/g, '</p><p>')
+    .replace(/\n/g, '<br>')
+    .replace(/^(?!<[h1-6])/gm, '<p>')
+    .replace(/(?<!<\/[h1-6]>)$/gm, '</p>')
+    .replace(/<p><\/p>/g, '')
+})
+
+const triggerMarkdownInput = () => markdownInputRef.value?.click()
+
+const handleMarkdownPdfSelect = async (e: Event) => {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  markdownError.value = ''
+  markdownOutput.value = ''
+  const maxSize = 100 * 1024 * 1024
+  if (file.size > maxSize) {
+    markdownError.value = 'PDF 过大，建议小于 100MB'
+    return
+  }
+  markdownPdfFile.value = file
+
+  try {
+    const buffer = await file.arrayBuffer()
+    const doc = await loadPdfDocument(new Uint8Array(buffer))
+    markdownPageCount.value = doc.numPages
+  } catch (e: any) {
+    markdownError.value = e.message || 'PDF 加载失败'
+  }
+  input.value = ''
+}
+
+const handleClearMarkdownPdf = () => {
+  markdownPdfFile.value = null
+  markdownPageCount.value = 0
+  markdownOutput.value = ''
+  markdownError.value = ''
+  if (markdownInputRef.value) markdownInputRef.value.value = ''
+}
+
+const detectPdfType = async (file: File): Promise<'text' | 'image'> => {
+  const buffer = await file.arrayBuffer()
+  const doc = await loadPdfDocument(new Uint8Array(buffer))
+  let totalTextItems = 0
+  const samplePages = Math.min(doc.numPages, 5)
+  for (let i = 1; i <= samplePages; i++) {
+    const page = await doc.getPage(i)
+    const content = await page.getTextContent()
+    totalTextItems += content.items.length
+  }
+  const avgTextItems = totalTextItems / samplePages
+  return avgTextItems > 10 ? 'text' : 'image'
+}
+
+const extractTextToMarkdown = async (file: File): Promise<string> => {
+  const buffer = await file.arrayBuffer()
+  const doc = await loadPdfDocument(new Uint8Array(buffer))
+  const totalPages = doc.numPages
+
+  const allLines: string[] = []
+
+  for (let i = 1; i <= totalPages; i++) {
+    const page = await doc.getPage(i)
+    const content = await page.getTextContent()
+
+    const items: Array<{ str: string; y: number; height: number; x: number }> = []
+    for (const item of content.items as any[]) {
+      if (!item.str || !item.str.trim()) continue
+      const transform = item.transform || []
+      const y = transform[5] || 0
+      const height = transform[3] || 12
+      const x = transform[4] || 0
+      items.push({ str: item.str, y, height, x })
+    }
+
+    if (items.length === 0) continue
+
+    const avgHeight = items.reduce((sum, it) => sum + it.height, 0) / items.length
+
+    const rowTolerance = avgHeight * 0.5
+    const rows: Array<Array<{ str: string; y: number; height: number; x: number }>> = []
+    const sortedByY = [...items].sort((a, b) => b.y - a.y)
+
+    for (const item of sortedByY) {
+      const existingRow = rows.find(row => Math.abs(row[0].y - item.y) <= rowTolerance)
+      if (existingRow) {
+        existingRow.push(item)
+      } else {
+        rows.push([item])
+      }
+    }
+
+    const avgLineHeight = avgHeight * 1.5
+    const pageLines: string[] = []
+    let prevY: number | null = null
+
+    for (const row of rows) {
+      const rowY = row[0].y
+      const rowHeight = row.reduce((sum, r) => sum + r.height, 0) / row.length
+      const sortedByX = [...row].sort((a, b) => a.x - b.x)
+      const lineText = sortedByX.map(r => r.str).join('')
+
+      if (prevY !== null && Math.abs(prevY - rowY) > avgLineHeight * 2) {
+        pageLines.push('')
+      }
+
+      let prefix = ''
+      if (rowHeight > avgHeight * 1.6) prefix = '# '
+      else if (rowHeight > avgHeight * 1.3) prefix = '## '
+      else if (rowHeight > avgHeight * 1.1) prefix = '### '
+
+      pageLines.push(`${prefix}${lineText}`)
+      prevY = rowY
+    }
+
+    if (allLines.length > 0) allLines.push('', `--- 第 ${i} 页 ---`, '')
+    allLines.push(...pageLines)
+  }
+
+  return allLines.join('\n')
+}
+
+const ocrToMarkdown = async (file: File, dpi: number): Promise<string> => {
+  const images = await pdfToImages(file, dpi)
+  const results: string[] = []
+
+  for (let i = 0; i < images.length; i++) {
+    const blob = images[i]
+    const mdText = await recognizeMarkdown(blob)
+    results.push(`--- 第 ${i + 1} 页 ---\n\n${mdText}`)
+  }
+
+  return results.join('\n\n')
+}
+
+const handlePdfToMarkdown = async () => {
+  if (!markdownPdfFile.value) return
+  markdownError.value = ''
+  markdownOutput.value = ''
+  isMarkdownConverting.value = true
+
+  const loading = ElLoading.service({
+    lock: true,
+    text: '正在转换为 Markdown，请稍候...',
+    background: 'rgba(0, 0, 0, 0.7)',
+  })
+
+  try {
+    let mode: 'text' | 'ocr' = markdownMode.value === 'auto' ? 'text' : markdownMode.value
+    if (markdownMode.value === 'auto') {
+      const detected = await detectPdfType(markdownPdfFile.value)
+      mode = detected === 'text' ? 'text' : 'ocr'
+    }
+
+    if (mode === 'text') {
+      markdownOutput.value = await extractTextToMarkdown(markdownPdfFile.value)
+    } else {
+      markdownOutput.value = await ocrToMarkdown(markdownPdfFile.value, markdownDpi.value)
+    }
+
+    const modeLabel = mode === 'text' ? '文本提取' : 'OCR识别'
+    ElMessage.success(`转换完成（${modeLabel}模式）`)
+    store.addHistory({
+      tool: 'pdf',
+      action: `PDF转Markdown (${modeLabel})`,
+      inputPreview: markdownPdfFile.value.name.slice(0, 50),
+      outputPreview: markdownOutput.value.slice(0, 50),
+      inputFull: markdownPdfFile.value.name,
+      outputFull: markdownOutput.value,
+    })
+  } catch (e: any) {
+    markdownError.value = e.message || '转换失败'
+  } finally {
+    isMarkdownConverting.value = false
+    loading.close()
+  }
+}
+
+const handleCopyMarkdownOutput = async () => {
+  if (!markdownOutput.value) return
+  try {
+    await navigator.clipboard.writeText(markdownOutput.value)
+    ElMessage.success('已复制到剪贴板')
+  } catch {
+    ElMessage.error('复制失败')
+  }
+}
+
+const handleExportMarkdownOutput = async () => {
+  if (!markdownOutput.value) return
+  const blob = new Blob([markdownOutput.value], { type: 'text/markdown;charset=utf-8' })
+  await saveFileWithDialog(blob, 'pdf-to-markdown.md', 'md')
+}
+
+const handleSaveMarkdownEdit = () => {
+  if (!markdownOutput.value) return
+  store.addHistory({
+    tool: 'pdf',
+    action: 'PDF转Markdown(已编辑)',
+    inputPreview: markdownPdfFile.value?.name.slice(0, 50) || '',
+    outputPreview: markdownOutput.value.slice(0, 50),
+    inputFull: markdownPdfFile.value?.name || '',
+    outputFull: markdownOutput.value,
+  })
+  ElMessage.success('修改已保存')
+}
+
 // ============ Tab 4: PDF合并/拆分 ============
 const mergeInputRef = ref<HTMLInputElement | null>(null)
 const mergePdfFiles = ref<File[]>([])
 const mergePageRanges = ref<string[]>([])
+const customPageRange = ref('')
 const mergedPdfBlob = ref<Blob | null>(null)
+const singleFilePageCount = ref(0)
 
 const triggerMergeInput = () => mergeInputRef.value?.click()
 
@@ -540,18 +1023,46 @@ const handleMergePdfSelect = async (e: Event) => {
   mergePageRanges.value = [...mergePageRanges.value, ...newFiles.map(() => 'all')]
   mergedPdfBlob.value = null
   input.value = ''
+
+  // 单文件时检测总页数，方便用户参考
+  if (mergePdfFiles.value.length === 1) {
+    try {
+      const buffer = await mergePdfFiles.value[0].arrayBuffer()
+      const doc = await loadPdfDocument(new Uint8Array(buffer))
+      singleFilePageCount.value = doc.numPages
+    } catch {
+      singleFilePageCount.value = 0
+    }
+  } else {
+    singleFilePageCount.value = 0
+  }
 }
 
-const handleRemoveMergePdf = (idx: number) => {
+const handleRemoveMergePdf = async (idx: number) => {
   mergePdfFiles.value.splice(idx, 1)
   mergePageRanges.value.splice(idx, 1)
   mergedPdfBlob.value = null
+
+  // 删除后如果只剩1个文件，重新检测页数
+  if (mergePdfFiles.value.length === 1) {
+    try {
+      const buffer = await mergePdfFiles.value[0].arrayBuffer()
+      const doc = await loadPdfDocument(new Uint8Array(buffer))
+      singleFilePageCount.value = doc.numPages
+    } catch {
+      singleFilePageCount.value = 0
+    }
+  } else {
+    singleFilePageCount.value = 0
+  }
 }
 
 const handleClearMergePdfs = () => {
   mergePdfFiles.value = []
   mergePageRanges.value = []
+  customPageRange.value = ''
   mergedPdfBlob.value = null
+  singleFilePageCount.value = 0
   error.value = ''
   if (mergeInputRef.value) mergeInputRef.value.value = ''
 }
@@ -559,6 +1070,7 @@ const handleClearMergePdfs = () => {
 const handleQuickMerge = async (range: string) => {
   if (!mergePdfFiles.value.length) return
   error.value = ''
+  customPageRange.value = ''
   const loading = ElLoading.service({
     lock: true,
     text: `正在合并 PDF（${mergePdfFiles.value.length} 个文件），请稍候...`,
@@ -571,7 +1083,9 @@ const handleQuickMerge = async (range: string) => {
       tool: 'pdf',
       action: `PDF合并 (${range})`,
       inputPreview: `${mergePdfFiles.value.length} 个文件`,
-      outputPreview: formatFileSize(mergedPdfBlob.value.size)
+      outputPreview: formatFileSize(mergedPdfBlob.value.size),
+      inputFull: mergePdfFiles.value.map(f => f.name).join('\n'),
+      outputFull: formatFileSize(mergedPdfBlob.value.size),
     })
   } catch (e: any) {
     error.value = e.message || '合并失败'
@@ -581,7 +1095,7 @@ const handleQuickMerge = async (range: string) => {
 }
 
 const handleCustomMerge = async () => {
-  if (!mergePdfFiles.value.length) return
+  if (!mergePdfFiles.value.length || !customPageRange.value) return
   error.value = ''
   const loading = ElLoading.service({
     lock: true,
@@ -589,13 +1103,17 @@ const handleCustomMerge = async () => {
     background: 'rgba(0, 0, 0, 0.7)',
   })
   try {
-    mergedPdfBlob.value = await mergePdf(mergePdfFiles.value, mergePageRanges.value)
+    // 自定义页码对所有文件统一应用
+    const ranges = mergePdfFiles.value.map(() => customPageRange.value)
+    mergedPdfBlob.value = await mergePdf(mergePdfFiles.value, ranges)
     ElMessage.success('PDF 生成完成')
     store.addHistory({
       tool: 'pdf',
-      action: 'PDF自定义合并',
+      action: `PDF自定义提取 [${customPageRange.value}]`,
       inputPreview: `${mergePdfFiles.value.length} 个文件`,
-      outputPreview: formatFileSize(mergedPdfBlob.value.size)
+      outputPreview: formatFileSize(mergedPdfBlob.value.size),
+      inputFull: mergePdfFiles.value.map((f) => `${f.name} [${customPageRange.value}]`).join('\n'),
+      outputFull: formatFileSize(mergedPdfBlob.value.size),
     })
   } catch (e: any) {
     error.value = e.message || '合并失败'
@@ -858,6 +1376,21 @@ html.light .pdf-tabs :deep(.el-tabs__header) {
   white-space: nowrap;
 }
 
+/* 页码范围提示 */
+.page-range-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.page-range-hint code {
+  background: var(--bg-input);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 12px;
+}
+
 /* 合并文件列表 */
 .merge-file-list {
   display: flex;
@@ -928,5 +1461,116 @@ html.light .pdf-tabs :deep(.el-tabs__header) {
 :deep(.el-textarea.error .el-textarea__inner) {
   border-color: var(--accent-red);
   box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.1);
+}
+
+/* ===== OCR 结果 ===== */
+.ocr-result-section {
+  margin-top: 8px;
+}
+
+.ocr-result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.ocr-result-title {
+  font-size: 13px;
+  color: var(--accent-cyan);
+  font-weight: 500;
+}
+
+.ocr-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.ocr-textarea {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+}
+
+/* ===== OCR 提示 ===== */
+.ocr-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 4px;
+  font-size: 12px;
+  color: #f59e0b;
+}
+
+.ocr-hint .el-icon {
+  flex-shrink: 0;
+}
+
+/* ===== Markdown 输出 ===== */
+.markdown-output-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.markdown-source-panel,
+.markdown-preview-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.panel-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.markdown-textarea {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 13px;
+  width: 100%;
+}
+
+.markdown-preview {
+  padding: 16px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  min-height: 300px;
+  max-height: 500px;
+  overflow-y: auto;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+
+.markdown-preview h1,
+.markdown-preview h2,
+.markdown-preview h3,
+.markdown-preview h4 {
+  color: var(--accent-cyan);
+  margin-top: 16px;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.markdown-preview h1 { font-size: 22px; }
+.markdown-preview h2 { font-size: 18px; }
+.markdown-preview h3 { font-size: 16px; }
+.markdown-preview h4 { font-size: 14px; }
+
+.markdown-preview p {
+  margin: 8px 0;
+}
+
+@media (max-width: 900px) {
+  .markdown-output-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

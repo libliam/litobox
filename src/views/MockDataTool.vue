@@ -605,7 +605,9 @@ const handleGenerate = (type: string) => {
     tool: 'mockData',
     action: `generate_${type}`,
     inputPreview: `count=${(options as any)[type].count}`,
-    outputPreview: results[type][0] || ''
+    outputPreview: results[type][0] || '',
+    inputFull: JSON.stringify((options as any)[type]),
+    outputFull: results[type].join('\n'),
   })
 
   ElMessage.success(`已生成 ${(options as any)[type].count} 条数据`)

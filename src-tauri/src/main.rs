@@ -7,6 +7,9 @@ mod file_saver;
 mod js_executor;
 mod http_cmd;
 mod note_manager;
+mod system_info;
+mod sqlite_viewer;
+mod disk_analyzer;
 
 use tauri::{Manager, Emitter};
 use tauri_plugin_dialog::{DialogExt, MessageDialogBuilder, MessageDialogButtons, MessageDialogKind};
@@ -89,6 +92,31 @@ fn main() {
             note_manager::note_read,
             note_manager::note_write,
             db::cmd_db_register_shortcuts,
+            system_info::is_admin,
+            system_info::get_system_info,
+            system_info::get_network_info,
+            system_info::get_process_list,
+            system_info::get_hardware_info,
+            system_info::get_software_env,
+            // SQLite 查看器命令
+            sqlite_viewer::sqlite_list_tables,
+            sqlite_viewer::sqlite_get_schema,
+            sqlite_viewer::sqlite_query,
+            sqlite_viewer::sqlite_table_preview,
+            sqlite_viewer::sqlite_export_csv,
+            sqlite_viewer::sqlite_get_app_db_path,
+            // 磁盘分析命令
+            disk_analyzer::disk_scan_start,
+            disk_analyzer::disk_scan_cancel,
+            disk_analyzer::disk_scan_status,
+            disk_analyzer::disk_get_summary,
+            disk_analyzer::disk_get_folders,
+            disk_analyzer::disk_get_top_files,
+            disk_analyzer::disk_get_extension_stats,
+            disk_analyzer::disk_get_duplicates,
+            disk_analyzer::disk_delete_files,
+            disk_analyzer::disk_clear_scan,
+            disk_analyzer::disk_locate_in_explorer,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

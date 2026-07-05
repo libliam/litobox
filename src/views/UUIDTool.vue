@@ -69,7 +69,9 @@ const handleGenerate = () => {
     tool: 'uuid',
     action: 'generate',
     inputPreview: `count=${count.value}`,
-    outputPreview: uuids.value[0]
+    outputPreview: uuids.value[0],
+    inputFull: `count=${count.value}, uppercase=${uppercase.value}, removeDashes=${removeDashes.value}`,
+    outputFull: uuids.value.join('\n'),
   })
 
   ElMessage.success(`已生成 ${count.value} 个 UUID`)

@@ -214,7 +214,7 @@ const handleXmlToJson = () => {
     xmlError.value = ''
     xmlIsError.value = false
     ElMessage.success('XML→JSON 转换完成')
-    store.addHistory({ tool: 'xmlYaml', action: 'XML→JSON', inputPreview: xmlInput.value.slice(0, 50), outputPreview: xmlOutput.value.slice(0, 50) })
+    store.addHistory({ tool: 'xmlYaml', action: 'XML→JSON', inputPreview: xmlInput.value.slice(0, 50), outputPreview: xmlOutput.value.slice(0, 50), inputFull: xmlInput.value, outputFull: xmlOutput.value })
   } catch (e: any) {
     xmlError.value = e.message
     xmlIsError.value = true
@@ -277,7 +277,7 @@ const handleYamlToJson = () => {
     yamlError.value = ''
     yamlIsError.value = false
     ElMessage.success('YAML→JSON 转换完成')
-    store.addHistory({ tool: 'xmlYaml', action: 'YAML→JSON', inputPreview: yamlInput.value.slice(0, 50), outputPreview: yamlOutput.value.slice(0, 50) })
+    store.addHistory({ tool: 'xmlYaml', action: 'YAML→JSON', inputPreview: yamlInput.value.slice(0, 50), outputPreview: yamlOutput.value.slice(0, 50), inputFull: yamlInput.value, outputFull: yamlOutput.value })
   } catch (e: any) {
     yamlError.value = e.message
     yamlIsError.value = true

@@ -295,7 +295,7 @@ const handleGenerate = () => {
   }
 
   tabState.generate.output = generatedPasswords.value.map(p => p.password).join('\n')
-  store.addHistory({ tool: 'password', action: 'generate', inputPreview: `${passwordLength.value}位`, outputPreview: generatedPasswords.value[0].password.slice(0, 10) + '...' })
+  store.addHistory({ tool: 'password', action: 'generate', inputPreview: `${passwordLength.value}位`, outputPreview: generatedPasswords.value[0].password.slice(0, 10) + '...', inputFull: `length=${passwordLength.value}, count=${passwordCount.value}`, outputFull: generatedPasswords.value.map(p => p.password).join('\n') })
   ElMessage.success(`已生成 ${passwordCount.value} 个密码`)
 }
 
@@ -340,7 +340,7 @@ const handleGenerateApiKey = () => {
   }
 
   tabState.apikey.output = generatedApiKeys.value.join('\n')
-  store.addHistory({ tool: 'password', action: 'apikey', inputPreview: apiKeyFormat.value, outputPreview: generatedApiKeys.value[0].slice(0, 20) + '...' })
+  store.addHistory({ tool: 'password', action: 'apikey', inputPreview: apiKeyFormat.value, outputPreview: generatedApiKeys.value[0].slice(0, 20) + '...', inputFull: `format=${apiKeyFormat.value}, count=${apiKeyCount.value}`, outputFull: generatedApiKeys.value.join('\n') })
   ElMessage.success(`已生成 ${apiKeyCount.value} 个 API Key`)
 }
 

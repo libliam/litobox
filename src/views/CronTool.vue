@@ -231,7 +231,9 @@ const handleGenerate = () => {
     tool: 'cron',
     action: 'Cron表达式生成',
     inputPreview: currentExpression.value,
-    outputPreview: nextExecutionTimes.value.length > 0 ? `下次: ${nextExecutionTimes.value[0]}` : '无下次执行时间'
+    outputPreview: nextExecutionTimes.value.length > 0 ? `下次: ${nextExecutionTimes.value[0]}` : '无下次执行时间',
+    inputFull: currentExpression.value,
+    outputFull: nextExecutionTimes.value.join('\n'),
   })
 }
 
