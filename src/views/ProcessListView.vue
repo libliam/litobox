@@ -106,6 +106,7 @@ const handleKillAll = async (row: ProcessItem) => {
     } else {
       ElMessage.warning(result.message)
     }
+    await new Promise(r => setTimeout(r, 300))
     await loadData()
   } catch (e) {
     ElMessage.error(String(e))
@@ -138,11 +139,12 @@ const handleKill = async (row: ProcessItem) => {
     })
     if (result.success) {
       ElMessage.success(result.message)
-    } else if (result.message.includes('管理员')) {
+    } else if (result.message.includes('管理员') || result.message.includes('系统关键') || result.message.includes('无法结束')) {
       ElMessage.error(result.message)
     } else {
       ElMessage.warning(result.message)
     }
+    await new Promise(r => setTimeout(r, 300))
     await loadData()  // 刷新列表
   } catch (e) {
     ElMessage.error(String(e))

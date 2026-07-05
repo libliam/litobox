@@ -42,22 +42,14 @@
       </div>
 
       <div class="tool-card">
-        <div class="card-header"><span class="card-title">活动连接 ({{ data.active_connections.length }})</span></div>
-        <div class="card-body">
-          <el-table :data="data.active_connections" border size="small" max-height="400" style="width: 100%">
-            <el-table-column prop="protocol" label="协议" width="60" />
-            <el-table-column prop="local_addr" label="本地地址" min-width="160" />
-            <el-table-column prop="remote_addr" label="远程地址" min-width="160" />
-            <el-table-column prop="state" label="状态" width="100" />
-            <el-table-column prop="pid" label="PID" width="70" />
-          </el-table>
+        <div class="card-header">
+          <span class="card-title">监听端口 ({{ filteredListeningPorts.length }} / {{ data.listening_ports.length }})</span>
+          <div class="card-actions">
+            <el-input v-model="portSearchQuery" size="small" placeholder="搜索端口/进程/PID..." style="width: 200px" clearable />
+          </div>
         </div>
-      </div>
-
-      <div class="tool-card">
-        <div class="card-header"><span class="card-title">监听端口 ({{ data.listening_ports.length }})</span></div>
         <div class="card-body">
-          <el-table :data="data.listening_ports" border size="small" max-height="400" style="width: 100%">
+          <el-table :data="filteredListeningPorts" border size="small" max-height="400" style="width: 100%">
             <el-table-column prop="protocol" label="协议" width="60" />
             <el-table-column prop="local_addr" label="地址" min-width="160" />
             <el-table-column prop="pid" label="PID" width="70" />
@@ -74,12 +66,25 @@
           </el-table>
         </div>
       </div>
+
+      <div class="tool-card">
+        <div class="card-header"><span class="card-title">活动连接 ({{ data.active_connections.length }})</span></div>
+        <div class="card-body">
+          <el-table :data="data.active_connections" border size="small" max-height="400" style="width: 100%">
+            <el-table-column prop="protocol" label="协议" width="60" />
+            <el-table-column prop="local_addr" label="本地地址" min-width="160" />
+            <el-table-column prop="remote_addr" label="远程地址" min-width="160" />
+            <el-table-column prop="state" label="状态" width="100" />
+            <el-table-column prop="pid" label="PID" width="70" />
+          </el-table>
+        </div>
+      </div>
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElLoading, ElMessageBox, ElMessage } from 'element-plus'
 import { getNetworkInfo, killProcess, formatTimestamp, type NetworkInfo, type ListeningPort } from '@/utils/systemInfoClient'
 import { useToolboxStore } from '@/store'
@@ -91,6 +96,19 @@ const error = ref('')
 const lastRefresh = ref('')
 
 const killingPids = ref(new Set<number>())
+const portSearchQuery = ref('')
+
+const filteredListeningPorts = computed(() => {
+  if (!data.value) return []
+  const q = portSearchQuery.value.toLowerCase().trim()
+  if (!q) return data.value.listening_ports
+  return data.value.listening_ports.filter(p =>
+    p.local_addr.toLowerCase().includes(q) ||
+    p.process_name.toLowerCase().includes(q) ||
+    p.pid.toString().includes(q) ||
+    p.protocol.toLowerCase().includes(q)
+  )
+})
 
 const handleReleasePort = async (row: ListeningPort) => {
   try {
@@ -116,11 +134,12 @@ const handleReleasePort = async (row: ListeningPort) => {
     })
     if (result.success) {
       ElMessage.success(result.message)
-    } else if (result.message.includes('管理员')) {
+    } else if (result.message.includes('管理员') || result.message.includes('系统关键') || result.message.includes('无法结束')) {
       ElMessage.error(result.message)
     } else {
       ElMessage.warning(result.message)
     }
+    await new Promise(r => setTimeout(r, 300))
     await loadData()  // 刷新列表
   } catch (e) {
     ElMessage.error(String(e))

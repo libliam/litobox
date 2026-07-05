@@ -366,6 +366,8 @@ fn parse_taskkill_output(
 
     let message = if combined.contains("拒绝访问") || combined.contains("Access is denied") {
         "拒绝访问，可能需要管理员权限".to_string()
+    } else if combined.contains("系统关键进程") || combined.contains("critical system process") {
+        "系统关键进程，无法结束".to_string()
     } else if combined.contains("没有找到") || combined.contains("找不到") || combined.contains("not found") {
         "进程不存在或已退出".to_string()
     } else {
