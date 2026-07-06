@@ -214,6 +214,394 @@ fn scan_content(text: &str, re: &regex::Regex, max_lines: usize) -> (u32, Vec<Ma
     (total_matches, previews)
 }
 
+// ============ 全局状态（沿用 disk_analyzer 的 OnceLock 模式） ============
+
+// ponytail: 全局搜索结果存储。OnceLock + Mutex 模式，沿用 disk_analyzer 惯例
+// 升级路径：若并发搜索数经常 >10，可改用 Tauri managed state + Arc
+static SEARCHES: OnceLock<Mutex<HashMap<String, Arc<Mutex<SearchResults>>>>> = OnceLock::new();
+
+fn searches() -> &'static Mutex<HashMap<String, Arc<Mutex<SearchResults>>>> {
+    SEARCHES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn get_search(search_id: &str) -> Option<Arc<Mutex<SearchResults>>> {
+    let s = searches().lock().unwrap();
+    s.get(search_id).cloned()
+}
+
+fn insert_search(search_id: String, results: Arc<Mutex<SearchResults>>) {
+    let mut s = searches().lock().unwrap();
+    s.insert(search_id, results);
+}
+
+fn remove_search(search_id: &str) -> bool {
+    let mut s = searches().lock().unwrap();
+    s.remove(search_id).is_some()
+}
+
+// ============ 搜索核心逻辑 ============
+
+/// 同步搜索指定路径，更新 results
+fn run_search(
+    results_arc: Arc<Mutex<SearchResults>>,
+    app: AppHandle,
+    opts: SearchOptions,
+) -> Result<(), String> {
+    let root_path = {
+        let r = results_arc.lock().unwrap();
+        r.root_path.clone()
+    };
+
+    // 编译正则
+    let re = build_regex(&opts.query, opts.caseSensitive)?;
+
+    // 解析扩展名过滤
+    let (ext_include, ext_exclude) = (
+        opts.extensions.clone(),
+        opts.excludeExtensions.clone(),
+    );
+
+    let mut total_files: u64 = 0;
+    let mut total_dirs: u64 = 0;
+    let mut bytes_scanned: u64 = 0;
+    let mut skipped_count: u32 = 0;
+    let mut files_since_check: u64 = 0;
+    let mut last_progress_emit = std::time::Instant::now();
+
+    let mut walker = walkdir::WalkDir::new(&root_path)
+        .follow_links(false)
+        .into_iter();
+
+    while let Some(entry) = walker.next() {
+        // 取消检查（每 CANCEL_CHECK_INTERVAL 项查一次）
+        if files_since_check >= CANCEL_CHECK_INTERVAL {
+            files_since_check = 0;
+            let r = results_arc.lock().unwrap();
+            if r.cancel_flag.load(Ordering::SeqCst) {
+                debug_log!("file_searcher: 搜索被取消");
+                let mut r = results_arc.lock().unwrap();
+                r.status = SearchStatus::Cancelled;
+                r.finished_at = Some(now_ms());
+                return Ok(());
+            }
+        }
+        files_since_check += 1;
+
+        let entry = match entry {
+            Ok(e) => e,
+            Err(e) => {
+                debug_log!("file_searcher: 跳过无权限项: {}", e);
+                skipped_count += 1;
+                continue;
+            }
+        };
+
+        let path = entry.path();
+        let path_str = path.to_string_lossy().to_string();
+
+        {
+            let mut r = results_arc.lock().unwrap();
+            r.current_path = Some(path_str.clone());
+        }
+
+        if entry.file_type().is_dir() {
+            total_dirs += 1;
+            if !opts.includeHidden && is_hidden(entry.file_name()) {
+                walker.skip_current_dir();
+                continue;
+            }
+        } else if entry.file_type().is_file() {
+            if !opts.includeHidden && is_hidden(entry.file_name()) {
+                continue;
+            }
+
+            let name = entry.file_name().to_string_lossy().to_string();
+            let extension = path
+                .extension()
+                .map(|e| e.to_string_lossy().to_lowercase())
+                .unwrap_or_default();
+
+            // 扩展名过滤
+            if !ext_include.is_empty() && !ext_include.contains(&extension) {
+                continue;
+            }
+            if ext_exclude.contains(&extension) {
+                continue;
+            }
+
+            let meta = match entry.metadata() {
+                Ok(m) => m,
+                Err(_) => {
+                    skipped_count += 1;
+                    continue;
+                }
+            };
+            let size = meta.len();
+            let modified_ms = meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as i64)
+                .unwrap_or(0);
+
+            total_files += 1;
+            bytes_scanned += size;
+
+            // 文件名模式匹配
+            let name_matched = re.is_match(&name);
+            let mut item: Option<SearchResultItem> = None;
+
+            if opts.mode == "content" {
+                let should_read_content = size <= opts.maxContentFileBytes;
+                if should_read_content {
+                    match crate::file_encoding::read_file_auto(path) {
+                        Ok(content) => {
+                            if !is_binary(content.as_bytes()) {
+                                let (match_count, matched_lines) =
+                                    scan_content(&content, &re, MAX_PREVIEW_LINES);
+                                if match_count > 0 {
+                                    item = Some(SearchResultItem {
+                                        path: path_str.clone(),
+                                        name: name.clone(),
+                                        extension: extension.clone(),
+                                        sizeBytes: size,
+                                        modifiedMs: modified_ms,
+                                        matchCount: match_count,
+                                        matchedLines: matched_lines,
+                                    });
+                                }
+                            } else {
+                                // 二进制：跳过内容，仅文件名匹配
+                                if name_matched {
+                                    item = Some(filename_only_item(
+                                        &path_str, &name, &extension, size, modified_ms,
+                                    ));
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            debug_log!("file_searcher: 读取文件失败 {}: {}", path_str, e);
+                            skipped_count += 1;
+                        }
+                    }
+                } else {
+                    // 超大文件：降级为文件名匹配
+                    if name_matched {
+                        item = Some(filename_only_item(
+                            &path_str, &name, &extension, size, modified_ms,
+                        ));
+                    }
+                }
+            } else {
+                // 文件名模式
+                if name_matched {
+                    item = Some(filename_only_item(
+                        &path_str, &name, &extension, size, modified_ms,
+                    ));
+                }
+            }
+
+            if let Some(it) = item {
+                let mut r = results_arc.lock().unwrap();
+                if r.results.len() < MAX_RESULTS as usize {
+                    r.results.push(it);
+                } else if !r.truncated {
+                    r.truncated = true;
+                    debug_log!("file_searcher: 命中 MAX_RESULTS 上限，截断");
+                    let _ = app.emit(
+                        "file-search-warning",
+                        serde_json::json!({
+                            "searchId": r.search_id,
+                            "message": format!("已达结果上限 {}，后续命中已截断", MAX_RESULTS),
+                        }),
+                    );
+                }
+            }
+
+            {
+                let mut r = results_arc.lock().unwrap();
+                r.files_scanned = total_files;
+                r.bytes_scanned = bytes_scanned;
+                r.skipped_count = skipped_count;
+            }
+        }
+
+        // 进度事件：每 200ms 或每 1000 文件
+        if last_progress_emit.elapsed() >= std::time::Duration::from_millis(200) {
+            last_progress_emit = std::time::Instant::now();
+            let r = results_arc.lock().unwrap();
+            let _ = app.emit(
+                "file-search-progress",
+                SearchProgress {
+                    searchId: r.search_id.clone(),
+                    filesScanned: r.files_scanned,
+                    bytesScanned: r.bytes_scanned,
+                    matchesFound: r.results.len() as u32,
+                    currentPath: r.current_path.clone().unwrap_or_default(),
+                },
+            );
+        }
+    }
+
+    // 完成
+    {
+        let mut r = results_arc.lock().unwrap();
+        r.status = SearchStatus::Completed;
+        r.finished_at = Some(now_ms());
+        let summary = SearchSummary {
+            totalFiles: r.files_scanned,
+            totalDirs: total_dirs,
+            bytesScanned: r.bytes_scanned,
+            matchesFound: r.results.len() as u32,
+            durationMs: r
+                .finished_at
+                .map(|f| (f - r.started_at) as u64)
+                .unwrap_or(0),
+            truncated: r.truncated,
+            skippedCount: r.skipped_count,
+        };
+        let _ = app.emit("file-search-complete", summary);
+    }
+    debug_log!("file_searcher: 搜索完成 id={}", root_path);
+    Ok(())
+}
+
+/// 构造仅文件名匹配的结果项
+fn filename_only_item(
+    path: &str,
+    name: &str,
+    extension: &str,
+    size: u64,
+    modified_ms: i64,
+) -> SearchResultItem {
+    SearchResultItem {
+        path: path.to_string(),
+        name: name.to_string(),
+        extension: extension.to_string(),
+        sizeBytes: size,
+        modifiedMs: modified_ms,
+        matchCount: 1,
+        matchedLines: Vec::new(),
+    }
+}
+
+// ============ Tauri 命令 ============
+
+#[tauri::command]
+pub async fn file_search_start(
+    app: AppHandle,
+    path: String,
+    opts: SearchOptions,
+) -> Result<String, String> {
+    let path_canonical = PathBuf::from(&path)
+        .canonicalize()
+        .map_err(|e| format!("路径无法访问: {}", e))?
+        .to_string_lossy()
+        .to_string();
+
+    let search_id = uuid::Uuid::new_v4().to_string();
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    let results = SearchResults {
+        search_id: search_id.clone(),
+        root_path: path_canonical.clone(),
+        started_at: now_ms(),
+        finished_at: None,
+        status: SearchStatus::Running,
+        cancel_flag: cancel_flag.clone(),
+        files_scanned: 0,
+        bytes_scanned: 0,
+        current_path: None,
+        skipped_count: 0,
+        results: Vec::new(),
+        truncated: false,
+    };
+    let results_arc = Arc::new(Mutex::new(results));
+    insert_search(search_id.clone(), results_arc.clone());
+
+    debug_log!(
+        "file_searcher: start id={} path={} mode={}",
+        search_id, path_canonical, opts.mode
+    );
+
+    let app_clone = app.clone();
+    let search_id_clone = search_id.clone();
+    std::thread::spawn(move || {
+        if let Err(e) = run_search(results_arc.clone(), app_clone, opts) {
+            debug_log!("file_searcher: 失败 id={} err={}", search_id_clone, e);
+            let mut r = results_arc.lock().unwrap();
+            r.status = SearchStatus::Failed { error: e };
+            r.finished_at = Some(now_ms());
+        }
+    });
+
+    Ok(search_id)
+}
+
+#[tauri::command]
+pub fn file_search_cancel(search_id: String) -> Result<(), String> {
+    debug_log!("file_searcher: cancel id={}", search_id);
+    if let Some(arc) = get_search(&search_id) {
+        let r = arc.lock().unwrap();
+        r.cancel_flag.store(true, Ordering::SeqCst);
+        Ok(())
+    } else {
+        Err("search not found or expired".into())
+    }
+}
+
+#[tauri::command]
+pub fn file_search_status(search_id: String) -> Result<SearchStatus, String> {
+    let arc = get_search(&search_id).ok_or("search not found or expired")?;
+    let r = arc.lock().unwrap();
+    Ok(r.status.clone())
+}
+
+#[tauri::command]
+pub fn file_search_get_summary(search_id: String) -> Result<SearchSummary, String> {
+    let arc = get_search(&search_id).ok_or("search not found or expired")?;
+    let r = arc.lock().unwrap();
+    Ok(SearchSummary {
+        totalFiles: r.files_scanned,
+        totalDirs: 0, // ponytail: totalDirs 在 run_search 内未存入结构，简化为 0
+        bytesScanned: r.bytes_scanned,
+        matchesFound: r.results.len() as u32,
+        durationMs: r
+            .finished_at
+            .map(|f| (f - r.started_at) as u64)
+            .unwrap_or(0),
+        truncated: r.truncated,
+        skippedCount: r.skipped_count,
+    })
+}
+
+#[tauri::command]
+pub fn file_search_get_results(
+    search_id: String,
+    limit: Option<u32>,
+    offset: Option<u32>,
+) -> Result<SearchResultsPage, String> {
+    let arc = get_search(&search_id).ok_or("search not found or expired")?;
+    let r = arc.lock().unwrap();
+    let limit = limit.unwrap_or(100) as usize;
+    let offset = offset.unwrap_or(0) as usize;
+    let total = r.results.len() as u64;
+    let items = r
+        .results
+        .iter()
+        .skip(offset)
+        .take(limit)
+        .cloned()
+        .collect();
+    Ok(SearchResultsPage { items, total })
+}
+
+#[tauri::command]
+pub fn file_search_clear(search_id: String) -> Result<(), String> {
+    debug_log!("file_searcher: clear id={}", search_id);
+    remove_search(&search_id);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
