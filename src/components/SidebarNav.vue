@@ -372,6 +372,7 @@ const toggleCollapse = (categoryKey: string) => {
 }
 
 const handleSelect = (toolId: string) => {
+  // 多 Tab 模式：v-model setter 走 store.openTab（已存在则激活，否则新建 tab）
   emit('update:modelValue', toolId)
   store.addRecentTool(toolId)
 }
