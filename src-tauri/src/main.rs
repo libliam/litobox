@@ -120,6 +120,13 @@ fn main() {
             disk_analyzer::disk_delete_files,
             disk_analyzer::disk_clear_scan,
             disk_analyzer::disk_locate_in_explorer,
+            // 全文搜索命令
+            file_searcher::file_search_start,
+            file_searcher::file_search_cancel,
+            file_searcher::file_search_status,
+            file_searcher::file_search_get_summary,
+            file_searcher::file_search_get_results,
+            file_searcher::file_search_clear,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
