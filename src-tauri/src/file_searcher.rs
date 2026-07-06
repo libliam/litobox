@@ -276,10 +276,9 @@ fn run_search(
         // 取消检查（每 CANCEL_CHECK_INTERVAL 项查一次）
         if files_since_check >= CANCEL_CHECK_INTERVAL {
             files_since_check = 0;
-            let r = results_arc.lock().unwrap();
+            let mut r = results_arc.lock().unwrap();
             if r.cancel_flag.load(Ordering::SeqCst) {
                 debug_log!("file_searcher: 搜索被取消");
-                let mut r = results_arc.lock().unwrap();
                 r.status = SearchStatus::Cancelled;
                 r.finished_at = Some(now_ms());
                 return Ok(());
