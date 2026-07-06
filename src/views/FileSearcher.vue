@@ -1,0 +1,560 @@
+<template>
+  <div class="tool-container">
+    <!-- 1. 搜索配置卡片（sticky） -->
+    <div class="tool-card sticky-card">
+      <div class="card-header">
+        <span class="card-title">全文搜索</span>
+        <div class="card-actions">
+          <el-button size="small" @click="loadLastPath">上次路径</el-button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="action-grid">
+          <div class="action-group" style="flex: 2">
+            <div class="group-label">搜索路径</div>
+            <el-input
+              v-model="searchPath"
+              placeholder="选择或输入要搜索的目录路径"
+              size="small"
+              clearable
+            >
+              <template #append>
+                <el-button size="small" @click="selectFolder">浏览</el-button>
+              </template>
+            </el-input>
+          </div>
+          <div class="action-group">
+            <div class="group-label">模式</div>
+            <el-radio-group v-model="opts.mode" size="small">
+              <el-radio-button value="filename">文件名</el-radio-button>
+              <el-radio-button value="content">内容</el-radio-button>
+            </el-radio-group>
+          </div>
+        </div>
+        <div class="action-grid" style="margin-top: 8px">
+          <div class="action-group" style="flex: 2">
+            <div class="group-label">搜索词（正则）</div>
+            <el-input
+              v-model="opts.query"
+              placeholder="例如 \d{4}-\d{2}-\d{2} 或 TODO"
+              size="small"
+              clearable
+              @keyup.enter="startSearch"
+            />
+          </div>
+          <div class="action-group">
+            <div class="group-label">扩展名</div>
+            <el-input
+              v-model="extFilterText"
+              placeholder="ts,js 或 !exe,dll"
+              size="small"
+            />
+          </div>
+          <div class="action-group">
+            <div class="group-label">执行</div>
+            <div class="group-buttons">
+              <el-button
+                type="primary"
+                size="small"
+                :disabled="!searchPath || !opts.query || searching"
+                :loading="searching"
+                @click="startSearch"
+              >
+                搜索
+              </el-button>
+            </div>
+          </div>
+        </div>
+        <div class="action-grid" style="margin-top: 8px">
+          <el-checkbox v-model="opts.caseSensitive">区分大小写</el-checkbox>
+          <el-checkbox v-model="opts.includeHidden">包含隐藏</el-checkbox>
+          <div class="action-group" v-if="opts.mode === 'content'">
+            <div class="group-label">内容最大文件</div>
+            <el-input-number
+              v-model="maxContentMb"
+              :min="1"
+              :max="500"
+              size="small"
+              controls-position="right"
+              style="width: 110px"
+            />
+            <span class="hint">MB</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. 进度卡片 -->
+    <div v-if="searching" class="tool-card">
+      <div class="card-header">
+        <span class="card-title">搜索中</span>
+        <el-button size="small" type="danger" @click="cancelSearch">取消</el-button>
+      </div>
+      <div class="card-body">
+        <div class="progress-info">
+          <div>当前: {{ progress?.currentPath || '准备中...' }}</div>
+          <div>
+            已扫描 {{ progress?.filesScanned || 0 }} 文件 |
+            命中 {{ progress?.matchesFound || 0 }} |
+            耗时 {{ formatDuration(elapsedMs) }}
+          </div>
+        </div>
+        <el-progress
+          :percentage="100"
+          :show-text="false"
+          :stroke-width="14"
+          stripe
+          status="success"
+          :indeterminate="true"
+        />
+      </div>
+    </div>
+
+    <!-- 3. 错误卡片 -->
+    <div v-if="searchError" class="tool-card">
+      <div class="card-body">
+        <div class="error-message">{{ searchError }}</div>
+      </div>
+    </div>
+
+    <!-- 4. 结果卡片 -->
+    <div v-if="completed && summary" class="tool-card">
+      <div class="card-header">
+        <span class="card-title">结果</span>
+        <div class="card-actions">
+          <span class="summary-text">
+            {{ summary.matchesFound }} 命中 |
+            {{ summary.totalFiles }} 文件 |
+            耗时 {{ formatDuration(summary.durationMs) }}
+            <span v-if="summary.truncated" class="warn-text">
+              (已达上限 1000，结果截断)
+            </span>
+            <span v-if="summary.skippedCount > 0" class="warn-text">
+              (跳过 {{ summary.skippedCount }} 个文件)
+            </span>
+          </span>
+        </div>
+      </div>
+      <div class="card-body">
+        <el-table
+          :data="resultItems"
+          stripe
+          size="small"
+          @row-dblclick="locateInExplorer"
+        >
+          <el-table-column label="文件" min-width="300">
+            <template #default="{ row }">
+              <div class="file-name"><strong>{{ row.name }}</strong></div>
+              <div class="file-path">{{ row.path }}</div>
+              <div class="file-meta">
+                {{ formatBytes(row.sizeBytes) }} · {{ formatTime(row.modifiedMs) }}
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column
+            v-if="opts.mode === 'content'"
+            label="命中行"
+            min-width="400"
+          >
+            <template #default="{ row }">
+              <div
+                v-for="ml in row.matchedLines"
+                :key="ml.lineNumber"
+                class="match-line"
+              >
+                <span class="line-no">L{{ ml.lineNumber }}:</span>
+                <span class="line-text" v-html="highlightLine(ml)"></span>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="120">
+            <template #default="{ row }">
+              <el-button size="small" link @click="locateInExplorer(row)">
+                定位
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-pagination
+          v-if="totalResults > pageSize"
+          v-model:current-page="currentPage"
+          :page-size="pageSize"
+          :total="totalResults"
+          layout="prev, pager, next, total"
+          @current-change="loadResults"
+          style="margin-top: 12px; justify-content: flex-end"
+        />
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ElMessage } from 'element-plus'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { invoke } from '@tauri-apps/api/core'
+import { open } from '@tauri-apps/plugin-dialog'
+import {
+  fileSearchStart,
+  fileSearchCancel,
+  fileSearchGetResults,
+  fileSearchClear,
+} from '@/utils/fileSearcherClient'
+import type {
+  SearchOptions,
+  SearchProgress,
+  SearchSummary,
+  SearchResultItem,
+  MatchedLine,
+} from '@/utils/fileSearcherTypes'
+
+// ============ 状态 ============
+type SearchState = 'idle' | 'searching' | 'completed' | 'failed' | 'cancelled'
+const state = ref<SearchState>('idle')
+const searching = computed(() => state.value === 'searching')
+const completed = computed(() => state.value === 'completed')
+
+const searchPath = ref('')
+const opts = reactive<SearchOptions>({
+  mode: 'filename',
+  query: '',
+  caseSensitive: false,
+  extensions: [],
+  excludeExtensions: [],
+  includeHidden: false,
+  maxContentFileBytes: 10 * 1024 * 1024,
+})
+const extFilterText = ref('')
+const maxContentMb = ref(10)
+
+const searchId = ref('')
+const progress = ref<SearchProgress | null>(null)
+const summary = ref<SearchSummary | null>(null)
+const searchError = ref('')
+const elapsedMs = ref(0)
+const resultItems = ref<SearchResultItem[]>([])
+const totalResults = ref(0)
+const currentPage = ref(1)
+const pageSize = 100
+
+let timerId: ReturnType<typeof setInterval> | null = null
+let unlistenFns: UnlistenFn[] = []
+const startTime = ref(0)
+
+// ============ 工具函数 ============
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`
+  const s = Math.floor(ms / 1000)
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  return `${m}m${s % 60}s`
+}
+
+function formatTime(ms: number): string {
+  if (!ms) return '-'
+  return new Date(ms).toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function highlightLine(ml: MatchedLine): string {
+  // 反向应用 matchRanges 以避免偏移变化（先替换后面的）
+  const sorted = [...ml.matchRanges].sort((a, b) => b[0] - a[0])
+  let result = ''
+  // 转成数组操作字符
+  // ponytail: escapeHtml 后偏移会变，这里简化为对原始 lineText 做标记再 escape
+  // 改用：对原始文本按 ranges 反向插入 <mark> 标签，再整体 escape（标记不转义）
+  const origChars = Array.from(ml.lineText)
+  for (const [start, end] of sorted) {
+    origChars.splice(end, 0, ...Array.from('</mark>'))
+    origChars.splice(start, 0, ...Array.from('<mark>'))
+  }
+  // 对非标签部分 escape：简单方案是先 join 再 escape，但会转义 <mark>
+  // 正确方案：分段 escape
+  result = origChars.join('')
+  // escape 非标签文本（保留 <mark></mark>）
+  result = result.replace(/(<mark>|<\/mark>)|([^<]+)/g, (_, tag, text) => {
+    if (tag) return tag
+    return escapeHtml(text)
+  })
+  return result
+}
+
+// ============ 持久化 ============
+const STORAGE_KEY_PATH = 'litobox.fileSearcher.lastPath'
+const STORAGE_KEY_OPTS = 'litobox.fileSearcher.lastOpts'
+
+function saveOpts() {
+  localStorage.setItem(
+    STORAGE_KEY_OPTS,
+    JSON.stringify({
+      mode: opts.mode,
+      caseSensitive: opts.caseSensitive,
+      extFilterText: extFilterText.value,
+      includeHidden: opts.includeHidden,
+      maxContentMb: maxContentMb.value,
+    })
+  )
+}
+
+function loadLastPath() {
+  const last = localStorage.getItem(STORAGE_KEY_PATH)
+  if (last) {
+    searchPath.value = last
+    ElMessage.success('已加载上次路径')
+  } else {
+    ElMessage.info('无上次路径记录')
+  }
+}
+
+function loadOpts() {
+  const raw = localStorage.getItem(STORAGE_KEY_OPTS)
+  if (!raw) return
+  try {
+    const saved = JSON.parse(raw)
+    opts.mode = saved.mode ?? 'filename'
+    opts.caseSensitive = saved.caseSensitive ?? false
+    extFilterText.value = saved.extFilterText ?? ''
+    opts.includeHidden = saved.includeHidden ?? false
+    maxContentMb.value = saved.maxContentMb ?? 10
+  } catch {
+    // 忽略损坏的配置
+  }
+}
+
+// ============ 扩展名解析 ============
+function parseExtFilter(text: string): { inc: string[]; exc: string[] } {
+  const tokens = text
+    .split(',')
+    .map((s) => s.trim().replace(/^\.+/, '').toLowerCase())
+    .filter((s) => s.length > 0)
+  if (tokens.length === 0) return { inc: [], exc: [] }
+  const isExclude = tokens.some((t) => t.startsWith('!'))
+  if (isExclude) {
+    return { inc: [], exc: tokens.map((t) => t.replace(/^!/, '')) }
+  }
+  return { inc: tokens, exc: [] }
+}
+
+// ============ 文件夹选择 ============
+async function selectFolder() {
+  const selected = await open({ directory: true, multiple: false })
+  if (selected) {
+    searchPath.value = selected as string
+  }
+}
+
+// ============ 搜索流程 ============
+async function startSearch() {
+  if (!searchPath.value || !opts.query) return
+
+  // 扩展名过滤解析
+  const { inc, exc } = parseExtFilter(extFilterText.value)
+  if (inc.length > 0 && exc.length > 0) {
+    ElMessage.warning('扩展名不能同时包含和排除，请只用一种模式')
+    return
+  }
+  opts.extensions = inc
+  opts.excludeExtensions = exc
+  opts.maxContentFileBytes = maxContentMb.value * 1024 * 1024
+
+  // 重置状态
+  searchError.value = ''
+  summary.value = null
+  resultItems.value = []
+  totalResults.value = 0
+  currentPage.value = 1
+  elapsedMs.value = 0
+  progress.value = null
+
+  // 持久化
+  localStorage.setItem(STORAGE_KEY_PATH, searchPath.value)
+  saveOpts()
+
+  try {
+    const id = await fileSearchStart(searchPath.value, opts)
+    searchId.value = id
+    state.value = 'searching'
+    startTime.value = Date.now()
+    startTimer()
+  } catch (e: any) {
+    searchError.value = String(e)
+    state.value = 'failed'
+  }
+}
+
+async function cancelSearch() {
+  if (!searchId.value) return
+  try {
+    await fileSearchCancel(searchId.value)
+  } catch (e: any) {
+    ElMessage.error('取消失败: ' + String(e))
+  }
+}
+
+async function loadResults(page: number) {
+  if (!searchId.value) return
+  const offset = (page - 1) * pageSize
+  try {
+    const page_data = await fileSearchGetResults(searchId.value, pageSize, offset)
+    resultItems.value = page_data.items
+    totalResults.value = page_data.total
+  } catch (e: any) {
+    ElMessage.error('加载结果失败: ' + String(e))
+  }
+}
+
+async function locateInExplorer(row: SearchResultItem) {
+  try {
+    await invoke('disk_locate_in_explorer', { path: row.path })
+  } catch (e: any) {
+    ElMessage.error('定位失败: ' + String(e))
+  }
+}
+
+// ============ 计时器 ============
+function startTimer() {
+  stopTimer()
+  timerId = setInterval(() => {
+    elapsedMs.value = Date.now() - startTime.value
+  }, 200)
+}
+function stopTimer() {
+  if (timerId) {
+    clearInterval(timerId)
+    timerId = null
+  }
+}
+
+// ============ 事件监听 ============
+onMounted(async () => {
+  loadOpts()
+
+  unlistenFns.push(
+    await listen<SearchProgress>('file-search-progress', (e) => {
+      progress.value = e.payload
+    })
+  )
+
+  unlistenFns.push(
+    await listen<SearchSummary>('file-search-complete', async (e) => {
+      stopTimer()
+      summary.value = e.payload
+      elapsedMs.value = e.payload.durationMs
+      // 状态查询：判断成功/失败/取消
+      if (searchId.value) {
+        try {
+          const status = await invoke<any>('file_search_status', { searchId: searchId.value })
+          if (status.status === 'failed') {
+            state.value = 'failed'
+            searchError.value = status.error || '搜索失败'
+          } else if (status.status === 'cancelled') {
+            state.value = 'cancelled'
+          } else {
+            state.value = 'completed'
+            await loadResults(1)
+          }
+        } catch {
+          state.value = 'completed'
+          await loadResults(1)
+        }
+      }
+    })
+  )
+
+  unlistenFns.push(
+    await listen<{ searchId: string; message: string }>('file-search-warning', (e) => {
+      ElMessage.warning(e.payload.message)
+    })
+  )
+})
+
+onUnmounted(() => {
+  stopTimer()
+  unlistenFns.forEach((fn) => fn())
+  unlistenFns = []
+  // 释放后端内存
+  if (searchId.value) {
+    fileSearchCancel(searchId.value).catch(() => {})
+    fileSearchClear(searchId.value).catch(() => {})
+  }
+})
+</script>
+
+<style scoped>
+.progress-info {
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--text-secondary, #909399);
+}
+.progress-info div {
+  margin-bottom: 4px;
+}
+.progress-info div:last-child {
+  color: var(--text-primary, #409eff);
+}
+.summary-text {
+  font-size: 12px;
+  color: var(--text-secondary, #909399);
+}
+.warn-text {
+  color: var(--el-color-warning, #e6a23c);
+  margin-left: 8px;
+}
+.file-name {
+  font-size: 13px;
+}
+.file-path {
+  font-size: 11px;
+  color: var(--text-secondary, #909399);
+  margin-top: 2px;
+  word-break: break-all;
+}
+.file-meta {
+  font-size: 11px;
+  color: var(--text-secondary, #909399);
+  margin-top: 2px;
+}
+.match-line {
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 12px;
+  margin-bottom: 4px;
+  word-break: break-all;
+}
+.match-line :deep(mark) {
+  background-color: var(--el-color-warning-light-7, #fdf6ec);
+  color: var(--el-color-danger, #f56c6c);
+  padding: 0 2px;
+  border-radius: 2px;
+}
+.line-no {
+  color: var(--text-secondary, #909399);
+  margin-right: 4px;
+}
+.hint {
+  font-size: 12px;
+  color: var(--text-secondary, #909399);
+  margin-left: 4px;
+}
+</style>

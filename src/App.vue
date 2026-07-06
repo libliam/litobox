@@ -72,6 +72,7 @@ import HardwareInfoView from '@/views/HardwareInfoView.vue'
 import SoftwareEnvView from '@/views/SoftwareEnvView.vue'
 import SqliteViewerView from '@/views/SqliteViewerView.vue'
 import DiskSpaceAnalyzer from '@/views/DiskSpaceAnalyzer.vue'
+import FileSearcher from '@/views/FileSearcher.vue'
 
 // toolId → 组件 映射表（替代 v-if 链）
 const toolComponentMap: Record<string, any> = {
@@ -119,6 +120,7 @@ const toolComponentMap: Record<string, any> = {
   softwareEnv: SoftwareEnvView,
   sqliteViewer: SqliteViewerView,
   diskAnalyzer: DiskSpaceAnalyzer,
+  fileSearcher: FileSearcher,
 }
 
 const store = useToolboxStore()
