@@ -10,6 +10,7 @@ mod note_manager;
 mod system_info;
 mod sqlite_viewer;
 mod disk_analyzer;
+mod file_searcher;
 
 use tauri::{Manager, Emitter};
 use tauri_plugin_dialog::{DialogExt, MessageDialogBuilder, MessageDialogButtons, MessageDialogKind};
