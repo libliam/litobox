@@ -293,9 +293,10 @@ function highlightLine(ml: MatchedLine): string {
   // 对非标签部分 escape：简单方案是先 join 再 escape，但会转义 <mark>
   // 正确方案：分段 escape
   result = origChars.join('')
-  // escape 非标签文本（保留 <mark></mark>）
-  result = result.replace(/(<mark>|<\/mark>)|([^<]+)/g, (_, tag, text) => {
+  // escape 非标签文本（保留 <mark></mark>），裸 < 单独 escape 防 XSS
+  result = result.replace(/(<mark>|<\/mark>)|([^<]+)|(<)/g, (_, tag, text, lt) => {
     if (tag) return tag
+    if (lt) return '&lt;'
     return escapeHtml(text)
   })
   return result

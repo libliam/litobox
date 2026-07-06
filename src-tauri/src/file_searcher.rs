@@ -279,8 +279,19 @@ fn run_search(
             let mut r = results_arc.lock().unwrap();
             if r.cancel_flag.load(Ordering::SeqCst) {
                 debug_log!("file_searcher: 搜索被取消");
+                let finished = now_ms();
                 r.status = SearchStatus::Cancelled;
-                r.finished_at = Some(now_ms());
+                r.finished_at = Some(finished);
+                let summary = SearchSummary {
+                    totalFiles: r.files_scanned,
+                    totalDirs: total_dirs,
+                    bytesScanned: r.bytes_scanned,
+                    matchesFound: r.results.len() as u32,
+                    durationMs: (finished - r.started_at) as u64,
+                    truncated: r.truncated,
+                    skippedCount: r.skipped_count,
+                };
+                let _ = app.emit("file-search-complete", summary);
                 return Ok(());
             }
         }
@@ -525,11 +536,23 @@ pub async fn file_search_start(
     let app_clone = app.clone();
     let search_id_clone = search_id.clone();
     std::thread::spawn(move || {
+        let app_for_error = app_clone.clone();
         if let Err(e) = run_search(results_arc.clone(), app_clone, opts) {
             debug_log!("file_searcher: 失败 id={} err={}", search_id_clone, e);
+            let finished = now_ms();
             let mut r = results_arc.lock().unwrap();
             r.status = SearchStatus::Failed { error: e };
-            r.finished_at = Some(now_ms());
+            r.finished_at = Some(finished);
+            let summary = SearchSummary {
+                totalFiles: r.files_scanned,
+                totalDirs: 0, // ponytail: 失败路径未遍历完整，totalDirs 不可靠
+                bytesScanned: r.bytes_scanned,
+                matchesFound: r.results.len() as u32,
+                durationMs: (finished - r.started_at) as u64,
+                truncated: r.truncated,
+                skippedCount: r.skipped_count,
+            };
+            let _ = app_for_error.emit("file-search-complete", summary);
         }
     });
 
