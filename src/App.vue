@@ -1,57 +1,19 @@
 <template>
   <div class="app-layout">
     <SidebarNav v-model="activeTool" />
-    
+
     <div class="app-content">
+      <TabBar />
       <main class="app-main">
-        <KeepAlive :max="4">
-          <HomeView v-if="activeTool === 'home'" :key="'home'" :on-select-tool="handleSelectTool" />
-          <JsonTool v-else-if="activeTool === 'json'" :key="'json'" />
-          <StringTool v-else-if="activeTool === 'string'" :key="'string'" />
-          <EncodeTool v-else-if="activeTool === 'encode'" :key="'encode'" />
-          <TimeTool v-else-if="activeTool === 'time'" :key="'time'" />
-          <URLTool v-else-if="activeTool === 'url'" :key="'url'" />
-          <RegexTool v-else-if="activeTool === 'regex'" :key="'regex'" />
-          <BaseConverter v-else-if="activeTool === 'baseConverter'" :key="'baseConverter'" />
-          <UUIDTool v-else-if="activeTool === 'uuid'" :key="'uuid'" />
-          <DevTools v-else-if="activeTool === 'devtools'" :key="'devtools'" />
-          <FileProcessing v-else-if="activeTool === 'fileprocessing'" :key="'fileprocessing'" />
-          <SqlTool v-else-if="activeTool === 'sql'" :key="'sql'" />
-          <JSTool v-else-if="activeTool === 'js'" :key="'js'" />
-          <MockDataTool v-else-if="activeTool === 'mockData'" :key="'mockData'" />
-          <OcrTool v-else-if="activeTool === 'ocr'" :key="'ocr'" />
-          <DiffTool v-else-if="activeTool === 'diff'" :key="'diff'" />
-          <ClipboardTool v-else-if="activeTool === 'clipboard'" :key="'clipboard'" />
-          <ImageTool v-else-if="activeTool === 'image'" :key="'image'" />
-          <CsvTool v-else-if="activeTool === 'csv'" :key="'csv'" />
-          <PdfTool v-else-if="activeTool === 'pdf'" :key="'pdf'" />
-          <HashTool v-else-if="activeTool === 'hash'" :key="'hash'" />
-          <XmlYamlTool v-else-if="activeTool === 'xmlYaml'" :key="'xmlYaml'" />
-          <DedupTool v-else-if="activeTool === 'dedup'" :key="'dedup'" />
-          <CssTool v-else-if="activeTool === 'css'" :key="'css'" />
-          <JwtTool v-else-if="activeTool === 'jwt'" :key="'jwt'" />
-          <WordCountTool v-else-if="activeTool === 'wordCount'" :key="'wordCount'" />
-          <CronTool v-else-if="activeTool === 'cron'" :key="'cron'" />
-          <MarkdownTool v-else-if="activeTool === 'markdown'" :key="'markdown'" />
-          <ColorTool v-else-if="activeTool === 'color'" :key="'color'" />
-          <PasswordTool v-else-if="activeTool === 'password'" :key="'password'" />
-          <QrTool v-else-if="activeTool === 'qr'" :key="'qr'" />
-          <SnippetTool v-else-if="activeTool === 'snippet'" :key="'snippet'" />
-          <HttpTool v-else-if="activeTool === 'http'" :key="'http'" />
-          <HistoryView v-else-if="activeTool === 'history'" :key="'history'" />
-          <WorkflowView v-else-if="activeTool === 'workflow'" :key="'workflow'" />
-          <NoteEditor v-else-if="activeTool === 'note'" :key="'note'" />
-          <CalculatorTool v-else-if="activeTool === 'calculator'" :key="'calculator'" />
-          <SystemInfoView v-else-if="activeTool === 'systemInfo'" :key="'systemInfo'" />
-          <NetworkInfoView v-else-if="activeTool === 'networkInfo'" :key="'networkInfo'" />
-          <ProcessListView v-else-if="activeTool === 'processList'" :key="'processList'" />
-          <HardwareInfoView v-else-if="activeTool === 'hardwareInfo'" :key="'hardwareInfo'" />
-          <SoftwareEnvView v-else-if="activeTool === 'softwareEnv'" :key="'softwareEnv'" />
-          <SqliteViewerView v-else-if="activeTool === 'sqliteViewer'" :key="'sqliteViewer'" />
-          <DiskSpaceAnalyzer v-else-if="activeTool === 'diskAnalyzer'" :key="'diskAnalyzer'" />
+        <KeepAlive :max="8">
+          <component
+            :is="toolComponentMap[activeTabId]"
+            :key="store.getTabKey(activeTabId)"
+            v-bind="activeTabId === 'home' ? { onSelectTool: handleSelectTool } : {}"
+          />
         </KeepAlive>
       </main>
-      
+
       <div class="app-footer">
         <span>© 2026 栗的百宝箱 · Made by liam</span>
       </div>
@@ -60,11 +22,12 @@
 </template>
 
 <script setup lang="ts">
-import { watch, onMounted, onUnmounted } from 'vue'
+import { watch, onMounted, onUnmounted, computed } from 'vue'
 import { listen } from '@tauri-apps/api/event'
 import { useToolboxStore } from '@/store'
 import { storeToRefs } from 'pinia'
 import SidebarNav from '@/components/SidebarNav.vue'
+import TabBar from '@/components/TabBar.vue'
 import HomeView from '@/views/HomeView.vue'
 import JsonTool from '@/views/JsonTool.vue'
 import StringTool from '@/views/StringTool.vue'
@@ -110,26 +73,82 @@ import SoftwareEnvView from '@/views/SoftwareEnvView.vue'
 import SqliteViewerView from '@/views/SqliteViewerView.vue'
 import DiskSpaceAnalyzer from '@/views/DiskSpaceAnalyzer.vue'
 
-const store = useToolboxStore()
-const { activeTool } = storeToRefs(store)
+// toolId → 组件 映射表（替代 v-if 链）
+const toolComponentMap: Record<string, any> = {
+  home: HomeView,
+  json: JsonTool,
+  string: StringTool,
+  encode: EncodeTool,
+  time: TimeTool,
+  url: URLTool,
+  regex: RegexTool,
+  baseConverter: BaseConverter,
+  uuid: UUIDTool,
+  devtools: DevTools,
+  fileprocessing: FileProcessing,
+  sql: SqlTool,
+  js: JSTool,
+  mockData: MockDataTool,
+  ocr: OcrTool,
+  diff: DiffTool,
+  clipboard: ClipboardTool,
+  image: ImageTool,
+  csv: CsvTool,
+  pdf: PdfTool,
+  hash: HashTool,
+  xmlYaml: XmlYamlTool,
+  dedup: DedupTool,
+  css: CssTool,
+  jwt: JwtTool,
+  wordCount: WordCountTool,
+  cron: CronTool,
+  markdown: MarkdownTool,
+  color: ColorTool,
+  password: PasswordTool,
+  qr: QrTool,
+  snippet: SnippetTool,
+  http: HttpTool,
+  history: HistoryView,
+  workflow: WorkflowView,
+  note: NoteEditor,
+  calculator: CalculatorTool,
+  systemInfo: SystemInfoView,
+  networkInfo: NetworkInfoView,
+  processList: ProcessListView,
+  hardwareInfo: HardwareInfoView,
+  softwareEnv: SoftwareEnvView,
+  sqliteViewer: SqliteViewerView,
+  diskAnalyzer: DiskSpaceAnalyzer,
+}
 
-// 初始化 activeTool
-activeTool.value = store.config.lastTool
+const store = useToolboxStore()
+const { activeTabId } = storeToRefs(store)
+
+// 兼容 SidebarNav 的 v-model="activeTool"：activeTool 仍是 computed 指向 activeTabId
+const activeTool = computed({
+  get: () => store.activeTabId,
+  set: (val: string) => store.openTab(val),  // SidebarNav 设置时走 openTab
+})
+
+// 初始化：恢复上次使用的工具（单 tab，不持久化 tab 列表）
+store.openTab(store.config.lastTool || 'home')
 
 let unlistenShortcut: (() => void) | null = null
 
 const handleSelectTool = (toolId: string) => {
-  activeTool.value = toolId
+  store.openTab(toolId)
+  store.addRecentTool(toolId)
 }
 
-watch(activeTool, (newTool: string) => {
+// lastTool 跟随 activeTabId 变化
+watch(activeTabId, (newTool: string) => {
   store.saveConfig({ lastTool: newTool })
 })
 
 const applyTheme = (theme: string) => {
   const html = document.documentElement
   html.classList.remove('dark', 'light')
-  
+
   if (theme === 'dark') {
     html.classList.add('dark')
   } else if (theme === 'light') {
@@ -146,17 +165,17 @@ const applyTheme = (theme: string) => {
 
 onMounted(async () => {
   applyTheme(store.config.theme)
-  
+
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
     if (store.config.theme === 'auto') {
       applyTheme('auto')
     }
   })
-  
+
   unlistenShortcut = await listen('global-shortcut-triggered', (event) => {
     const toolId = event.payload as string
-    if (toolId && toolId !== activeTool.value) {
-      activeTool.value = toolId
+    if (toolId) {
+      store.openTab(toolId)
       store.addRecentTool(toolId)
     }
   })
