@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import * as db from '@/utils/dbClient'
 
 export interface ToolboxConfig {
@@ -111,7 +111,86 @@ export const useToolboxStore = defineStore('toolbox', () => {
   const pendingHistoryRestore = ref<HistoryRestoreState | null>(null)
   let restoreTimeout: ReturnType<typeof setTimeout> | null = null
 
-  const activeTool = ref('home')
+  // ============ 多 Tab 状态 ============
+  interface Tab {
+    toolId: string  // 同工具不允许多实例，toolId 即 tab 唯一标识
+  }
+
+  const MAX_TABS = 8
+  const tabs = ref<Tab[]>([{ toolId: 'home' }])
+  const activeTabId = ref('home')
+  // 记录每个 toolId 被关闭的次数，作为 KeepAlive :key 的一部分，
+  // 关闭后重新打开时 key 变化 → 强制创建新实例（不复用旧缓存状态）
+  const closedCount = ref<Record<string, number>>({})
+
+  /** 打开工具：已存在则激活，否则新建 tab（超出上限 LRU 关闭最早非 home tab） */
+  const openTab = (toolId: string) => {
+    const existing = tabs.value.find(t => t.toolId === toolId)
+    if (existing) {
+      activeTabId.value = toolId
+      return
+    }
+    // LRU：超出上限时关闭最早的非 home tab
+    if (tabs.value.length >= MAX_TABS) {
+      const idx = tabs.value.findIndex(t => t.toolId !== 'home')
+      if (idx !== -1) {
+        const removed = tabs.value.splice(idx, 1)[0]
+        closedCount.value[removed.toolId] = (closedCount.value[removed.toolId] || 0) + 1
+      }
+    }
+    tabs.value.push({ toolId })
+    activeTabId.value = toolId
+  }
+
+  /** 切换 tab */
+  const switchTab = (toolId: string) => {
+    if (tabs.value.find(t => t.toolId === toolId)) {
+      activeTabId.value = toolId
+    }
+  }
+
+  /** 关闭 tab：home 不可关闭；关闭当前 tab 时激活相邻 tab */
+  const closeTab = (toolId: string) => {
+    if (toolId === 'home') return
+    const idx = tabs.value.findIndex(t => t.toolId === toolId)
+    if (idx === -1) return
+    tabs.value.splice(idx, 1)
+    closedCount.value[toolId] = (closedCount.value[toolId] || 0) + 1
+    // 调整 activeTabId
+    if (activeTabId.value === toolId) {
+      const next = tabs.value[Math.min(idx, tabs.value.length - 1)]
+      activeTabId.value = next ? next.toolId : 'home'
+    }
+  }
+
+  /** 关闭其他：保留 home 和指定 tab */
+  const closeOthers = (keepToolId: string) => {
+    const removed = tabs.value.filter(t => t.toolId !== 'home' && t.toolId !== keepToolId)
+    for (const t of removed) {
+      closedCount.value[t.toolId] = (closedCount.value[t.toolId] || 0) + 1
+    }
+    tabs.value = tabs.value.filter(t => t.toolId === 'home' || t.toolId === keepToolId)
+    activeTabId.value = keepToolId
+  }
+
+  /** 关闭全部：仅保留 home */
+  const closeAllTabs = () => {
+    const removed = tabs.value.filter(t => t.toolId !== 'home')
+    for (const t of removed) {
+      closedCount.value[t.toolId] = (closedCount.value[t.toolId] || 0) + 1
+    }
+    tabs.value = [{ toolId: 'home' }]
+    activeTabId.value = 'home'
+  }
+
+  /** 获取 KeepAlive 的 :key（toolId + 关闭计数，保证关闭后重开是新实例） */
+  const getTabKey = (toolId: string) => `${toolId}-${closedCount.value[toolId] || 0}`
+
+  /** 兼容旧代码：activeTool 作为计算属性指向 activeTabId，setter 走 openTab 以复用 LRU/tab 创建逻辑 */
+  const activeTool = computed({
+    get: () => activeTabId.value,
+    set: (val: string) => { openTab(val) }
+  })
 
   const triggerHistoryRestore = (data: HistoryRestoreState) => {
     if (restoreTimeout) clearTimeout(restoreTimeout)
@@ -261,5 +340,15 @@ export const useToolboxStore = defineStore('toolbox', () => {
     triggerHistoryRestore,
     clearHistoryRestore,
     activeTool,
+    // 多 Tab
+    tabs,
+    activeTabId,
+    closedCount,
+    openTab,
+    switchTab,
+    closeTab,
+    closeOthers,
+    closeAllTabs,
+    getTabKey,
   }
 })
