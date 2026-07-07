@@ -108,6 +108,30 @@ const MAX_LINE_TEXT_CHARS: usize = 500;
 const CANCEL_CHECK_INTERVAL: u64 = 1000;
 const BINARY_DETECT_WINDOW: usize = 8 * 1024;
 
+// ponytail: 常见二进制扩展名列表，内容模式下直接跳过内容扫描（避免误判为文本导致大文件扫描卡顿）
+// 升级路径：可改为从配置读取，支持用户自定义
+const BINARY_EXTENSIONS: &[&str] = &[
+    // 文档类二进制
+    "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+    // 压缩包
+    "zip", "rar", "7z", "gz", "bz2", "tar", "xz",
+    // 图片
+    "jpg", "jpeg", "png", "gif", "bmp", "webp", "ico", "svg",
+    "tif", "tiff", "psd", "ai", "raw", "heic",
+    // 音视频
+    "mp3", "mp4", "wav", "flac", "aac", "ogg", "wma",
+    "avi", "mkv", "mov", "wmv", "flv", "webm", "m4a",
+    // 字体
+    "ttf", "otf", "woff", "woff2", "eot",
+    // 可执行/库
+    "exe", "dll", "so", "dylib", "bin", "msi",
+    // 数据库/镜像
+    "db", "sqlite", "mdb", "iso", "img",
+    // 其他常见二进制
+    "class", "jar", "war", "apk", "ipa",
+    "swf", "ps", "eps",
+];
+
 // ============ 纯函数 ============
 
 /// 当前毫秒时间戳
@@ -150,17 +174,19 @@ fn parse_extension_filter(text: &str) -> (Vec<String>, Vec<String>) {
     }
 }
 
-/// 二进制检测：BOM 优先（UTF-8/UTF-16 BOM 直接判为非二进制），
-/// 无 BOM 时检查前 8KB 是否含 \0 字节
-fn is_binary(bytes: &[u8]) -> bool {
-    // BOM 优先
+/// 二进制检测：扩展名优先（常见二进制格式直接判为二进制），
+/// BOM 次之（UTF-8/UTF-16 BOM 直接判为非二进制），
+/// 最后检查前 8KB 是否含 \0 字节
+fn is_binary(bytes: &[u8], extension: &str) -> bool {
+    if BINARY_EXTENSIONS.contains(&extension) {
+        return true;
+    }
     if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
         return false;
     }
     if bytes.starts_with(&[0xFF, 0xFE]) || bytes.starts_with(&[0xFE, 0xFF]) {
         return false;
     }
-    // 无 BOM：检查前 8KB
     let window = if bytes.len() > BINARY_DETECT_WINDOW {
         &bytes[..BINARY_DETECT_WINDOW]
     } else {
@@ -400,7 +426,7 @@ fn run_search(
                 if should_read_content {
                     match crate::file_encoding::read_file_auto(path) {
                         Ok(content) => {
-                            if !is_binary(content.as_bytes()) {
+                            if !is_binary(content.as_bytes(), &extension) {
                                 let (match_count, matched_lines) =
                                     scan_content(&content, &re, MAX_PREVIEW_LINES);
                                 if match_count > 0 {
@@ -696,11 +722,12 @@ mod tests {
 
     #[test]
     fn is_binary_respects_bom_and_null() {
-        assert!(!is_binary(&[0xEF, 0xBB, 0xBF, b'h', b'i']), "UTF-8 BOM 不是二进制");
-        assert!(!is_binary(&[0xFF, 0xFE, b'A', 0x00]), "UTF-16 LE BOM 不是二进制");
-        assert!(!is_binary(&[0xFE, 0xFF, 0x00, b'A']), "UTF-16 BE BOM 不是二进制");
-        assert!(is_binary(&[b'A', 0x00, b'B', 0x01]), "无 BOM 含 \\0 是二进制");
-        assert!(!is_binary(b"plain ascii text"), "纯 ASCII 不是二进制");
+        assert!(!is_binary(&[0xEF, 0xBB, 0xBF, b'h', b'i'], "txt"), "UTF-8 BOM 不是二进制");
+        assert!(!is_binary(&[0xFF, 0xFE, b'A', 0x00], "txt"), "UTF-16 LE BOM 不是二进制");
+        assert!(!is_binary(&[0xFE, 0xFF, 0x00, b'A'], "txt"), "UTF-16 BE BOM 不是二进制");
+        assert!(is_binary(&[b'A', 0x00, b'B', 0x01], ""), "无 BOM 含 \\0 是二进制");
+        assert!(!is_binary(b"plain ascii text", "txt"), "纯 ASCII 不是二进制");
+        assert!(is_binary(b"%PDF-1.7 fake content", "pdf"), "pdf 扩展名直接判二进制");
     }
 
     #[test]

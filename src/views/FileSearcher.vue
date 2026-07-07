@@ -304,6 +304,8 @@ function highlightLine(ml: MatchedLine): string {
 
 // ============ 持久化 ============
 const STORAGE_KEY = 'litobox.fileSearcher.lastSearch'
+const OLD_KEY_PATH = 'litobox.fileSearcher.lastPath'
+const OLD_KEY_OPTS = 'litobox.fileSearcher.lastOpts'
 
 function saveSearchConfig() {
   localStorage.setItem(
@@ -320,42 +322,67 @@ function saveSearchConfig() {
   )
 }
 
+function applySearchConfig(saved: any) {
+  searchPath.value = saved.path ?? ''
+  opts.mode = saved.mode ?? 'filename'
+  opts.query = saved.query ?? ''
+  opts.caseSensitive = saved.caseSensitive ?? false
+  extFilterText.value = saved.extFilterText ?? ''
+  opts.includeHidden = saved.includeHidden ?? false
+  maxContentMb.value = saved.maxContentMb ?? 10
+}
+
+function loadFromOldKeys(): boolean {
+  const oldPath = localStorage.getItem(OLD_KEY_PATH)
+  const oldOpts = localStorage.getItem(OLD_KEY_OPTS)
+  if (!oldPath && !oldOpts) return false
+  try {
+    const optsParsed = oldOpts ? JSON.parse(oldOpts) : {}
+    const merged = {
+      path: oldPath ?? '',
+      ...optsParsed,
+    }
+    applySearchConfig(merged)
+    saveSearchConfig()
+    localStorage.removeItem(OLD_KEY_PATH)
+    localStorage.removeItem(OLD_KEY_OPTS)
+    return true
+  } catch {
+    return false
+  }
+}
+
 function restoreLastSearch() {
   const raw = localStorage.getItem(STORAGE_KEY)
-  if (!raw) {
-    ElMessage.info('无上次搜索记录')
+  if (raw) {
+    try {
+      const saved = JSON.parse(raw)
+      applySearchConfig(saved)
+      ElMessage.success('已恢复上次搜索配置')
+      return
+    } catch {
+      // fall through
+    }
+  }
+  if (loadFromOldKeys()) {
+    ElMessage.success('已恢复上次搜索配置')
     return
   }
-  try {
-    const saved = JSON.parse(raw)
-    searchPath.value = saved.path ?? ''
-    opts.mode = saved.mode ?? 'filename'
-    opts.query = saved.query ?? ''
-    opts.caseSensitive = saved.caseSensitive ?? false
-    extFilterText.value = saved.extFilterText ?? ''
-    opts.includeHidden = saved.includeHidden ?? false
-    maxContentMb.value = saved.maxContentMb ?? 10
-    ElMessage.success('已恢复上次搜索配置')
-  } catch {
-    ElMessage.error('上次搜索记录损坏')
-  }
+  ElMessage.info('无上次搜索记录')
 }
 
 function loadLastSearchConfig() {
   const raw = localStorage.getItem(STORAGE_KEY)
-  if (!raw) return
-  try {
-    const saved = JSON.parse(raw)
-    searchPath.value = saved.path ?? ''
-    opts.mode = saved.mode ?? 'filename'
-    opts.query = saved.query ?? ''
-    opts.caseSensitive = saved.caseSensitive ?? false
-    extFilterText.value = saved.extFilterText ?? ''
-    opts.includeHidden = saved.includeHidden ?? false
-    maxContentMb.value = saved.maxContentMb ?? 10
-  } catch {
-    // 忽略损坏的配置
+  if (raw) {
+    try {
+      const saved = JSON.parse(raw)
+      applySearchConfig(saved)
+      return
+    } catch {
+      // fall through
+    }
   }
+  loadFromOldKeys()
 }
 
 // ============ 扩展名解析 ============
