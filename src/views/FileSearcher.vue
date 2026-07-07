@@ -5,7 +5,30 @@
       <div class="card-header">
         <span class="card-title">全文搜索</span>
         <div class="card-actions">
-          <el-button size="small" @click="restoreLastSearch">恢复上次</el-button>
+          <el-dropdown trigger="click" @command="applyHistoryItem">
+            <el-button size="small">
+              搜索历史<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item
+                  v-for="(item, idx) in searchHistory"
+                  :key="idx"
+                  :command="item"
+                  class="history-item"
+                >
+                  <div class="history-title">
+                    <span class="history-query">{{ item.query }}</span>
+                    <span class="history-mode">{{ item.mode === 'content' ? '内容' : '文件名' }}</span>
+                  </div>
+                  <div class="history-path">{{ item.path }}</div>
+                </el-dropdown-item>
+                <el-dropdown-item v-if="searchHistory.length === 0" disabled>
+                  暂无搜索历史
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </div>
       </div>
       <div class="card-body">
@@ -192,6 +215,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { ArrowDown } from '@element-plus/icons-vue'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
@@ -302,87 +326,74 @@ function highlightLine(ml: MatchedLine): string {
   return result
 }
 
-// ============ 持久化 ============
-const STORAGE_KEY = 'litobox.fileSearcher.lastSearch'
-const OLD_KEY_PATH = 'litobox.fileSearcher.lastPath'
-const OLD_KEY_OPTS = 'litobox.fileSearcher.lastOpts'
+// ============ 持久化（搜索历史，最近 5 条） ============
+const HISTORY_KEY = 'litobox.fileSearcher.history'
+const MAX_HISTORY = 5
 
-function saveSearchConfig() {
-  localStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify({
-      path: searchPath.value,
-      mode: opts.mode,
-      query: opts.query,
-      caseSensitive: opts.caseSensitive,
-      extFilterText: extFilterText.value,
-      includeHidden: opts.includeHidden,
-      maxContentMb: maxContentMb.value,
-    })
+interface SearchHistoryItem {
+  path: string
+  mode: string
+  query: string
+  caseSensitive: boolean
+  extFilterText: string
+  includeHidden: boolean
+  maxContentMb: number
+}
+
+const searchHistory = ref<SearchHistoryItem[]>([])
+
+function loadHistory() {
+  const raw = localStorage.getItem(HISTORY_KEY)
+  if (raw) {
+    try {
+      searchHistory.value = JSON.parse(raw)
+    } catch {
+      searchHistory.value = []
+    }
+  }
+}
+
+function saveHistory() {
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(searchHistory.value))
+}
+
+function pushHistory() {
+  const item: SearchHistoryItem = {
+    path: searchPath.value,
+    mode: opts.mode,
+    query: opts.query,
+    caseSensitive: opts.caseSensitive,
+    extFilterText: extFilterText.value,
+    includeHidden: opts.includeHidden,
+    maxContentMb: maxContentMb.value,
+  }
+  const idx = searchHistory.value.findIndex(
+    (h) =>
+      h.path === item.path &&
+      h.mode === item.mode &&
+      h.query === item.query &&
+      h.extFilterText === item.extFilterText
   )
+  if (idx === 0) return
+  if (idx > 0) {
+    searchHistory.value.splice(idx, 1)
+  }
+  searchHistory.value.unshift(item)
+  if (searchHistory.value.length > MAX_HISTORY) {
+    searchHistory.value = searchHistory.value.slice(0, MAX_HISTORY)
+  }
+  saveHistory()
 }
 
-function applySearchConfig(saved: any) {
-  searchPath.value = saved.path ?? ''
-  opts.mode = saved.mode ?? 'filename'
-  opts.query = saved.query ?? ''
-  opts.caseSensitive = saved.caseSensitive ?? false
-  extFilterText.value = saved.extFilterText ?? ''
-  opts.includeHidden = saved.includeHidden ?? false
-  maxContentMb.value = saved.maxContentMb ?? 10
-}
-
-function loadFromOldKeys(): boolean {
-  const oldPath = localStorage.getItem(OLD_KEY_PATH)
-  const oldOpts = localStorage.getItem(OLD_KEY_OPTS)
-  if (!oldPath && !oldOpts) return false
-  try {
-    const optsParsed = oldOpts ? JSON.parse(oldOpts) : {}
-    const merged = {
-      path: oldPath ?? '',
-      ...optsParsed,
-    }
-    applySearchConfig(merged)
-    saveSearchConfig()
-    localStorage.removeItem(OLD_KEY_PATH)
-    localStorage.removeItem(OLD_KEY_OPTS)
-    return true
-  } catch {
-    return false
-  }
-}
-
-function restoreLastSearch() {
-  const raw = localStorage.getItem(STORAGE_KEY)
-  if (raw) {
-    try {
-      const saved = JSON.parse(raw)
-      applySearchConfig(saved)
-      ElMessage.success('已恢复上次搜索配置')
-      return
-    } catch {
-      // fall through
-    }
-  }
-  if (loadFromOldKeys()) {
-    ElMessage.success('已恢复上次搜索配置')
-    return
-  }
-  ElMessage.info('无上次搜索记录')
-}
-
-function loadLastSearchConfig() {
-  const raw = localStorage.getItem(STORAGE_KEY)
-  if (raw) {
-    try {
-      const saved = JSON.parse(raw)
-      applySearchConfig(saved)
-      return
-    } catch {
-      // fall through
-    }
-  }
-  loadFromOldKeys()
+function applyHistoryItem(item: SearchHistoryItem) {
+  searchPath.value = item.path
+  opts.mode = item.mode as 'filename' | 'content'
+  opts.query = item.query
+  opts.caseSensitive = item.caseSensitive
+  extFilterText.value = item.extFilterText
+  opts.includeHidden = item.includeHidden
+  maxContentMb.value = item.maxContentMb
+  ElMessage.success('已加载搜索历史')
 }
 
 // ============ 扩展名解析 ============
@@ -430,8 +441,8 @@ async function startSearch() {
   elapsedMs.value = 0
   progress.value = null
 
-  // 持久化
-  saveSearchConfig()
+  // 保存到搜索历史
+  pushHistory()
 
   try {
     const id = await fileSearchStart(searchPath.value, opts)
@@ -490,7 +501,7 @@ function stopTimer() {
 
 // ============ 事件监听 ============
 onMounted(async () => {
-  loadLastSearchConfig()
+  loadHistory()
 
   unlistenFns.push(
     await listen<SearchProgress>('file-search-progress', (e) => {
@@ -610,5 +621,40 @@ onUnmounted(() => {
   font-size: 12px;
   color: var(--text-secondary);
   margin-left: 4px;
+}
+.history-item {
+  padding: 8px 12px;
+  line-height: 1.3;
+}
+.history-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.history-query {
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.history-mode {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--accent-cyan);
+  background: rgba(0, 212, 255, 0.1);
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+.history-path {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 280px;
 }
 </style>
