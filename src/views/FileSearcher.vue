@@ -214,7 +214,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { ArrowDown } from '@element-plus/icons-vue'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
@@ -617,7 +617,7 @@ function restoreFromHistory(data: HistoryRestoreState) {
 onMounted(async () => {
   loadHistory()
 
-  // 从操作历史跳转过来时还原搜索条件
+  // 首次挂载时检查是否有待还原的历史记录
   if (store.pendingHistoryRestore?.tool === 'fileSearcher') {
     restoreFromHistory(store.pendingHistoryRestore)
     store.clearHistoryRestore()
@@ -666,6 +666,17 @@ onMounted(async () => {
     })
   )
 })
+
+// 监听历史还原（KeepAlive 缓存时 onMounted 不触发，用 watch 兜底）
+watch(
+  () => store.pendingHistoryRestore,
+  (data) => {
+    if (data?.tool === 'fileSearcher') {
+      restoreFromHistory(data)
+      store.clearHistoryRestore()
+    }
+  }
+)
 
 onUnmounted(() => {
   stopTimer()
