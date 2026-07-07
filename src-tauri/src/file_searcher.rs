@@ -247,15 +247,24 @@ fn run_search(
     app: AppHandle,
     opts: SearchOptions,
 ) -> Result<(), String> {
-    let root_path = {
+    let (root_path, search_id_clone) = {
         let r = results_arc.lock().unwrap();
-        r.root_path.clone()
+        (r.root_path.clone(), r.search_id.clone())
     };
 
-    // 编译正则
+    let _ = app.emit(
+        "file-search-progress",
+        SearchProgress {
+            searchId: search_id_clone.clone(),
+            filesScanned: 0,
+            bytesScanned: 0,
+            matchesFound: 0,
+            currentPath: "搜索开始...".to_string(),
+        },
+    );
+
     let re = build_regex(&opts.query, opts.caseSensitive)?;
 
-    // 解析扩展名过滤
     let (ext_include, ext_exclude) = (
         opts.extensions.clone(),
         opts.excludeExtensions.clone(),
@@ -267,6 +276,8 @@ fn run_search(
     let mut skipped_count: u32 = 0;
     let mut files_since_check: u64 = 0;
     let mut last_progress_emit = std::time::Instant::now();
+
+    debug_log!("file_searcher: 开始遍历路径: {}", root_path);
 
     let mut walker = walkdir::WalkDir::new(&root_path)
         .follow_links(false)
@@ -281,6 +292,26 @@ fn run_search(
                 debug_log!("file_searcher: 搜索被取消");
                 let finished = now_ms();
                 r.status = SearchStatus::Cancelled;
+                r.finished_at = Some(finished);
+                let summary = SearchSummary {
+                    totalFiles: r.files_scanned,
+                    totalDirs: total_dirs,
+                    bytesScanned: r.bytes_scanned,
+                    matchesFound: r.results.len() as u32,
+                    durationMs: (finished - r.started_at) as u64,
+                    truncated: r.truncated,
+                    skippedCount: r.skipped_count,
+                };
+                let _ = app.emit("file-search-complete", serde_json::json!({
+                    "searchId": r.search_id,
+                    "summary": summary,
+                }));
+                return Ok(());
+            }
+            if (now_ms() - r.started_at) > 30 * 60 * 1000 {
+                debug_log!("file_searcher: 搜索超时（30分钟）");
+                let finished = now_ms();
+                r.status = SearchStatus::Failed { error: "搜索超时（超过30分钟）".to_string() };
                 r.finished_at = Some(finished);
                 let summary = SearchSummary {
                     totalFiles: r.files_scanned,
