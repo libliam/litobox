@@ -224,6 +224,7 @@ import {
   fileSearchCancel,
   fileSearchGetResults,
   fileSearchClear,
+  fileSearchGetSummary,
 } from '@/utils/fileSearcherClient'
 import type {
   SearchOptions,
@@ -448,8 +449,23 @@ async function startSearch() {
     const id = await fileSearchStart(searchPath.value, opts)
     searchId.value = id
     state.value = 'searching'
+    // 立即设置默认进度，避免后端初始事件被 searchId 过滤导致"准备中"卡住
+    progress.value = {
+      searchId: id,
+      filesScanned: 0,
+      bytesScanned: 0,
+      matchesFound: 0,
+      currentPath: '搜索已启动...',
+    }
     startTime.value = Date.now()
     startTimer()
+    // 防竞态：后端可能在 await 返回前就完成了搜索，事件被旧 searchId 过滤
+    // 等一小段时间后主动查一次状态，如果已完成就直接显示结果
+    setTimeout(() => {
+      if (state.value === 'searching') {
+        checkSearchComplete()
+      }
+    }, 500)
   } catch (e: any) {
     searchError.value = String(e)
     state.value = 'failed'
@@ -490,6 +506,10 @@ function startTimer() {
   stopTimer()
   timerId = setInterval(() => {
     elapsedMs.value = Date.now() - startTime.value
+    // 兜底：每 2 秒主动查一次状态，防事件丢失
+    if (state.value === 'searching' && elapsedMs.value % 2000 < 200) {
+      checkSearchComplete()
+    }
   }, 200)
 }
 function stopTimer() {
@@ -500,6 +520,29 @@ function stopTimer() {
 }
 
 // ============ 事件监听 ============
+async function checkSearchComplete() {
+  if (!searchId.value) return
+  try {
+    const status = await invoke<{ status: string; error?: string }>('file_search_status', { searchId: searchId.value })
+    if (status.status === 'running') return // 还在运行，等事件
+    stopTimer()
+    const s = await fileSearchGetSummary(searchId.value)
+    summary.value = s
+    elapsedMs.value = s.durationMs
+    if (status.status === 'failed') {
+      state.value = 'failed'
+      searchError.value = status.error || '搜索失败'
+    } else if (status.status === 'cancelled') {
+      state.value = 'cancelled'
+    } else {
+      state.value = 'completed'
+      await loadResults(1)
+    }
+  } catch {
+    // 查询失败，忽略，等事件
+  }
+}
+
 onMounted(async () => {
   loadHistory()
 
@@ -516,7 +559,6 @@ onMounted(async () => {
       stopTimer()
       summary.value = e.payload.summary
       elapsedMs.value = e.payload.summary.durationMs
-      // 状态查询：判断成功/失败/取消
       if (searchId.value) {
         try {
           const status = await invoke<{ status: string; error?: string }>('file_search_status', { searchId: searchId.value })
