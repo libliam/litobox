@@ -220,7 +220,7 @@ import { ArrowDown } from '@element-plus/icons-vue'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
-import { useToolboxStore } from '@/store'
+import { useToolboxStore, type HistoryRestoreState } from '@/store'
 import {
   fileSearchStart,
   fileSearchCancel,
@@ -595,8 +595,33 @@ async function checkSearchComplete() {
   }
 }
 
+// ============ 从操作历史还原 ============
+function restoreFromHistory(data: HistoryRestoreState) {
+  // inputFull 格式: "路径 | 模式 | 搜索词"
+  const parts = data.input.split(' | ')
+  if (parts.length >= 3) {
+    searchPath.value = parts[0] || ''
+    opts.mode = (parts[1] === '内容' ? 'content' : 'filename') as 'filename' | 'content'
+    opts.query = parts.slice(2).join(' | ') || ''
+  } else if (parts.length === 1) {
+    // 兼容只有路径的情况
+    searchPath.value = parts[0]
+  }
+  ElMessage({
+    message: `已加载历史记录（${new Date(data.timestamp).toLocaleString('zh-CN')} 的操作）`,
+    type: 'info',
+    duration: 3000,
+  })
+}
+
 onMounted(async () => {
   loadHistory()
+
+  // 从操作历史跳转过来时还原搜索条件
+  if (store.pendingHistoryRestore?.tool === 'fileSearcher') {
+    restoreFromHistory(store.pendingHistoryRestore)
+    store.clearHistoryRestore()
+  }
 
   unlistenFns.push(
     await listen<SearchProgress>('file-search-progress', (e) => {
