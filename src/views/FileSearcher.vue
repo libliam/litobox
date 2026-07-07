@@ -454,19 +454,21 @@ onMounted(async () => {
 
   unlistenFns.push(
     await listen<SearchProgress>('file-search-progress', (e) => {
+      if (e.payload.searchId !== searchId.value) return
       progress.value = e.payload
     })
   )
 
   unlistenFns.push(
-    await listen<SearchSummary>('file-search-complete', async (e) => {
+    await listen<{ searchId: string; summary: SearchSummary }>('file-search-complete', async (e) => {
+      if (e.payload.searchId !== searchId.value) return
       stopTimer()
-      summary.value = e.payload
-      elapsedMs.value = e.payload.durationMs
+      summary.value = e.payload.summary
+      elapsedMs.value = e.payload.summary.durationMs
       // 状态查询：判断成功/失败/取消
       if (searchId.value) {
         try {
-          const status = await invoke<any>('file_search_status', { searchId: searchId.value })
+          const status = await invoke<{ status: string; error?: string }>('file_search_status', { searchId: searchId.value })
           if (status.status === 'failed') {
             state.value = 'failed'
             searchError.value = status.error || '搜索失败'
@@ -486,6 +488,7 @@ onMounted(async () => {
 
   unlistenFns.push(
     await listen<{ searchId: string; message: string }>('file-search-warning', (e) => {
+      if (e.payload.searchId !== searchId.value) return
       ElMessage.warning(e.payload.message)
     })
   )

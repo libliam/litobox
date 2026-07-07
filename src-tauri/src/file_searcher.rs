@@ -291,7 +291,10 @@ fn run_search(
                     truncated: r.truncated,
                     skippedCount: r.skipped_count,
                 };
-                let _ = app.emit("file-search-complete", summary);
+                let _ = app.emit("file-search-complete", serde_json::json!({
+                    "searchId": r.search_id,
+                    "summary": summary,
+                }));
                 return Ok(());
             }
         }
@@ -470,7 +473,10 @@ fn run_search(
             truncated: r.truncated,
             skippedCount: r.skipped_count,
         };
-        let _ = app.emit("file-search-complete", summary);
+        let _ = app.emit("file-search-complete", serde_json::json!({
+            "searchId": r.search_id,
+            "summary": summary,
+        }));
     }
     debug_log!("file_searcher: 搜索完成 id={}", root_path);
     Ok(())
@@ -552,7 +558,10 @@ pub async fn file_search_start(
                 truncated: r.truncated,
                 skippedCount: r.skipped_count,
             };
-            let _ = app_for_error.emit("file-search-complete", summary);
+            let _ = app_for_error.emit("file-search-complete", serde_json::json!({
+                "searchId": r.search_id,
+                "summary": summary,
+            }));
         }
     });
 
