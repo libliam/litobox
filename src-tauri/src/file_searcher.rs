@@ -105,7 +105,7 @@ const MAX_RESULTS: u32 = 1000;
 const MAX_PREVIEW_LINES: usize = 3;
 const MAX_MATCHES_PER_LINE: usize = 5;
 const MAX_LINE_TEXT_CHARS: usize = 500;
-const CANCEL_CHECK_INTERVAL: u64 = 1000;
+const PROGRESS_INTERVAL_MS: u64 = 200;
 const BINARY_DETECT_WINDOW: usize = 8 * 1024;
 
 // ponytail: 常见二进制扩展名列表，内容模式下直接跳过内容扫描（避免误判为文本导致大文件扫描卡顿）
@@ -300,7 +300,7 @@ fn run_search(
     let mut total_dirs: u64 = 0;
     let mut bytes_scanned: u64 = 0;
     let mut skipped_count: u32 = 0;
-    let mut files_since_check: u64 = 0;
+    let mut last_check = std::time::Instant::now();
     let mut last_progress_emit = std::time::Instant::now();
 
     debug_log!("file_searcher: 开始遍历路径: {}", root_path);
@@ -310,9 +310,8 @@ fn run_search(
         .into_iter();
 
     while let Some(entry) = walker.next() {
-        // 取消检查（每 CANCEL_CHECK_INTERVAL 项查一次）
-        if files_since_check >= CANCEL_CHECK_INTERVAL {
-            files_since_check = 0;
+        if last_check.elapsed() >= std::time::Duration::from_millis(PROGRESS_INTERVAL_MS) {
+            last_check = std::time::Instant::now();
             let mut r = results_arc.lock().unwrap();
             if r.cancel_flag.load(Ordering::SeqCst) {
                 debug_log!("file_searcher: 搜索被取消");
@@ -355,7 +354,6 @@ fn run_search(
                 return Ok(());
             }
         }
-        files_since_check += 1;
 
         let entry = match entry {
             Ok(e) => e,
@@ -496,8 +494,8 @@ fn run_search(
             }
         }
 
-        // 进度事件：每 200ms 或每 1000 文件
-        if last_progress_emit.elapsed() >= std::time::Duration::from_millis(200) {
+        // 进度事件：每 PROGRESS_INTERVAL_MS 发一次
+        if last_progress_emit.elapsed() >= std::time::Duration::from_millis(PROGRESS_INTERVAL_MS) {
             last_progress_emit = std::time::Instant::now();
             let r = results_arc.lock().unwrap();
             let _ = app.emit(
