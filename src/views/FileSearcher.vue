@@ -29,6 +29,7 @@
               </el-dropdown-menu>
             </template>
           </el-dropdown>
+          <el-button size="small" @click="resetAll">重置</el-button>
         </div>
       </div>
       <div class="card-body">
@@ -479,6 +480,36 @@ async function cancelSearch() {
   } catch (e: any) {
     ElMessage.error('取消失败: ' + String(e))
   }
+}
+
+function resetAll() {
+  // 如果正在搜索，先取消
+  if (searching.value && searchId.value) {
+    fileSearchCancel(searchId.value).catch(() => {})
+  }
+  stopTimer()
+  // 清空搜索条件
+  searchPath.value = ''
+  opts.mode = 'filename'
+  opts.query = ''
+  opts.caseSensitive = false
+  opts.extensions = []
+  opts.excludeExtensions = []
+  opts.includeHidden = false
+  opts.maxContentFileBytes = 10 * 1024 * 1024
+  extFilterText.value = ''
+  maxContentMb.value = 10
+  // 清空状态
+  searchId.value = ''
+  state.value = 'idle'
+  progress.value = null
+  summary.value = null
+  searchError.value = ''
+  elapsedMs.value = 0
+  resultItems.value = []
+  totalResults.value = 0
+  currentPage.value = 1
+  ElMessage.success('已清空所有条件')
 }
 
 async function loadResults(page: number) {
