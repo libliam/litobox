@@ -513,6 +513,15 @@ fn run_search(
     Ok(())
 }
 
+/// 去掉 Windows 长路径前缀 \\?\ （canonicalize 会自动加上，展示时不友好）
+fn strip_unc_prefix(path: &str) -> String {
+    if let Some(rest) = path.strip_prefix("\\\\?\\") {
+        rest.to_string()
+    } else {
+        path.to_string()
+    }
+}
+
 /// 构造仅文件名匹配的结果项
 fn filename_only_item(
     path: &str,
@@ -545,6 +554,7 @@ pub async fn file_search_start(
         .map_err(|e| format!("路径无法访问: {}", e))?
         .to_string_lossy()
         .to_string();
+    let path_canonical = strip_unc_prefix(&path_canonical);
 
     let search_id = uuid::Uuid::new_v4().to_string();
     let cancel_flag = Arc::new(AtomicBool::new(false));
