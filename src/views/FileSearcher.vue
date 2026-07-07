@@ -5,7 +5,7 @@
       <div class="card-header">
         <span class="card-title">全文搜索</span>
         <div class="card-actions">
-          <el-button size="small" @click="loadLastPath">上次路径</el-button>
+          <el-button size="small" @click="restoreLastSearch">恢复上次</el-button>
         </div>
       </div>
       <div class="card-body">
@@ -303,14 +303,15 @@ function highlightLine(ml: MatchedLine): string {
 }
 
 // ============ 持久化 ============
-const STORAGE_KEY_PATH = 'litobox.fileSearcher.lastPath'
-const STORAGE_KEY_OPTS = 'litobox.fileSearcher.lastOpts'
+const STORAGE_KEY = 'litobox.fileSearcher.lastSearch'
 
-function saveOpts() {
+function saveSearchConfig() {
   localStorage.setItem(
-    STORAGE_KEY_OPTS,
+    STORAGE_KEY,
     JSON.stringify({
+      path: searchPath.value,
       mode: opts.mode,
+      query: opts.query,
       caseSensitive: opts.caseSensitive,
       extFilterText: extFilterText.value,
       includeHidden: opts.includeHidden,
@@ -319,22 +320,35 @@ function saveOpts() {
   )
 }
 
-function loadLastPath() {
-  const last = localStorage.getItem(STORAGE_KEY_PATH)
-  if (last) {
-    searchPath.value = last
-    ElMessage.success('已加载上次路径')
-  } else {
-    ElMessage.info('无上次路径记录')
+function restoreLastSearch() {
+  const raw = localStorage.getItem(STORAGE_KEY)
+  if (!raw) {
+    ElMessage.info('无上次搜索记录')
+    return
+  }
+  try {
+    const saved = JSON.parse(raw)
+    searchPath.value = saved.path ?? ''
+    opts.mode = saved.mode ?? 'filename'
+    opts.query = saved.query ?? ''
+    opts.caseSensitive = saved.caseSensitive ?? false
+    extFilterText.value = saved.extFilterText ?? ''
+    opts.includeHidden = saved.includeHidden ?? false
+    maxContentMb.value = saved.maxContentMb ?? 10
+    ElMessage.success('已恢复上次搜索配置')
+  } catch {
+    ElMessage.error('上次搜索记录损坏')
   }
 }
 
-function loadOpts() {
-  const raw = localStorage.getItem(STORAGE_KEY_OPTS)
+function loadLastSearchConfig() {
+  const raw = localStorage.getItem(STORAGE_KEY)
   if (!raw) return
   try {
     const saved = JSON.parse(raw)
+    searchPath.value = saved.path ?? ''
     opts.mode = saved.mode ?? 'filename'
+    opts.query = saved.query ?? ''
     opts.caseSensitive = saved.caseSensitive ?? false
     extFilterText.value = saved.extFilterText ?? ''
     opts.includeHidden = saved.includeHidden ?? false
@@ -390,8 +404,7 @@ async function startSearch() {
   progress.value = null
 
   // 持久化
-  localStorage.setItem(STORAGE_KEY_PATH, searchPath.value)
-  saveOpts()
+  saveSearchConfig()
 
   try {
     const id = await fileSearchStart(searchPath.value, opts)
@@ -450,7 +463,7 @@ function stopTimer() {
 
 // ============ 事件监听 ============
 onMounted(async () => {
-  loadOpts()
+  loadLastSearchConfig()
 
   unlistenFns.push(
     await listen<SearchProgress>('file-search-progress', (e) => {
