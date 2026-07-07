@@ -220,6 +220,7 @@ import { ArrowDown } from '@element-plus/icons-vue'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
+import { useToolboxStore } from '@/store'
 import {
   fileSearchStart,
   fileSearchCancel,
@@ -236,6 +237,7 @@ import type {
 } from '@/utils/fileSearcherTypes'
 
 // ============ 状态 ============
+const store = useToolboxStore()
 type SearchState = 'idle' | 'searching' | 'completed' | 'failed' | 'cancelled'
 const state = ref<SearchState>('idle')
 const searching = computed(() => state.value === 'searching')
@@ -267,6 +269,7 @@ const pageSize = 100
 let timerId: ReturnType<typeof setInterval> | null = null
 let unlistenFns: UnlistenFn[] = []
 const startTime = ref(0)
+let historyRecorded = false
 
 // ============ 工具函数 ============
 function formatBytes(bytes: number): string {
@@ -442,6 +445,7 @@ async function startSearch() {
   currentPage.value = 1
   elapsedMs.value = 0
   progress.value = null
+  historyRecorded = false
 
   // 保存到搜索历史
   pushHistory()
@@ -551,6 +555,22 @@ function stopTimer() {
 }
 
 // ============ 事件监听 ============
+
+function recordHistory(s: SearchSummary, status: string) {
+  if (historyRecorded) return
+  historyRecorded = true
+  const inputFull = `${searchPath.value} | ${opts.mode === 'content' ? '内容' : '文件名'} | ${opts.query}`
+  const outputFull = JSON.stringify({ status, ...s })
+  store.addHistory({
+    tool: 'fileSearcher',
+    action: opts.mode === 'content' ? '内容搜索' : '文件名搜索',
+    inputPreview: inputFull.slice(0, 50),
+    outputPreview: `${s.matchesFound} 命中 / ${s.totalFiles} 文件 / ${formatDuration(s.durationMs)}`.slice(0, 50),
+    inputFull,
+    outputFull,
+  })
+}
+
 async function checkSearchComplete() {
   if (!searchId.value) return
   try {
@@ -569,6 +589,7 @@ async function checkSearchComplete() {
       state.value = 'completed'
       await loadResults(1)
     }
+    recordHistory(s, status.status)
   } catch {
     // 查询失败，忽略，等事件
   }
@@ -590,9 +611,11 @@ onMounted(async () => {
       stopTimer()
       summary.value = e.payload.summary
       elapsedMs.value = e.payload.summary.durationMs
+      let finalStatus = 'completed'
       if (searchId.value) {
         try {
           const status = await invoke<{ status: string; error?: string }>('file_search_status', { searchId: searchId.value })
+          finalStatus = status.status
           if (status.status === 'failed') {
             state.value = 'failed'
             searchError.value = status.error || '搜索失败'
@@ -607,6 +630,7 @@ onMounted(async () => {
           await loadResults(1)
         }
       }
+      recordHistory(e.payload.summary, finalStatus)
     })
   )
 
