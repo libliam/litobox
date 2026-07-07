@@ -10,7 +10,7 @@
       </div>
       <div class="card-body">
         <div class="action-grid">
-          <div class="action-group" style="flex: 2">
+          <div class="action-group action-group-flex-2">
             <div class="group-label">搜索路径</div>
             <el-input
               v-model="searchPath"
@@ -31,8 +31,8 @@
             </el-radio-group>
           </div>
         </div>
-        <div class="action-grid" style="margin-top: 8px">
-          <div class="action-group" style="flex: 2">
+        <div class="action-grid action-grid-mt-sm">
+          <div class="action-group action-group-flex-2">
             <div class="group-label">搜索词（正则）</div>
             <el-input
               v-model="opts.query"
@@ -65,7 +65,7 @@
             </div>
           </div>
         </div>
-        <div class="action-grid" style="margin-top: 8px">
+        <div class="action-grid action-grid-mt-sm">
           <el-checkbox v-model="opts.caseSensitive">区分大小写</el-checkbox>
           <el-checkbox v-model="opts.includeHidden">包含隐藏</el-checkbox>
           <div class="action-group" v-if="opts.mode === 'content'">
@@ -182,7 +182,7 @@
           :total="totalResults"
           layout="prev, pager, next, total"
           @current-change="loadResults"
-          style="margin-top: 12px; justify-content: flex-end"
+          class="pagination-right"
         />
       </div>
     </div>
@@ -507,23 +507,33 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.action-group-flex-2 {
+  flex: 2;
+}
+.action-grid-mt-sm {
+  margin-top: 8px;
+}
+.pagination-right {
+  margin-top: 12px;
+  justify-content: flex-end;
+}
 .progress-info {
   margin-bottom: 8px;
   font-size: 12px;
-  color: var(--text-secondary, #909399);
+  color: var(--text-secondary);
 }
 .progress-info div {
   margin-bottom: 4px;
 }
 .progress-info div:last-child {
-  color: var(--text-primary, #409eff);
+  color: var(--text-primary);
 }
 .summary-text {
   font-size: 12px;
-  color: var(--text-secondary, #909399);
+  color: var(--text-secondary);
 }
 .warn-text {
-  color: var(--el-color-warning, #e6a23c);
+  color: var(--accent-orange);
   margin-left: 8px;
 }
 .file-name {
@@ -531,13 +541,13 @@ onUnmounted(() => {
 }
 .file-path {
   font-size: 11px;
-  color: var(--text-secondary, #909399);
+  color: var(--text-secondary);
   margin-top: 2px;
   word-break: break-all;
 }
 .file-meta {
   font-size: 11px;
-  color: var(--text-secondary, #909399);
+  color: var(--text-secondary);
   margin-top: 2px;
 }
 .match-line {
@@ -547,18 +557,18 @@ onUnmounted(() => {
   word-break: break-all;
 }
 .match-line :deep(mark) {
-  background-color: var(--el-color-warning-light-7, #fdf6ec);
-  color: var(--el-color-danger, #f56c6c);
+  background-color: rgba(245, 158, 11, 0.15);
+  color: var(--accent-orange);
   padding: 0 2px;
   border-radius: 2px;
 }
 .line-no {
-  color: var(--text-secondary, #909399);
+  color: var(--text-secondary);
   margin-right: 4px;
 }
 .hint {
   font-size: 12px;
-  color: var(--text-secondary, #909399);
+  color: var(--text-secondary);
   margin-left: 4px;
 }
 </style>

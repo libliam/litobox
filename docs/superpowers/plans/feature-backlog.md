@@ -104,6 +104,79 @@
 
 ---
 
+## 前端样式规范（新功能开发必看）
+
+> **用途**：统一工具页面样式，确保新功能页面一步到位符合设计规范。
+
+### 全局 CSS 变量（定义在 theme.css）
+
+| 变量 | 说明 | 深色值 | 浅色值 |
+|------|------|--------|--------|
+| `--bg-primary` | 页面背景 | `#0a0e17` | `#f0f4f8` |
+| `--bg-card` | 卡片背景 | `#1a2332` | `#ffffff` |
+| `--bg-input` | 输入框背景 | `#0d1520` | `#f8fafc` |
+| `--text-primary` | 主文字 | `#e2e8f0` | `#0f172a` |
+| `--text-secondary` | 次要文字 | `#94a3b8` | `#475569` |
+| `--border-color` | 边框颜色 | `#1e3a5f` | `#cbd5e1` |
+| `--accent-cyan` | 青色强调色 | `#00d4ff` | `#0891b2` |
+| `--accent-blue` | 蓝色强调色 | `#3b82f6` | `#2563eb` |
+| `--accent-green` | 绿色 | `#10b981` | `#059669` |
+| `--accent-orange` | 橙色 | `#f59e0b` | `#d97706` |
+| `--accent-red` | 红色 | `#ef4444` | `#dc2626` |
+
+### 标准布局组件（全局样式，直接使用）
+
+| 类名 | 用途 | 说明 |
+|------|------|------|
+| `.tool-container` | 页面根容器 | 自带 padding、overflow-y、height:100% |
+| `.tool-card` | 卡片容器 | 背景、边框、圆角、hover 效果 |
+| `.sticky-card` | 置顶卡片 | position:sticky + 阴影，适合操作区 |
+| `.card-header` | 卡片标题栏 | flex 布局、背景色、底部边框 |
+| `.card-title` | 卡片标题 | 青色、大写、字母间距 1px |
+| `.card-body` | 卡片内容区 | padding 16px 20px |
+| `.card-actions` | 标题栏操作区 | flex 布局、gap 6px |
+| `.action-grid` | 操作按钮网格 | flex-wrap、gap 16px |
+| `.action-group` | 操作按钮组 | flex、gap 8px |
+| `.group-label` | 标签文字 | 次要颜色、13px |
+| `.group-buttons` | 按钮容器 | flex、gap 6px |
+| `.error-message` | 错误提示 | 红色边框 + 发光效果 |
+
+### Tab 页面规范
+
+| 类名 | 用途 |
+|------|------|
+| `.tool-tabs` | Tab 容器（替换旧的 `.new-tool-tabs`） |
+
+### 表格与分页规范
+
+| 类名 | 用途 |
+|------|------|
+| `el-table` | 直接使用，全局样式已覆盖 |
+| `el-pagination` | 直接使用，全局样式已覆盖 |
+| `.pagination-right` | 分页居右（需在组件上添加） |
+
+### 通用注意事项
+
+1. **禁止硬编码颜色**：所有颜色必须使用 CSS 变量，禁止使用 `#xxx` 或 Element Plus 的 `--el-color-xxx`
+2. **禁止内联样式**：布局样式（如 `flex: 2`、`margin-top: 8px`）必须定义为类名
+3. **组件命名**：Vue 组件名 PascalCase，工具函数 camelCase，常量 UPPER_SNAKE_CASE
+4. **卡片式布局**：工具页面统一使用 `.tool-card`，包含标题栏（`.card-header`）和内容区（`.card-body`）
+5. **Tab 栏置顶**：使用 `position: sticky`（全局 `.tool-tabs` 已实现）
+6. **深色/浅色双主题**：全局样式已处理，新增样式需考虑 `html.light` 覆盖
+7. **大文本处理**：使用虚拟滚动或分页，避免性能问题
+
+### 新页面创建流程
+
+```
+1. 复制 src/views/_ToolTemplate.vue → NewTool.vue
+2. 替换所有 "NewTool" / "new-tool" / "newTool" 相关命名
+3. 根据需求增删 Tab 面板或卡片
+4. 仅保留页面特有样式在 <style scoped>，通用样式使用全局类名
+5. 运行 npm run build 验证
+```
+
+---
+
 ## 维护规则
 
 1. **每次 brainstorming 后立即更新此文件** — 把新产生的方向追加到对应分类，标注日期和来源

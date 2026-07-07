@@ -85,6 +85,231 @@ html.light .error :deep(.el-textarea__inner) {
   box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1) !important;
 }
 
+/* ===== 工具页面卡片样式（全局标准） ===== */
+.tool-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  margin-bottom: 16px;
+  overflow: hidden;
+  transition: border-color 0.3s;
+}
+
+.tool-card:last-child {
+  margin-bottom: 0;
+}
+
+.tool-card:hover {
+  border-color: rgba(0, 212, 255, 0.3);
+}
+
+.sticky-card {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+html.light .sticky-card {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  background: rgba(0, 0, 0, 0.2);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.card-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--accent-cyan);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.card-body {
+  padding: 16px 20px;
+}
+
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.action-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+}
+
+.action-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.group-label {
+  color: var(--text-secondary);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.group-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.hint-icon {
+  font-size: 15px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 0.2s;
+  flex-shrink: 0;
+}
+
+.hint-icon:hover {
+  color: var(--accent-cyan);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tooltip-content {
+  max-width: 320px;
+  line-height: 1.6;
+}
+
+.tooltip-content p {
+  margin: 2px 0;
+}
+
+.tooltip-content code {
+  background: rgba(0, 212, 255, 0.1);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+.error-message {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid var(--accent-red);
+  border-radius: 4px;
+  color: var(--accent-red);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+html.light .error-message {
+  background: rgba(220, 38, 38, 0.06);
+}
+
+/* ===== 一级 Tab 样式（全局标准） ===== */
+.tool-tabs :deep(.el-tabs__header) {
+  margin-bottom: 16px;
+  padding-left: 8px;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--bg-primary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+html.light .tool-tabs :deep(.el-tabs__header) {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.tool-tabs :deep(.el-tabs__nav-wrap) {
+  padding-left: 4px;
+}
+
+.tool-tabs :deep(.el-tabs__item) {
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.tool-tabs :deep(.el-tabs__item.is-active) {
+  color: var(--accent-cyan);
+}
+
+.tool-tabs :deep(.el-tabs__active-bar) {
+  background-color: var(--accent-cyan);
+}
+
+.tool-tabs :deep(.el-tabs__nav-wrap::after) {
+  background-color: var(--border-color);
+}
+
+/* ===== 表格样式（全局标准） ===== */
+:deep(.el-table) {
+  background: transparent;
+}
+
+:deep(.el-table th.el-table__cell) {
+  background: rgba(0, 0, 0, 0.1);
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+html.light :deep(.el-table th.el-table__cell) {
+  background: #f8fafc;
+}
+
+:deep(.el-table tr:hover > td.el-table__cell) {
+  background: rgba(0, 212, 255, 0.05);
+}
+
+:deep(.el-table td.el-table__cell) {
+  border-bottom: 1px solid rgba(30, 58, 95, 0.3);
+}
+
+html.light :deep(.el-table td.el-table__cell) {
+  border-bottom: 1px solid rgba(226, 232, 240, 0.5);
+}
+
+:deep(.el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell) {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+html.light :deep(.el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell) {
+  background: rgba(8, 145, 178, 0.02);
+}
+
+/* ===== 分页样式（全局标准） ===== */
+:deep(.el-pagination) {
+  color: var(--text-secondary);
+}
+
+:deep(.el-pagination button) {
+  background: var(--bg-card);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+
+:deep(.el-pagination button:hover) {
+  border-color: var(--accent-cyan);
+  color: var(--accent-cyan);
+}
+
+:deep(.el-pagination.is-background .el-pager li:not(.disabled).active) {
+  background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+  color: #fff;
+}
+
 html.dark {
   --bg-primary: #0a0e17;
   --bg-secondary: #111827;
