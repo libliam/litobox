@@ -1,35 +1,39 @@
 # SDD Progress Ledger
 
-Plan: docs/superpowers/plans/2026-07-06-process-kill-plan.md
-Base commit: 0d57abf
+Plan: docs/superpowers/plans/2026-07-07-file-searcher-plan.md
+Spec: docs/superpowers/specs/2026-07-07-file-searcher-design.md
+Base commit: 39c316a
 
-Task 1: complete (commits 0d57abf..69cef30, review clean after fix)
-- KillResult struct + parse_taskkill_output + 6 unit tests
-- Fix: UTF-8 char boundary panic in truncation (69cef30)
+## Task Progress
 
-Task 2: complete (commits 69cef30..c17addb, review clean - Approved)
-- kill_process Tauri command (taskkill + GBK decode + sysinfo best-effort)
-- Minor: taskkill error path lacks debug_log (non-blocking)
+| Task | Status | Commit(s) | Notes |
+|------|--------|-----------|-------|
+| 1: Cargo.toml regex + version | ✅ | 07612ac | 4.4.0→4.6.0, +regex |
+| 2: read_file_auto TDD | ✅ | 07612ac | GBK/UTF-16/UTF-8 BOM |
+| 3: file_searcher structs | ✅ | dd25dd4 | 数据结构 + 常量 |
+| 4: 4 pure functions TDD | ✅ | dd25dd4 | parse_ext/is_binary/build_regex/scan_content |
+| 5+6: run_search + 6 cmds | ✅ | 504b7bd + e2956dc | fix: 嵌套锁死锁 |
+| 7: main.rs register cmds | ✅ | d8e49e6 | 6 commands registered |
+| 8+9+10: frontend | ✅ | 6d2a9ff + cf71683 | fix: XSS + cancel/failed event emit |
+| 11: version sync + docs | ✅ | 0d72c9a | package.json 4.6.0 + README + backlog |
+| 12: final review | ✅ | 07a5a83 | searchId 包装 complete 事件防陈旧竞态；finding #4 顺带修复 |
 
-Task 3: complete (commit a40fd43, one-line registration, cargo check clean)
-Task 4: complete (commit f8f626d, KillResult type + killProcess wrapper, vue-tsc clean)
-Task 5: complete (commit 230bfe2, ProcessListView 加结束按钮 + handleKill + 二次确认 + Toast)
-Task 6: complete (commit fd3d0db, NetworkInfoView 监听端口表加释放按钮 + handleReleasePort)
-Task 7: complete (commit ac9da72, version bump 4.3.0 → 4.4.0 + README 同步进程 kill 与端口释放功能)
+## Minor Findings (for final review triage)
 
-Final review: APPROVED_WITH_MINOR_FIXES (commit a883a4f)
-- Fix 1: README 系统工具表第 91-92 行补全"支持结束进程"/"监听端口支持释放"描述
-- Fix 2: taskkill 子进程失败路径补 debug_log! 调用
-- Minor (non-blocking, from Task 2 review): taskkill error path debug_log — 已在 final review 修复
+1. **日志标签误导**（file_searcher.rs run_search 末尾）：`debug_log!("file_searcher: 搜索完成 id={}", root_path)` 用 `id=` 标签打印了 `root_path`（路径）。应改为 `path={}` 或打印 `search_id`。不影响功能。
+2. **废弃搜索资源驻留**：若前端未调用 `file_search_clear`（如页面刷新），SEARCHES HashMap 条目永久驻留。与 disk_analyzer 模式一致，记录备查。
+3. **file_search_clear 静默忽略不存在条目**：返回 `Ok(())` 即使条目不存在。与 brief 一致。
+4. ~~**fileSearchStatus invoke<any>**~~：✅ 已在 07a5a83 中改为 `invoke<{ status: string; error?: string }>`，补类型安全。
+5. **startTime 用 ref 但无模板依赖**：`startTime` 不需要响应式，可改为普通变量。风格问题。
 
-Post-review additions (commit af5309f):
-- kill_process_by_name 命令 + KillBatchResult + parse_taskkill_im_output
-- ProcessListView "全部结束"按钮（同名进程 >1 时显示）
-- systemInfoClient killProcessByName 封装
+## Commits on dev branch (39c316a..HEAD)
 
-Verification fixes + UX polish (last commit before merge):
-- 系统关键进程关键词匹配 ("系统关键进程" → "系统关键进程，无法结束"，红色 error Toast)
-- Toast 延迟 300ms 再刷新，避免被 ElLoading 遮盖（ProcessListView + NetworkInfoView）
-- 监听端口区域上移到活动连接之前
-- 监听端口列表加搜索框（端口/进程/PID/协议）
-- 手动验收：8 项场景全部通过
+- 07612ac feat(file-searcher): 新增 read_file_auto 自动解码函数 + regex 依赖
+- dd25dd4 feat(file-searcher): 数据结构 + 4 个纯函数
+- 504b7bd feat(file-searcher): 全局状态 + run_search + 6 个 Tauri 命令
+- e2956dc fix(file-searcher): 修复 run_search 取消检查中的嵌套锁死锁
+- d8e49e6 feat(file-searcher): main.rs 注册 6 个搜索命令
+- 6d2a9ff feat(file-searcher): 前端 types + client + FileSearcher.vue 页面 + 注册
+- cf71683 fix(file-searcher): 修复 highlightLine XSS + cancel/failed 路径未发 complete 事件
+- 0d72c9a docs: V4.6 版本号同步 + README + backlog 更新
+- 07a5a83 fix(file-searcher): complete 事件加 searchId 防陈旧事件竞态
