@@ -5,13 +5,19 @@
         <span class="card-title">网络信息</span>
         <div class="card-actions">
           <span v-if="lastRefresh" class="refresh-time">采集于 {{ lastRefresh }}</span>
-          <el-button type="primary" size="small" :loading="loading" @click="loadData">刷新</el-button>
+          <el-button type="primary" size="small" :loading="collecting" @click="collect">刷新</el-button>
         </div>
       </div>
     </div>
 
     <div v-if="error" class="tool-card">
       <div class="card-body"><div class="error-message">{{ error }}</div></div>
+    </div>
+
+    <div v-if="!data" class="tool-card">
+      <div class="card-body">
+        <el-empty description="暂无数据，点击「刷新」采集网络信息" />
+      </div>
     </div>
 
     <template v-if="data">
@@ -84,14 +90,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { ElLoading, ElMessageBox, ElMessage } from 'element-plus'
-import { getNetworkInfo, killProcess, formatTimestamp, type NetworkInfo, type ListeningPort } from '@/utils/systemInfoClient'
+import { ref, computed, watch } from 'vue'
+import { ElMessageBox, ElMessage } from 'element-plus'
+import { killProcess, formatTimestamp, type NetworkInfo, type ListeningPort } from '@/utils/systemInfoClient'
 import { useToolboxStore } from '@/store'
+import { useBackgroundCollect } from '@/composables/useBackgroundCollect'
 
 const store = useToolboxStore()
 const data = ref<NetworkInfo | null>(null)
-const loading = ref(false)
 const error = ref('')
 const lastRefresh = ref('')
 
@@ -140,7 +146,7 @@ const handleReleasePort = async (row: ListeningPort) => {
       ElMessage.warning(result.message)
     }
     await new Promise(r => setTimeout(r, 300))
-    await loadData()  // 刷新列表
+    collect()
   } catch (e) {
     ElMessage.error(String(e))
   } finally {
@@ -148,30 +154,21 @@ const handleReleasePort = async (row: ListeningPort) => {
   }
 }
 
-const loadData = async () => {
-  loading.value = true
-  error.value = ''
-  const loadingInstance = ElLoading.service({ text: '采集中...' })
-  try {
-    data.value = await getNetworkInfo()
-    lastRefresh.value = formatTimestamp()
-    store.addHistory({
-      tool: 'networkInfo',
-      action: '查看网络信息',
-      inputPreview: '',
-      outputPreview: `${data.value.interfaces.length} 个接口 | ${data.value.listening_ports.length} 个监听端口`,
-      inputFull: '',
-      outputFull: JSON.stringify(data.value, null, 2),
-    })
-  } catch (e) {
-    error.value = String(e)
-  } finally {
-    loading.value = false
-    loadingInstance.close()
-  }
-}
+const { collect, collecting } = useBackgroundCollect('network')
 
-onMounted(() => { loadData() })
+watch(() => store.collectResults['network'], (val) => {
+  if (!val) return
+  data.value = val as NetworkInfo
+  lastRefresh.value = formatTimestamp()
+  store.addHistory({
+    tool: 'networkInfo',
+    action: '查看网络信息',
+    inputPreview: '',
+    outputPreview: `接口 ${(val as NetworkInfo).interfaces.length} 个`,
+    inputFull: '',
+    outputFull: JSON.stringify(val),
+  })
+}, { immediate: true })
 </script>
 
 <style scoped>

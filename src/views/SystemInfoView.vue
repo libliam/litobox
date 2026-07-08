@@ -5,7 +5,7 @@
         <span class="card-title">系统信息</span>
         <div class="card-actions">
           <span v-if="lastRefresh" class="refresh-time">采集于 {{ lastRefresh }}</span>
-          <el-button type="primary" size="small" :loading="loading" @click="loadData">刷新</el-button>
+          <el-button type="primary" size="small" :loading="collecting" @click="collect">刷新</el-button>
         </div>
       </div>
     </div>
@@ -13,6 +13,12 @@
     <div v-if="error" class="tool-card">
       <div class="card-body">
         <div class="error-message">{{ error }}</div>
+      </div>
+    </div>
+
+    <div v-if="!data" class="tool-card">
+      <div class="card-body">
+        <el-empty description="暂无数据，点击「刷新」采集系统信息" />
       </div>
     </div>
 
@@ -91,43 +97,31 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { ElLoading } from 'element-plus'
-import { getSystemInfo, formatBytes, formatUptime, formatTimestamp, type SystemInfo } from '@/utils/systemInfoClient'
+import { ref, watch } from 'vue'
+import { formatBytes, formatUptime, formatTimestamp, type SystemInfo } from '@/utils/systemInfoClient'
 import { useToolboxStore } from '@/store'
+import { useBackgroundCollect } from '@/composables/useBackgroundCollect'
 
 const store = useToolboxStore()
 const data = ref<SystemInfo | null>(null)
-const loading = ref(false)
 const error = ref('')
 const lastRefresh = ref('')
 
-const loadData = async () => {
-  loading.value = true
-  error.value = ''
-  const loadingInstance = ElLoading.service({ text: '采集中...' })
-  try {
-    data.value = await getSystemInfo()
-    lastRefresh.value = formatTimestamp()
-    store.addHistory({
-      tool: 'systemInfo',
-      action: '查看系统信息',
-      inputPreview: '',
-      outputPreview: `${data.value.cpu.brand} | ${formatBytes(data.value.memory.total_bytes)}`,
-      inputFull: '',
-      outputFull: JSON.stringify(data.value, null, 2),
-    })
-  } catch (e) {
-    error.value = String(e)
-  } finally {
-    loading.value = false
-    loadingInstance.close()
-  }
-}
+const { collect, collecting } = useBackgroundCollect('system')
 
-onMounted(() => {
-  loadData()
-})
+watch(() => store.collectResults['system'], (val) => {
+  if (!val) return
+  data.value = val as SystemInfo
+  lastRefresh.value = formatTimestamp()
+  store.addHistory({
+    tool: 'systemInfo',
+    action: '查看系统信息',
+    inputPreview: '',
+    outputPreview: `OS: ${data.value.os_name}`,
+    inputFull: '',
+    outputFull: JSON.stringify(data.value),
+  })
+}, { immediate: true })
 </script>
 
 <style scoped>

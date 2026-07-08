@@ -5,13 +5,19 @@
         <span class="card-title">硬件外设</span>
         <div class="card-actions">
           <span v-if="lastRefresh" class="refresh-time">采集于 {{ lastRefresh }}</span>
-          <el-button type="primary" size="small" :loading="loading" @click="loadData">刷新</el-button>
+          <el-button type="primary" size="small" :loading="collecting" @click="collect">刷新</el-button>
         </div>
       </div>
     </div>
 
     <div v-if="error" class="tool-card">
       <div class="card-body"><div class="error-message">{{ error }}</div></div>
+    </div>
+
+    <div v-if="!data" class="tool-card">
+      <div class="card-body">
+        <el-empty description="暂无数据，点击「刷新」采集硬件外设" />
+      </div>
     </div>
 
     <template v-if="data">
@@ -136,43 +142,33 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { ElLoading } from 'element-plus'
-import { getHardwareInfo, formatTimestamp, type HardwareInfo } from '@/utils/systemInfoClient'
+import { ref, watch } from 'vue'
+import { formatTimestamp, type HardwareInfo } from '@/utils/systemInfoClient'
 import { useToolboxStore } from '@/store'
+import { useBackgroundCollect } from '@/composables/useBackgroundCollect'
 
 const store = useToolboxStore()
 const data = ref<HardwareInfo | null>(null)
-const loading = ref(false)
 const error = ref('')
 const lastRefresh = ref('')
 
 const fmt = (n: number) => n.toFixed(1)
 
-const loadData = async () => {
-  loading.value = true
-  error.value = ''
-  const loadingInstance = ElLoading.service({ text: '采集中...' })
-  try {
-    data.value = await getHardwareInfo()
-    lastRefresh.value = formatTimestamp()
-    store.addHistory({
-      tool: 'hardwareInfo',
-      action: '查看硬件外设',
-      inputPreview: '',
-      outputPreview: `${data.value.gpus.length} GPU | ${data.value.disks.length} 磁盘`,
-      inputFull: '',
-      outputFull: JSON.stringify(data.value, null, 2),
-    })
-  } catch (e) {
-    error.value = String(e)
-  } finally {
-    loading.value = false
-    loadingInstance.close()
-  }
-}
+const { collect, collecting } = useBackgroundCollect('hardware')
 
-onMounted(() => { loadData() })
+watch(() => store.collectResults['hardware'], (val) => {
+  if (!val) return
+  data.value = val as HardwareInfo
+  lastRefresh.value = formatTimestamp()
+  store.addHistory({
+    tool: 'hardwareInfo',
+    action: '查看硬件外设',
+    inputPreview: '',
+    outputPreview: `GPU ${(val as HardwareInfo).gpus.length} 个`,
+    inputFull: '',
+    outputFull: JSON.stringify(val),
+  })
+}, { immediate: true })
 </script>
 
 <style scoped>

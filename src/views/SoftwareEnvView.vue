@@ -5,13 +5,19 @@
         <span class="card-title">软件环境</span>
         <div class="card-actions">
           <span v-if="lastRefresh" class="refresh-time">采集于 {{ lastRefresh }}</span>
-          <el-button type="primary" size="small" :loading="loading" @click="loadData">刷新</el-button>
+          <el-button type="primary" size="small" :loading="collecting" @click="collect">刷新</el-button>
         </div>
       </div>
     </div>
 
     <div v-if="error" class="tool-card">
       <div class="card-body"><div class="error-message">{{ error }}</div></div>
+    </div>
+
+    <div v-if="!data" class="tool-card">
+      <div class="card-body">
+        <el-empty description="暂无数据，点击「刷新」采集软件环境" />
+      </div>
     </div>
 
     <template v-if="data">
@@ -55,14 +61,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { ElLoading } from 'element-plus'
-import { getSoftwareEnv, formatTimestamp, type SoftwareEnv } from '@/utils/systemInfoClient'
+import { ref, computed, watch } from 'vue'
+import { formatTimestamp, type SoftwareEnv } from '@/utils/systemInfoClient'
 import { useToolboxStore } from '@/store'
+import { useBackgroundCollect } from '@/composables/useBackgroundCollect'
 
 const store = useToolboxStore()
 const data = ref<SoftwareEnv | null>(null)
-const loading = ref(false)
 const error = ref('')
 const lastRefresh = ref('')
 const activeTab = ref('software')
@@ -83,30 +88,21 @@ const filteredEnv = computed(() => {
   return data.value.environment_variables.filter(e => e.key.toLowerCase().includes(q))
 })
 
-const loadData = async () => {
-  loading.value = true
-  error.value = ''
-  const loadingInstance = ElLoading.service({ text: '采集中...' })
-  try {
-    data.value = await getSoftwareEnv()
-    lastRefresh.value = formatTimestamp()
-    store.addHistory({
-      tool: 'softwareEnv',
-      action: '查看软件环境',
-      inputPreview: '',
-      outputPreview: `${data.value.installed_software.length} 软件 | ${data.value.environment_variables.length} 环境变量`,
-      inputFull: '',
-      outputFull: JSON.stringify(data.value, null, 2),
-    })
-  } catch (e) {
-    error.value = String(e)
-  } finally {
-    loading.value = false
-    loadingInstance.close()
-  }
-}
+const { collect, collecting } = useBackgroundCollect('software')
 
-onMounted(() => { loadData() })
+watch(() => store.collectResults['software'], (val) => {
+  if (!val) return
+  data.value = val as SoftwareEnv
+  lastRefresh.value = formatTimestamp()
+  store.addHistory({
+    tool: 'softwareEnv',
+    action: '查看软件环境',
+    inputPreview: '',
+    outputPreview: `软件 ${(val as SoftwareEnv).installed_software.length} 个`,
+    inputFull: '',
+    outputFull: JSON.stringify(val),
+  })
+}, { immediate: true })
 </script>
 
 <style scoped>

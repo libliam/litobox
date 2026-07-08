@@ -10,7 +10,7 @@
             <el-option label="按内存排序" value="memory" />
           </el-select>
           <span v-if="lastRefresh" class="refresh-time">{{ lastRefresh }}</span>
-          <el-button type="primary" size="small" :loading="loading" @click="loadData">刷新</el-button>
+          <el-button type="primary" size="small" :loading="collecting" @click="collect">刷新</el-button>
         </div>
       </div>
     </div>
@@ -19,7 +19,13 @@
       <div class="card-body"><div class="error-message">{{ error }}</div></div>
     </div>
 
-    <div v-if="data" class="tool-card">
+    <div v-if="!data || !data.length" class="tool-card">
+      <div class="card-body">
+        <el-empty description="暂无数据，点击右上角「刷新」采集进程列表" />
+      </div>
+    </div>
+
+    <div v-if="data && data.length" class="tool-card">
       <div class="card-header">
         <span class="card-title">进程 ({{ filteredData.length }} / {{ data.length }})</span>
       </div>
@@ -56,14 +62,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
-import { ElLoading, ElMessageBox, ElMessage } from 'element-plus'
-import { getProcessList, killProcess, killProcessByName, formatBytes, formatTimestamp, type ProcessItem } from '@/utils/systemInfoClient'
+import { ref, computed, watch } from 'vue'
+import { ElMessageBox, ElMessage } from 'element-plus'
+import { killProcess, killProcessByName, formatBytes, formatTimestamp, type ProcessItem } from '@/utils/systemInfoClient'
 import { useToolboxStore } from '@/store'
+import { useBackgroundCollect } from '@/composables/useBackgroundCollect'
 
 const store = useToolboxStore()
 const data = ref<ProcessItem[]>([])
-const loading = ref(false)
 const error = ref('')
 const lastRefresh = ref('')
 const searchQuery = ref('')
@@ -107,7 +113,7 @@ const handleKillAll = async (row: ProcessItem) => {
       ElMessage.warning(result.message)
     }
     await new Promise(r => setTimeout(r, 300))
-    await loadData()
+    collect()
   } catch (e) {
     ElMessage.error(String(e))
   } finally {
@@ -145,7 +151,7 @@ const handleKill = async (row: ProcessItem) => {
       ElMessage.warning(result.message)
     }
     await new Promise(r => setTimeout(r, 300))
-    await loadData()  // 刷新列表
+    collect()
   } catch (e) {
     ElMessage.error(String(e))
   } finally {
@@ -180,30 +186,23 @@ const filteredData = computed(() => {
 const sortByCpu = (a: ProcessItem, b: ProcessItem) => b.cpu_usage - a.cpu_usage
 const sortByMemory = (a: ProcessItem, b: ProcessItem) => b.memory_bytes - a.memory_bytes
 
-const loadData = async () => {
-  loading.value = true
-  error.value = ''
-  const loadingInstance = ElLoading.service({ text: '采集中...' })
-  try {
-    data.value = await getProcessList()
-    lastRefresh.value = formatTimestamp()
-    store.addHistory({
-      tool: 'processList',
-      action: '查看进程列表',
-      inputPreview: '',
-      outputPreview: `${data.value.length} 个进程`,
-      inputFull: '',
-      outputFull: data.value.map(p => `${p.name} (PID: ${p.pid})`).join('\n'),
-    })
-  } catch (e) {
-    error.value = String(e)
-  } finally {
-    loading.value = false
-    loadingInstance.close()
-  }
-}
+const { collect, collecting } = useBackgroundCollect('process')
 
-onMounted(() => { loadData() })
+// 采集完成 → 填充数据 + 记录历史（watch 替代 onMounted，兼容 KeepAlive 缓存）
+watch(() => store.collectResults['process'], (val) => {
+  if (!val) return
+  const list = val as ProcessItem[]
+  data.value = list
+  lastRefresh.value = formatTimestamp()
+  store.addHistory({
+    tool: 'processList',
+    action: '查看进程列表',
+    inputPreview: '',
+    outputPreview: `${list.length} 个进程`,
+    inputFull: '',
+    outputFull: list.map(p => `${p.name} (PID: ${p.pid})`).join('\n'),
+  })
+}, { immediate: true })
 </script>
 
 <style scoped>
