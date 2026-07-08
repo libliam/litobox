@@ -420,6 +420,7 @@ fn parse_reg_line(line: &str, field: &str) -> Option<String> {
 // ============ 后台采集状态 ============
 
 #[derive(serde::Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[serde(rename_all = "lowercase")]
 pub enum CollectKind {
     System,
     Network,
@@ -1376,5 +1377,13 @@ mod tests {
             m.clear();
         }
         assert!(get_collect_status(CollectKind::Process).is_none());
+    }
+
+    #[test]
+    fn collect_kind_serializes_lowercase() {
+        // 守护前后端序列化约定：前端 TS 类型为小写 union，后端必须序列化为小写
+        assert_eq!(serde_json::to_string(&CollectKind::Process).unwrap(), r#""process""#);
+        assert_eq!(serde_json::to_string(&CollectKind::System).unwrap(), r#""system""#);
+        assert_eq!(serde_json::to_string(&CollectKind::Software).unwrap(), r#""software""#);
     }
 }
