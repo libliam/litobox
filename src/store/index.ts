@@ -109,6 +109,15 @@ export const useToolboxStore = defineStore('toolbox', () => {
   const history = ref<HistoryRecord[]>([])
   const recentTools = ref<string[]>([])
 
+  // ============ 后台采集状态 ============
+  type CollectKind = 'system' | 'network' | 'process' | 'hardware' | 'software'
+  const collectResults = ref<Record<CollectKind, unknown>>({
+    system: null, network: null, process: null, hardware: null, software: null,
+  })
+  const collecting = ref<Record<CollectKind, boolean>>({
+    system: false, network: false, process: false, hardware: false, software: false,
+  })
+
   const pendingHistoryRestore = ref<HistoryRestoreState | null>(null)
   let restoreTimeout: ReturnType<typeof setTimeout> | null = null
 
@@ -351,5 +360,8 @@ export const useToolboxStore = defineStore('toolbox', () => {
     closeOthers,
     closeAllTabs,
     getTabKey,
+    // 后台采集
+    collectResults,
+    collecting,
   }
 })
