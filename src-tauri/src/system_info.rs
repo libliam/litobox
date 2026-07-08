@@ -419,7 +419,7 @@ fn parse_reg_line(line: &str, field: &str) -> Option<String> {
 
 // ============ 后台采集状态 ============
 
-#[derive(serde::Serialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(serde::Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum CollectKind {
     System,
     Network,
@@ -527,8 +527,7 @@ pub fn is_admin() -> bool {
     }
 }
 
-#[tauri::command]
-pub fn get_system_info() -> Result<SystemInfo, String> {
+fn get_system_info_inner() -> Result<SystemInfo, String> {
     use sysinfo::{System, Disks};
 
     let mut sys = System::new_all();
@@ -590,8 +589,7 @@ pub fn get_system_info() -> Result<SystemInfo, String> {
     })
 }
 
-#[tauri::command]
-pub fn get_network_info() -> Result<NetworkInfo, String> {
+fn get_network_info_inner() -> Result<NetworkInfo, String> {
     use sysinfo::System;
 
     let hostname = System::host_name().unwrap_or_default();
@@ -770,8 +768,7 @@ pub fn get_network_info() -> Result<NetworkInfo, String> {
     })
 }
 
-#[tauri::command]
-pub fn get_process_list() -> Result<Vec<ProcessItem>, String> {
+fn get_process_list_inner() -> Result<Vec<ProcessItem>, String> {
     use sysinfo::System;
 
     let mut sys = System::new_all();
@@ -943,8 +940,7 @@ pub fn kill_process_by_name(process_name: String) -> Result<KillBatchResult, Str
     Ok(result)
 }
 
-#[tauri::command]
-pub fn get_hardware_info() -> Result<HardwareInfo, String> {
+fn get_hardware_info_inner() -> Result<HardwareInfo, String> {
     // === CPU 信息 ===
     #[derive(Deserialize)]
     struct PsCpu {
@@ -1218,8 +1214,7 @@ pub fn get_hardware_info() -> Result<HardwareInfo, String> {
     })
 }
 
-#[tauri::command]
-pub fn get_software_env() -> Result<SoftwareEnv, String> {
+fn get_software_env_inner() -> Result<SoftwareEnv, String> {
     // ponytail: PowerShell 注册表访问在子进程中可能失败，改用 reg query 直接读取注册表
     // reg query 输出为 OEM 编码（中文 Windows 为 CP936），需用 encoding_rs 解码
     let mut installed_software: Vec<SoftwareItem> = Vec::new();
@@ -1287,6 +1282,38 @@ pub fn get_software_env() -> Result<SoftwareEnv, String> {
     })
 }
 
+// ============ 后台采集命令 ============
+
+#[tauri::command]
+pub async fn collect_system(app: AppHandle) -> Result<CollectStartResult, String> {
+    Ok(spawn_collect(app, CollectKind::System, get_system_info_inner))
+}
+
+#[tauri::command]
+pub async fn collect_network(app: AppHandle) -> Result<CollectStartResult, String> {
+    Ok(spawn_collect(app, CollectKind::Network, get_network_info_inner))
+}
+
+#[tauri::command]
+pub async fn collect_process(app: AppHandle) -> Result<CollectStartResult, String> {
+    Ok(spawn_collect(app, CollectKind::Process, get_process_list_inner))
+}
+
+#[tauri::command]
+pub async fn collect_hardware(app: AppHandle) -> Result<CollectStartResult, String> {
+    Ok(spawn_collect(app, CollectKind::Hardware, get_hardware_info_inner))
+}
+
+#[tauri::command]
+pub async fn collect_software(app: AppHandle) -> Result<CollectStartResult, String> {
+    Ok(spawn_collect(app, CollectKind::Software, get_software_env_inner))
+}
+
+#[tauri::command]
+pub fn get_collect_status(kind: CollectKind) -> Option<TaskState> {
+    collect_state().lock().ok().and_then(|m| m.get(&kind).cloned())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1340,5 +1367,14 @@ mod tests {
         assert!(r.message.contains("未知错误"));
         // 截断后消息不应超过 250 字符（200 字节上限 + "未知错误: " 前缀的字符数）
         assert!(r.message.chars().count() < 250);
+    }
+
+    #[test]
+    fn get_collect_status_returns_none_when_empty() {
+        // 清空状态表后查询任意 kind 应返回 None
+        if let Ok(mut m) = collect_state().lock() {
+            m.clear();
+        }
+        assert!(get_collect_status(CollectKind::Process).is_none());
     }
 }
