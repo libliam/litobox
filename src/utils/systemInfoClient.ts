@@ -166,18 +166,44 @@ export interface StartupItem {
   location: string
 }
 
+// ============ 后台采集类型 ============
+
+export type CollectKind = 'system' | 'network' | 'process' | 'hardware' | 'software'
+
+export interface CollectStartResult {
+  task_id: string
+  kind: CollectKind
+}
+
+export interface CollectCompletePayload {
+  kind: CollectKind
+  task_id: string
+  ok: boolean
+  data: unknown
+  error: string | null
+}
+
+export interface TaskState {
+  task_id: string
+  kind: CollectKind
+  status: 'running' | 'done' | 'error'
+  data: unknown
+  error: string | null
+  updated_at: number
+}
+
 // ============ invoke 封装 ============
 
-export function getSystemInfo(): Promise<SystemInfo> {
-  return invoke<SystemInfo>('get_system_info')
+export function collectSystem(): Promise<CollectStartResult> {
+  return invoke<CollectStartResult>('collect_system')
 }
 
-export function getNetworkInfo(): Promise<NetworkInfo> {
-  return invoke<NetworkInfo>('get_network_info')
+export function collectNetwork(): Promise<CollectStartResult> {
+  return invoke<CollectStartResult>('collect_network')
 }
 
-export function getProcessList(): Promise<ProcessItem[]> {
-  return invoke<ProcessItem[]>('get_process_list')
+export function collectProcess(): Promise<CollectStartResult> {
+  return invoke<CollectStartResult>('collect_process')
 }
 
 export interface KillResult {
@@ -202,12 +228,16 @@ export function killProcessByName(processName: string): Promise<KillBatchResult>
   return invoke<KillBatchResult>('kill_process_by_name', { processName })
 }
 
-export function getHardwareInfo(): Promise<HardwareInfo> {
-  return invoke<HardwareInfo>('get_hardware_info')
+export function collectHardware(): Promise<CollectStartResult> {
+  return invoke<CollectStartResult>('collect_hardware')
 }
 
-export function getSoftwareEnv(): Promise<SoftwareEnv> {
-  return invoke<SoftwareEnv>('get_software_env')
+export function collectSoftware(): Promise<CollectStartResult> {
+  return invoke<CollectStartResult>('collect_software')
+}
+
+export function getCollectStatus(kind: CollectKind): Promise<TaskState | null> {
+  return invoke<TaskState | null>('get_collect_status', { kind })
 }
 
 // ============ 格式化工具函数 ============
