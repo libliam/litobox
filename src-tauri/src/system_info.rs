@@ -13,6 +13,12 @@ use std::process::Command;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+use std::time::{SystemTime, UNIX_EPOCH};
+use tauri::{AppHandle, Emitter};
+use uuid::Uuid;
+
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
@@ -409,6 +415,98 @@ fn parse_reg_line(line: &str, field: &str) -> Option<String> {
         return None;
     }
     Some(parts[1].trim().to_string())
+}
+
+// ============ 后台采集状态 ============
+
+#[derive(serde::Serialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum CollectKind {
+    System,
+    Network,
+    Process,
+    Hardware,
+    Software,
+}
+
+#[derive(serde::Serialize, Clone)]
+pub struct TaskState {
+    pub task_id: String,
+    pub kind: CollectKind,
+    pub status: String,                  // "running" | "done" | "error"
+    pub data: Option<serde_json::Value>,
+    pub error: Option<String>,
+    pub updated_at: u64,                 // unix secs
+}
+
+#[derive(serde::Serialize, Clone)]
+pub struct CollectComplete {
+    pub kind: CollectKind,
+    pub task_id: String,
+    pub ok: bool,
+    pub data: Option<serde_json::Value>,
+    pub error: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+pub struct CollectStartResult {
+    pub task_id: String,
+    pub kind: CollectKind,
+}
+
+// ponytail: 全局状态表，5 个 kind 各记最新一条任务。上限固定 5 条，无内存增长风险
+static COLLECT_STATE: OnceLock<Mutex<HashMap<CollectKind, TaskState>>> = OnceLock::new();
+
+fn collect_state() -> &'static Mutex<HashMap<CollectKind, TaskState>> {
+    COLLECT_STATE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn now_secs() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+fn upsert_state(kind: CollectKind, task_id: &str, status: &str, data: Option<serde_json::Value>, error: Option<String>) {
+    if let Ok(mut m) = collect_state().lock() {
+        m.insert(kind, TaskState {
+            task_id: task_id.to_string(),
+            kind,
+            status: status.to_string(),
+            data,
+            error,
+            updated_at: now_secs(),
+        });
+    }
+}
+
+/// 通用：启动一个后台采集任务。`work` 在 spawn_blocking 线程内执行原同步采集逻辑。
+fn spawn_collect<F, T>(app: AppHandle, kind: CollectKind, work: F) -> CollectStartResult
+where
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+    T: serde::Serialize + Send + 'static,
+{
+    let task_id = Uuid::new_v4().to_string();
+    upsert_state(kind, &task_id, "running", None, None);
+    let task_id_clone = task_id.clone();
+    let app2 = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        match work() {
+            Ok(data) => {
+                let val = serde_json::to_value(&data).unwrap_or(serde_json::Value::Null);
+                upsert_state(kind, &task_id_clone, "done", Some(val.clone()), None);
+                debug_log!("collect {:?} done, task_id={}", kind, task_id_clone);
+                let _ = app2.emit("collect-complete", CollectComplete {
+                    kind, task_id: task_id_clone, ok: true, data: Some(val), error: None,
+                });
+            }
+            Err(e) => {
+                debug_log!("collect {:?} error: {}, task_id={}", kind, e, task_id_clone);
+                upsert_state(kind, &task_id_clone, "error", None, Some(e.clone()));
+                let _ = app2.emit("collect-complete", CollectComplete {
+                    kind, task_id: task_id_clone, ok: false, data: None, error: Some(e),
+                });
+            }
+        }
+    });
+    CollectStartResult { task_id, kind }
 }
 
 // ============ 命令实现（后续 Task 填充） ============
