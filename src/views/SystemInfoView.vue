@@ -97,7 +97,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, onMounted, onActivated } from 'vue'
 import { formatBytes, formatUptime, formatTimestamp, type SystemInfo } from '@/utils/systemInfoClient'
 import { useToolboxStore } from '@/store'
 import { useBackgroundCollect } from '@/composables/useBackgroundCollect'
@@ -107,7 +107,7 @@ const data = ref<SystemInfo | null>(null)
 const error = ref('')
 const lastRefresh = ref('')
 
-const { collect, collecting } = useBackgroundCollect('system')
+const { collect, collectIfEmpty, collecting } = useBackgroundCollect('system')
 
 watch(() => store.collectResults['system'], (val) => {
   if (!val) return
@@ -122,6 +122,10 @@ watch(() => store.collectResults['system'], (val) => {
     outputFull: JSON.stringify(data.value),
   })
 }, { immediate: true })
+
+// 进入页面即自动采集（首次挂载 + KeepAlive 激活）
+onMounted(() => collectIfEmpty())
+onActivated(() => collectIfEmpty())
 </script>
 
 <style scoped>

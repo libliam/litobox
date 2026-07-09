@@ -62,7 +62,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onActivated } from 'vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { killProcess, killProcessByName, formatBytes, formatTimestamp, type ProcessItem } from '@/utils/systemInfoClient'
 import { useToolboxStore } from '@/store'
@@ -186,7 +186,7 @@ const filteredData = computed(() => {
 const sortByCpu = (a: ProcessItem, b: ProcessItem) => b.cpu_usage - a.cpu_usage
 const sortByMemory = (a: ProcessItem, b: ProcessItem) => b.memory_bytes - a.memory_bytes
 
-const { collect, collecting } = useBackgroundCollect('process')
+const { collect, collectIfEmpty, collecting } = useBackgroundCollect('process')
 
 // 采集完成 → 填充数据 + 记录历史（watch 替代 onMounted，兼容 KeepAlive 缓存）
 watch(() => store.collectResults['process'], (val) => {
@@ -203,6 +203,10 @@ watch(() => store.collectResults['process'], (val) => {
     outputFull: list.map(p => `${p.name} (PID: ${p.pid})`).join('\n'),
   })
 }, { immediate: true })
+
+// 进入页面即自动采集（首次挂载 + KeepAlive 激活）
+onMounted(() => collectIfEmpty())
+onActivated(() => collectIfEmpty())
 </script>
 
 <style scoped>

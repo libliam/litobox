@@ -75,7 +75,14 @@ export function useBackgroundCollect(kind: CollectKind) {
     }
   }
 
-  return { collect, collecting, result }
+  // 页面首次进入时若无缓存数据，自动触发采集
+  function collectIfEmpty() {
+    if (store.collectResults[kind] == null) {
+      collect()
+    }
+  }
+
+  return { collect, collectIfEmpty, collecting, result }
 }
 
 // ============ 自检 ============

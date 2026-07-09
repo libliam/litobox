@@ -61,7 +61,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onActivated } from 'vue'
 import { formatTimestamp, type SoftwareEnv } from '@/utils/systemInfoClient'
 import { useToolboxStore } from '@/store'
 import { useBackgroundCollect } from '@/composables/useBackgroundCollect'
@@ -88,7 +88,7 @@ const filteredEnv = computed(() => {
   return data.value.environment_variables.filter(e => e.key.toLowerCase().includes(q))
 })
 
-const { collect, collecting } = useBackgroundCollect('software')
+const { collect, collectIfEmpty, collecting } = useBackgroundCollect('software')
 
 watch(() => store.collectResults['software'], (val) => {
   if (!val) return
@@ -103,6 +103,10 @@ watch(() => store.collectResults['software'], (val) => {
     outputFull: JSON.stringify(val),
   })
 }, { immediate: true })
+
+// 进入页面即自动采集（首次挂载 + KeepAlive 激活）
+onMounted(() => collectIfEmpty())
+onActivated(() => collectIfEmpty())
 </script>
 
 <style scoped>

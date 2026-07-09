@@ -90,7 +90,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onActivated } from 'vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { killProcess, formatTimestamp, type NetworkInfo, type ListeningPort } from '@/utils/systemInfoClient'
 import { useToolboxStore } from '@/store'
@@ -154,7 +154,7 @@ const handleReleasePort = async (row: ListeningPort) => {
   }
 }
 
-const { collect, collecting } = useBackgroundCollect('network')
+const { collect, collectIfEmpty, collecting } = useBackgroundCollect('network')
 
 watch(() => store.collectResults['network'], (val) => {
   if (!val) return
@@ -169,6 +169,10 @@ watch(() => store.collectResults['network'], (val) => {
     outputFull: JSON.stringify(val),
   })
 }, { immediate: true })
+
+// 进入页面即自动采集（首次挂载 + KeepAlive 激活）
+onMounted(() => collectIfEmpty())
+onActivated(() => collectIfEmpty())
 </script>
 
 <style scoped>

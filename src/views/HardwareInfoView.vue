@@ -142,7 +142,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, onMounted, onActivated } from 'vue'
 import { formatTimestamp, type HardwareInfo } from '@/utils/systemInfoClient'
 import { useToolboxStore } from '@/store'
 import { useBackgroundCollect } from '@/composables/useBackgroundCollect'
@@ -154,7 +154,7 @@ const lastRefresh = ref('')
 
 const fmt = (n: number) => n.toFixed(1)
 
-const { collect, collecting } = useBackgroundCollect('hardware')
+const { collect, collectIfEmpty, collecting } = useBackgroundCollect('hardware')
 
 watch(() => store.collectResults['hardware'], (val) => {
   if (!val) return
@@ -169,6 +169,10 @@ watch(() => store.collectResults['hardware'], (val) => {
     outputFull: JSON.stringify(val),
   })
 }, { immediate: true })
+
+// 进入页面即自动采集（首次挂载 + KeepAlive 激活）
+onMounted(() => collectIfEmpty())
+onActivated(() => collectIfEmpty())
 </script>
 
 <style scoped>
