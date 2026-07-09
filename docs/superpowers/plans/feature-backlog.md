@@ -23,6 +23,8 @@
 | V4.3 | ✅ | 磁盘空间分析器（文件夹大小/大文件/按类型/重复文件/回收站删除） | 2026-07-05 |
 | V4.4 | ✅ | 进程 kill 与端口释放（单进程/批量 kill/端口释放/二次确认/历史记录） | 2026-07-06 |
 | V4.6 | ✅ | 全文搜索（文件名/内容双模式、正则、进度取消、编码识别） | 2026-07-07 |
+| V4.7 | ✅ | 系统工具后台采集（异步线程，不卡 UI） | 2026-07-09 |
+| V4.8 | ✅ | 图标生成器（多尺寸 PNG + ICO） | 2026-07-10 |
 
 ---
 
@@ -61,7 +63,7 @@
 | B3 | ✅ 磁盘空间分析器 | 文件夹大小下钻/大文件 Top N/按扩展名统计/重复文件检测 | — 已完成 V4.3 — | 2026-07-05 |
 | B4 | **文件内容对比增强** | 支持文件夹级对比（当前只有单文件 diff） | 低 | 文本对比扩展 |
 | B5 | **快速启动** | 类似 Everything 的快速文件搜索 + 一键打开应用/文件 | 中 | 效率工具 |
-| B6 | **图片批量压缩/格式转换** | 拖入多图，批量压缩（质量调节）、格式转换（png/jpg/webp）、尺寸调整，预览前后大小。Rust image crate，离线可行 | 中 | 2026-07-08 brainstorming |
+| B6 | **图片批量压缩/格式转换** | 拖入多图，批量压缩（质量调节）、格式转换（png/jpg/webp）、尺寸调整，预览前后大小。复用 image crate（已引入），零额外依赖 | 中 | 2026-07-08 brainstorming |
 | B7 | **图片 EXIF 查看/清除** | 查看 EXIF（相机/时间/GPS）、一键清除隐私字段、批量处理。kamadak-exif crate | 低 | 2026-07-08 brainstorming |
 
 ### C. 开发工具增强（纯前端为主）
@@ -96,13 +98,15 @@
 
 图片/音频/视频/PDF 内容级处理。体积约束：当前 litobox.exe ≈ 53 MB，多媒体工具优先纯 Rust 方案；ffmpeg 仅作可选外部依赖（运行时探测，不内嵌打包）。
 
+> **V4.8 已引入 `image` crate（v0.25）**：以下 F2/F3/F5/B6 可直接复用，无需新增依赖。额外解锁能力见下方"image crate 已解锁"。
+
 | # | 方向 | 说明 | 优先级 | 来源 |
 |---|------|------|--------|------|
-| F1 | **图标生成器（favicon/icon set）** | 一张图生成 16/32/48/64/128/256 + .ico + 各尺寸 PNG，Web/桌面打包刚需。Rust image crate，离线可行 | 高 | 2026-07-08 brainstorming |
-| F2 | **图片拼接 / 长图合并** | 多图横向/纵向拼接，支持间距/背景色/对齐方式。image crate | 中 | 2026-07-08 brainstorming |
-| F3 | **图片加水印（批量）** | 文字/图片水印，支持位置/透明度/旋转，批量处理 | 中 | 2026-07-08 brainstorming |
-| F4 | **SVG 预览/优化/转 PNG** | SVG 渲染预览、压缩优化（去冗余属性/注释）、栅格化转 PNG。优化用文本解析，转 PNG 用 resvg 纯 Rust | 中 | 2026-07-08 brainstorming |
-| F5 | **图片调色板提取** | 从图片提取主色调（N 色）导出色板，可联动 ColorTool | 低 | 2026-07-08 brainstorming |
+| F1 | ✅ 图标生成器（favicon/icon set） | 一张图生成 16/32/48/64/128/256 + .ico + 各尺寸 PNG，Web/桌面打包刚需。Rust image crate，离线可行 | — 已完成 V4.8 — | 2026-07-08 brainstorming |
+| F2 | **图片拼接 / 长图合并** | 多图横向/纵向拼接，支持间距/背景色/对齐方式。复用 image crate（已引入），`imageops` + 逐像素合成 | 中 | 2026-07-08 brainstorming |
+| F3 | **图片加水印（批量）** | 文字/图片水印，支持位置/透明度/旋转，批量处理。复用 image crate（已引入），`imageops::overlay` + 透明度混合 | 中 | 2026-07-08 brainstorming |
+| F4 | **SVG 预览/优化/转 PNG** | SVG 渲染预览、压缩优化（去冗余属性/注释）、栅格化转 PNG。优化用文本解析，转 PNG 用 resvg 纯 Rust（需新增依赖） | 中 | 2026-07-08 brainstorming |
+| F5 | **图片调色板提取** | 从图片提取主色调（N 色）导出色板，可联动 ColorTool。复用 image crate（已引入），像素采样 + 颜色量化 | 低 | 2026-07-08 brainstorming |
 | F6 | **PDF 图片提取** | 从 PDF 提取内嵌图片（非整页栅格化），按页导出。与 PdfTool「PDF转图片」（整页渲染）区别：提取原始嵌入图 | 低 | 2026-07-08 brainstorming |
 | F7 | **PDF 加密/旋转/页面重排** | 加/解密码、旋转页面、拖拽重排页序、删除指定页 | 低 | 2026-07-08 brainstorming |
 | F15 | **PDF 压缩** | 图像重采样（可调 DPI/质量）+ 元数据/注释清理 + 流压缩优化。纯 Rust 实现（lopdf + image crate），体积增量 ~1-2 MB。可探测系统 Ghostscript 启用高质量压缩，不内嵌 gs，守住轻量定位 | 中 | 2026-07-09 brainstorming |
@@ -115,6 +119,26 @@
 | F14 | **录屏 / 视频转 GIF** | 区域录屏生成 GIF，或视频片段转 GIF（文档/演示常用）。依赖 ffmpeg，需评估打包策略 | 低 | 2026-07-08 brainstorming |
 
 > **体积策略说明**：F12/F13 优先纯 Rust 轻量实现（合计新增 ~5 MB）。ffmpeg 不内嵌进打包产物，改为运行时探测系统是否安装 ffmpeg，有则启用高级能力（全格式/帧精确/重编码），无则降级到纯 Rust 基础能力，守住"轻量离线"定位。
+
+#### image crate 已解锁能力（V4.8 起可用，零额外依赖）
+
+以下为 `image` crate（v0.25）原生支持的操作，可作为独立工具或辅助功能快速实现：
+
+| 能力 | 说明 | 对应 API |
+|------|------|---------|
+| 裁剪 (Crop) | 矩形区域裁剪为子图 | `imageops::crop` |
+| 旋转 (Rotate) | 90°/180°/270° 旋转 | `imageops::rotate90` / `rotate180` / `rotate270` |
+| 翻转 (Flip) | 水平/垂直翻转 | `imageops::flip_horizontal` / `flip_vertical` |
+| 灰度化 | 彩色转灰度 | `imageops::grayscale` |
+| 反色 | 颜色反转 | `colorops::invert` |
+| 亮度/对比度 | 调整亮度、对比度 | `colorops::brighten` / `contrast` |
+| 缩略图 | 保持宽高比缩放到指定尺寸 | `imageops::thumbnail`（比 resize 更快） |
+| 模糊 | 高斯模糊 | `imageops::blur` |
+| 非锐化遮罩 | 锐化滤镜 | `imageops::unsharpen` |
+| 格式互转 | PNG ↔ JPEG ↔ WebP ↔ BMP ↔ GIF ↔ ICO | `DynamicImage::save` / `write_to` |
+| 像素级操作 | 逐像素读写 RGBA | `GenericImageView::get_pixel` / `ImageBuffer::put_pixel` |
+| 叠加合成 | 图片叠加（水印） | `imageops::overlay` |
+| 颜色量化 | 减少颜色数（调色板提取基础） | `colorops::dither` / `quantize` |
 
 ---
 
@@ -132,7 +156,8 @@
 - [ ] A2 Windows 服务管理
 - [ ] A8 全局快捷键占用查看器（新，2026-07-08）
 - [ ] A9 Hosts 文件管理器（新，2026-07-08）
-- [ ] F1 图标生成器（新，2026-07-08，Web/桌面打包刚需）
+- [ ] F2 图片拼接 或 F3 图片加水印（image crate 已引入，实现成本低）
+- [ ] B6 图片批量压缩/格式转换（image crate 已引入）
 - [ ] A3 计划任务管理 或 A4 开机启动项管理
 - [ ] D3 快捷命令面板
 - [ ] 选好后创建 spec → plan → subagent-driven 执行
