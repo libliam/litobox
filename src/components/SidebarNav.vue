@@ -5,7 +5,7 @@
         <span class="logo-icon">⚡</span>
         <div class="logo-text">
           <h1 class="app-title">栗的百宝箱</h1>
-          <span class="app-version">v4.5</span>
+          <span class="app-version">v{{ appVersion }}</span>
         </div>
       </div>
     </div>
@@ -188,6 +188,7 @@ const emit = defineEmits<{
 const store = useToolboxStore()
 const currentTheme = ref(store.config.theme)
 const isPinned = ref(false)
+const appVersion = __APP_VERSION__
 
 const expandedCategories = ref<Record<string, boolean>>({})
 

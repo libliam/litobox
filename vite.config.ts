@@ -1,6 +1,9 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
+import { readFileSync } from 'fs'
+
+const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'))
 
 export default defineConfig({
   plugins: [vue()],
@@ -24,6 +27,9 @@ export default defineConfig({
   },
   optimizeDeps: {
     exclude: ['onnxruntime-web']
+  },
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
   },
   build: {
     // 禁用 modulepreload，避免启动时预加载大文件导致白屏
