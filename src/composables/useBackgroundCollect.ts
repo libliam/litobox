@@ -38,12 +38,15 @@ export function useBackgroundCollect(kind: CollectKind) {
       store.collecting[kind] = false
       if (payload.ok) {
         store.collectResults[kind] = payload.data
-        ElNotification.success({
-          title: '采集完成',
-          message: `${meta.label}采集完成，点击查看`,
-          duration: 5000,
-          onClick: () => store.openTab(meta.toolId),
-        })
+        // 已在当前页面则不弹通知（用户直接能看到数据）
+        if (store.activeTabId !== meta.toolId) {
+          ElNotification.success({
+            title: '采集完成',
+            message: `${meta.label}采集完成，点击查看`,
+            duration: 5000,
+            onClick: () => store.openTab(meta.toolId),
+          })
+        }
       } else {
         ElNotification.error({
           title: '采集失败',
