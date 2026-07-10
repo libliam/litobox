@@ -247,44 +247,51 @@ fn do_image_merge(
     })
 }
 
-// ============ 自由画布拼图 ============
+// ============ 模板拼图（槽位坐标渲染） ============
 
 #[derive(serde::Deserialize)]
-pub struct CanvasImageInput {
+pub struct MergeSlotInput {
     pub file_path: String,
-    pub left: f64,
-    pub top: f64,
-    pub scale_x: f64,
-    pub scale_y: f64,
-    pub angle: f64,
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
 }
 
 #[tauri::command]
-pub async fn image_canvas_merge(
-    images: Vec<CanvasImageInput>,
-    canvas_width: Option<u32>,
-    canvas_height: Option<u32>,
+pub async fn image_template_merge(
+    images: Vec<MergeSlotInput>,
+    canvas_width: u32,
+    canvas_height: u32,
     bg_color: String,
+    gap: u32,
 ) -> Result<MergeResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        do_image_canvas_merge(images, canvas_width, canvas_height, bg_color)
+        do_image_template_merge(images, canvas_width, canvas_height, bg_color, gap)
     })
     .await
     .map_err(|e| format!("任务执行失败: {}", e))?
 }
 
-fn do_image_canvas_merge(
-    images: Vec<CanvasImageInput>,
-    canvas_width: Option<u32>,
-    canvas_height: Option<u32>,
+fn do_image_template_merge(
+    images: Vec<MergeSlotInput>,
+    canvas_width: u32,
+    canvas_height: u32,
     bg_color: String,
+    gap: u32,
 ) -> Result<MergeResult, String> {
     if images.is_empty() {
         return Err("请至少选择一张图片".into());
     }
 
-    let bg = parse_color(&bg_color)?;
-    let mut loaded_images: Vec<(DynamicImage, f64, f64)> = Vec::new();
+    let is_transparent = bg_color.is_empty() || bg_color == "transparent";
+    let bg = if is_transparent {
+        Rgba([0, 0, 0, 0])
+    } else {
+        parse_color(&bg_color)?
+    };
+
+    let mut canvas = RgbaImage::from_pixel(canvas_width, canvas_height, bg);
 
     for img_input in &images {
         let bytes = std::fs::read(&img_input.file_path)
@@ -292,54 +299,24 @@ fn do_image_canvas_merge(
         let img = image::load_from_memory(&bytes)
             .map_err(|e| format!("无法解码图片 ({}): {}", img_input.file_path, e))?;
 
-        // 应用缩放
-        let new_width = (img.width() as f64 * img_input.scale_x) as u32;
-        let new_height = (img.height() as f64 * img_input.scale_y) as u32;
-        let resized = img.resize(new_width, new_height, FilterType::Lanczos3);
-        let resized_rgba = resized.into_rgba8();
+        // cover 模式：等比缩放填满槽位，居中裁剪
+        let slot_w = img_input.width;
+        let slot_h = img_input.height;
+        let img_w = img.width();
+        let img_h = img.height();
 
-        // 应用旋转（前端传入的是度，需要转为弧度）
-        let rotated = if img_input.angle.abs() > 0.001 {
-            let angle_rad = (img_input.angle as f32) * (std::f32::consts::PI / 180.0);
-            let rotated_img = rotate_about_center(&resized_rgba, angle_rad, Interpolation::Bilinear, Rgba([0, 0, 0, 0]));
-            DynamicImage::ImageRgba8(rotated_img)
-        } else {
-            DynamicImage::ImageRgba8(resized_rgba)
-        };
+        let scale = (slot_w as f64 / img_w as f64).max(slot_h as f64 / img_h as f64);
+        let scaled_w = (img_w as f64 * scale) as u32;
+        let scaled_h = (img_h as f64 * scale) as u32;
 
-        loaded_images.push((rotated, img_input.left, img_input.top));
-    }
+        let resized = img.resize(scaled_w, scaled_h, FilterType::Lanczos3);
 
-    // 计算画布尺寸
-    let (final_width, final_height, offset_x, offset_y) = if let (Some(w), Some(h)) = (canvas_width, canvas_height) {
-        (w, h, 0.0_f64, 0.0_f64)
-    } else {
-        // 自动适应：计算所有图片的边界框
-        let mut min_left = f64::MAX;
-        let mut min_top = f64::MAX;
-        let mut max_right = f64::MIN;
-        let mut max_bottom = f64::MIN;
-        for (img, left, top) in &loaded_images {
-            let right = left + img.width() as f64;
-            let bottom = top + img.height() as f64;
-            if *left < min_left { min_left = *left; }
-            if *top < min_top { min_top = *top; }
-            if right > max_right { max_right = right; }
-            if bottom > max_bottom { max_bottom = bottom; }
-        }
-        let width = (max_right - min_left).ceil() as u32;
-        let height = (max_bottom - min_top).ceil() as u32;
-        (width, height, min_left, min_top)
-    };
+        // 居中裁剪到槽位尺寸
+        let crop_x = (scaled_w.saturating_sub(slot_w) / 2) as u32;
+        let crop_y = (scaled_h.saturating_sub(slot_h) / 2) as u32;
+        let cropped = resized.crop_imm(crop_x, crop_y, slot_w, slot_h);
 
-    // 创建画布并填充背景色
-    let mut canvas = RgbaImage::from_pixel(final_width, final_height, bg);
-
-    // 叠加图片（自动适应模式下需要偏移）
-    for (img, left, top) in loaded_images {
-        let x = (left - offset_x) as i64;
-        let y = (top - offset_y) as i64;
-        imageops::overlay(&mut canvas, &img, x, y);
+        imageops::overlay(&mut canvas, &cropped, img_input.x as i64, img_input.y as i64);
     }
 
     let merged = DynamicImage::ImageRgba8(canvas);
@@ -347,8 +324,8 @@ fn do_image_canvas_merge(
 
     Ok(MergeResult {
         base64,
-        width: final_width,
-        height: final_height,
+        width: canvas_width,
+        height: canvas_height,
     })
 }
 
