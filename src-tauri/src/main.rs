@@ -12,6 +12,7 @@ mod sqlite_viewer;
 mod disk_analyzer;
 mod file_searcher;
 mod icon_generator;
+mod image_tools;
 
 use tauri::{Manager, Emitter};
 use tauri_plugin_dialog::{DialogExt, MessageDialogBuilder, MessageDialogButtons, MessageDialogKind};
@@ -132,6 +133,13 @@ fn main() {
             // 图标生成命令
             icon_generator::generate_icon,
             icon_generator::read_file_base64,
+            // 图片工具增强命令
+            image_tools::get_file_info,
+            image_tools::get_thumbnail,
+            image_tools::image_compress,
+            image_tools::image_merge,
+            image_tools::image_watermark,
+            image_tools::image_palette,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

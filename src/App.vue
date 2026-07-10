@@ -74,6 +74,7 @@ import SqliteViewerView from '@/views/SqliteViewerView.vue'
 import DiskSpaceAnalyzer from '@/views/DiskSpaceAnalyzer.vue'
 import FileSearcher from '@/views/FileSearcher.vue'
 import IconGenerator from '@/views/IconGenerator.vue'
+import ImageToolEnhanced from '@/views/ImageToolEnhanced.vue'
 
 // toolId → 组件 映射表（替代 v-if 链）
 const toolComponentMap: Record<string, any> = {
@@ -123,6 +124,7 @@ const toolComponentMap: Record<string, any> = {
   diskAnalyzer: DiskSpaceAnalyzer,
   fileSearcher: FileSearcher,
   iconGenerator: IconGenerator,
+  imageToolEnhanced: ImageToolEnhanced,
 }
 
 const store = useToolboxStore()

@@ -161,6 +161,14 @@ Tauri 2.x 子进程（`Command::new("powershell")` / `Command::new("reg")`）受
 12. **KeepAlive 缓存的组件用 watch 替代 onMounted 处理跨页跳转**：Vue 的 KeepAlive 缓存组件再次激活时 `onMounted` 不会触发，导致从其他页面跳转回来时初始化逻辑（如读取 store 中的待还原数据）被跳过。模式：用 `watch(() => store.someState, (val) => { if (val) handle(val) })` 替代 `onMounted` 里的一次性检查，或用 `onActivated`
 13. **Windows 路径展示前必须去掉 `\\?\` 前缀**：Rust 的 `Path::canonicalize()` 在 Windows 上会自动加上 `\\?\` 长路径前缀（支持 32767 字符路径），展示给用户时不友好。所有 canonicalize 后的路径在存入状态/返回前端前，统一用 `strip_prefix(r"\\?\")` 去掉
 14. **二进制文件检测优先用扩展名而非内容嗅探**：仅靠 BOM 和 `\0` 字节检测会误判 PDF（开头是 `%PDF-1.x` 纯文本）、ZIP（开头是 `PK`）等格式。模式：扩展名匹配常见二进制格式（pdf/zip/jpg/mp3/avi 等）优先返回 true → BOM 检测 → `\0` 字节检测，三级判断
+15. **Rust 图片处理命令必须用 async + spawn_blocking**：`image` crate 的解码/合成操作会阻塞主线程导致 UI 卡死（未响应）。所有图片处理命令必须用 `async fn` + `tauri::async_runtime::spawn_blocking(move || { do_xxx(...) })` 在后台线程执行。禁止同步执行大图操作。
+16. **Rust 结构体字段名不会自动转 camelCase**：Tauri 不会将 Rust 的 snake_case 字段名自动转为 JS 的 camelCase。前端接口定义和模板必须使用与 Rust 结构体完全一致的 snake_case 命名（如 `original_size` 而非 `originalSize`）。
+17. **获取文件信息用专用轻量命令**：不要调用处理命令（如 `image_compress`）来获取文件大小。应新增专用的 `get_file_info` 命令，只用 `metadata().len()` 获取大小，避免解码图片导致卡顿。
+18. **耗时操作不要用 ElLoading 全屏锁**：`ElLoading.service({ lock: true })` 会锁住整个 UI 导致无法切换工具。改用按钮自身的 `loading` 属性（`:loading="isProcessing"`），不影响其他功能切换。
+19. **文件预览用 read_file_base64 后端命令**：Tauri asset scope 限制可能导致 `URL.createObjectURL()` 无法展示本地文件。应通过后端命令读取文件内容并返回 base64 字符串，前端用 `data:image/xxx;base64,...` 展示。
+20. **多 Tab 页面布局规范**：Tab 栏放在独立的 `.tool-card.sticky-card` 中，使用自定义 class（如 `pdf-tabs`/`image-tabs`），在 scoped 样式中定义完整 Tab 样式。各 Tab 内容用 `v-if="activeTab === 'xxx'"` 的 `.tool-card` 独立渲染，不要放在 `el-tab-pane` 内。参考 `_ToolTemplate.vue`、PdfTool.vue。
+21. **scoped 样式中禁止重复定义全局类名**：在 `<style scoped>` 中重复定义 `.tool-card`/`.card-header`/`.card-body` 等全局类名会导致样式冲突（padding 被覆盖等）。只定义页面特有样式，全局样式由 `theme.css` 提供。如需强制覆盖，用非 scoped `<style>` 块 + `!important`。
+22. **侧边栏菜单顺序由 `TOOL_LIST` 数组顺序决定**：`SidebarNav.vue` 按 `category` 分组，同组内按 `TOOL_LIST` 中的先后顺序排列。调整菜单顺序 = 在 `src/store/index.ts` 的 `TOOL_LIST` 中移动对应条目的位置（同 category 内调整），不是改 `SidebarNav.vue` 的渲染逻辑。
 
 ## 工作流与变量池集成
 
