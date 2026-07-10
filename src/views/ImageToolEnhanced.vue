@@ -3,7 +3,7 @@
     <div class="tool-card sticky-card">
       <el-tabs v-model="activeTab" class="image-tabs">
         <el-tab-pane label="批量压缩/转换" name="compress" />
-        <el-tab-pane label="图片拼接" name="merge" />
+        <el-tab-pane label="图片拼图" name="merge" />
         <el-tab-pane label="加水印" name="watermark" />
         <el-tab-pane label="调色板提取" name="palette" />
       </el-tabs>
@@ -67,51 +67,57 @@
       </div>
     </div>
 
-    <!-- Tab 2: 图片拼接 -->
+    <!-- Tab 2: 自由画布拼图 -->
     <div v-if="activeTab === 'merge'" class="tool-card">
       <div class="card-header">
-        <span class="card-title">图片选择</span>
+        <span class="card-title">图片操作</span>
         <div class="card-actions">
           <el-button size="small" type="primary" @click="selectMergeFiles">选择图片</el-button>
-          <el-button v-if="mergeFiles.length" size="small" @click="clearMergeFiles">清空</el-button>
+          <el-button v-if="canvasImages.length" size="small" @click="clearCanvasImages">清空</el-button>
         </div>
       </div>
       <div class="card-body">
-        <div v-if="mergeFiles.length" class="merge-file-list">
-          <div v-for="(f, i) in mergeFiles" :key="i" class="merge-file-item">
+        <div v-if="canvasImages.length" class="merge-file-list">
+          <div v-for="(f, i) in canvasImages" :key="f.id" class="merge-file-item">
             <img v-if="f.thumb" :src="f.thumb" class="merge-thumb" />
             <span class="file-name">{{ f.name }}</span>
             <span class="file-size">{{ formatBytes(f.size) }}</span>
-            <el-button size="small" text :disabled="i === 0" @click="moveMergeFile(i, -1)">↑</el-button>
-            <el-button size="small" text :disabled="i === mergeFiles.length - 1" @click="moveMergeFile(i, 1)">↓</el-button>
-            <el-button size="small" text type="danger" @click="removeMergeFile(i)">移除</el-button>
+            <el-button size="small" text type="danger" @click="removeCanvasImage(i)">移除</el-button>
           </div>
         </div>
-        <div v-else class="upload-hint">选择多张图片进行拼接</div>
+        <div v-else class="upload-hint">选择图片添加到画布</div>
       </div>
     </div>
+
     <div v-if="activeTab === 'merge'" class="tool-card">
-      <div class="card-header"><span class="card-title">拼接设置</span></div>
+      <div class="card-header"><span class="card-title">画布</span></div>
+      <div class="card-body">
+        <canvas ref="fabricCanvasRef" class="fabric-canvas"></canvas>
+      </div>
+    </div>
+
+    <!-- 右键菜单（放在最外层避免被裁剪） -->
+    <div v-if="contextMenuVisible" class="canvas-context-menu" :style="{ left: contextMenuPos.x + 'px', top: contextMenuPos.y + 'px' }">
+      <div class="context-menu-item" @click="bringToFront">置顶</div>
+      <div class="context-menu-item" @click="sendToBack">置底</div>
+    </div>
+
+    <div v-if="activeTab === 'merge'" class="tool-card">
+      <div class="card-header"><span class="card-title">输出设置</span></div>
       <div class="card-body">
         <div class="action-grid">
           <div class="action-group">
-            <span class="group-label">方向</span>
+            <span class="group-label">画布尺寸</span>
             <div class="group-buttons">
-              <el-button size="small" :type="mergeDirection === 'vertical' ? 'primary' : ''" @click="mergeDirection = 'vertical'">纵向</el-button>
-              <el-button size="small" :type="mergeDirection === 'horizontal' ? 'primary' : ''" @click="mergeDirection = 'horizontal'">横向</el-button>
+              <el-button size="small" :type="canvasSizeMode === 'auto' ? 'primary' : ''" @click="canvasSizeMode = 'auto'">自动适应</el-button>
+              <el-button size="small" :type="canvasSizeMode === 'manual' ? 'primary' : ''" @click="canvasSizeMode = 'manual'">手动指定</el-button>
             </div>
           </div>
-          <div class="action-group">
-            <span class="group-label">对齐</span>
-            <div class="group-buttons">
-              <el-button size="small" :type="mergeAlign === 'start' ? 'primary' : ''" @click="mergeAlign = 'start'">居左/上</el-button>
-              <el-button size="small" :type="mergeAlign === 'center' ? 'primary' : ''" @click="mergeAlign = 'center'">居中</el-button>
-              <el-button size="small" :type="mergeAlign === 'end' ? 'primary' : ''" @click="mergeAlign = 'end'">居右/下</el-button>
-            </div>
-          </div>
-          <div class="action-group">
-            <span class="group-label">间距 (px)</span>
-            <el-input-number v-model="mergeGap" :min="0" :max="200" size="small" style="width: 90px" />
+          <div v-if="canvasSizeMode === 'manual'" class="action-group">
+            <span class="group-label">尺寸 (px)</span>
+            <el-input-number v-model="manualCanvasWidth" :min="100" :max="8000" size="small" placeholder="宽" controls-position="right" style="width: 100px" />
+            <span>×</span>
+            <el-input-number v-model="manualCanvasHeight" :min="100" :max="8000" size="small" placeholder="高" controls-position="right" style="width: 100px" />
           </div>
           <div class="action-group">
             <span class="group-label">背景色</span>
@@ -119,7 +125,7 @@
           </div>
         </div>
         <div class="action-group" style="margin-top: 12px">
-          <el-button size="small" type="primary" :disabled="mergeFiles.length < 2" :loading="mergeLoading" @click="handleMerge">开始拼接</el-button>
+          <el-button size="small" type="primary" :disabled="canvasImages.length === 0" :loading="mergeLoading" @click="handleCanvasMerge">生成拼图</el-button>
           <el-button size="small" :disabled="!mergeResult" @click="downloadMergeResult">下载结果</el-button>
         </div>
         <div v-if="mergeResult" class="preview-area">
@@ -235,11 +241,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
 import { saveFileWithDialog } from '@/utils/fileSaver'
+import * as fabric from 'fabric'
 
 const activeTab = ref('compress')
 const error = ref('')
@@ -362,25 +369,90 @@ const downloadAllCompressResults = async () => {
   ElMessage.success('全部下载完成')
 }
 
-// ============ Tab 2: 图片拼接 ============
-interface MergeFile {
-  name: string
+// ============ Tab 2: 自由画布拼图 ============
+interface CanvasImage {
+  id: string
   path: string
+  name: string
   size: number
   thumb?: string
+  left: number
+  top: number
+  scaleX: number
+  scaleY: number
+  angle: number
 }
 
-const mergeFiles = ref<MergeFile[]>([])
-const mergeDirection = ref('vertical')
-const mergeAlign = ref('start')
-const mergeGap = ref(0)
-const mergeBgColor = ref('#000000')
+const fabricCanvasRef = ref<HTMLCanvasElement>()
+const fabricCanvas = ref<fabric.Canvas>()
+const canvasImages = ref<CanvasImage[]>([])
+const canvasSizeMode = ref<'auto' | 'manual'>('auto')
+const manualCanvasWidth = ref(800)
+const manualCanvasHeight = ref(600)
+const mergeBgColor = ref('#ffffff')
 const mergeResult = ref<{ base64: string; width: number; height: number } | null>(null)
 const mergeLoading = ref(false)
+
+// 右键菜单
+const contextMenuVisible = ref(false)
+const contextMenuPos = ref({ x: 0, y: 0 })
+const contextMenuTargetId = ref<string | null>(null)
 
 const mergeResultUrl = computed(() =>
   mergeResult.value ? 'data:image/png;base64,' + mergeResult.value.base64 : ''
 )
+
+// 初始化画布
+onMounted(() => {
+  if (fabricCanvasRef.value && !fabricCanvas.value) {
+    fabricCanvas.value = new fabric.Canvas(fabricCanvasRef.value, {
+      width: 800,
+      height: 600,
+      backgroundColor: '#f0f0f0',
+      selection: true,
+    })
+
+    // 监听对象修改事件，同步状态
+    fabricCanvas.value.on('object:modified', (e: any) => {
+      if (e.target) {
+        const obj = e.target as fabric.FabricImage
+        const id = (obj as any).customId
+        const imgData = canvasImages.value.find(img => img.id === id)
+        if (imgData) {
+          imgData.left = obj.left || 0
+          imgData.top = obj.top || 0
+          imgData.scaleX = obj.scaleX || 1
+          imgData.scaleY = obj.scaleY || 1
+          imgData.angle = obj.angle || 0
+        }
+      }
+    })
+
+    // 右键菜单
+    fabricCanvas.value.on('contextmenu', (e: any) => {
+      if (e.target) {
+        e.e.preventDefault()
+        contextMenuTargetId.value = (e.target as any).customId || null
+        contextMenuPos.value = { x: e.e.clientX, y: e.e.clientY }
+        contextMenuVisible.value = true
+      }
+    })
+  }
+})
+
+onUnmounted(() => {
+  fabricCanvas.value?.dispose()
+  fabricCanvas.value = undefined
+})
+
+// 点击其他地方关闭右键菜单
+const closeContextMenu = () => {
+  contextMenuVisible.value = false
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('click', closeContextMenu)
+}
 
 const selectMergeFiles = async () => {
   const selected = await open({
@@ -389,58 +461,129 @@ const selectMergeFiles = async () => {
   })
   if (!selected) return
   const paths = Array.isArray(selected) ? selected : [selected]
-  mergeFiles.value = paths.map(p => ({
-    name: p.split(/[/\\]/).pop() || '',
-    path: p,
-    size: 0,
-  }))
-  // 获取文件大小和缩略图
-  for (const f of mergeFiles.value) {
+
+  for (const path of paths) {
+    const name = path.split(/[/\\]/).pop() || ''
+    let size = 0
     try {
-      const info = await invoke<{ size: number }>('get_file_info', { filePath: f.path })
-      f.size = info.size
+      const info = await invoke<{ size: number }>('get_file_info', { filePath: path })
+      size = info.size
     } catch { /* ignore */ }
+
+    let thumb: string | undefined
     try {
-      const thumbBase64 = await invoke<string>('get_thumbnail', { filePath: f.path })
-      f.thumb = 'data:image/jpeg;base64,' + thumbBase64
+      const thumbBase64 = await invoke<string>('get_thumbnail', { filePath: path })
+      thumb = 'data:image/jpeg;base64,' + thumbBase64
     } catch { /* ignore */ }
+
+    const id = `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    const imgData: CanvasImage = {
+      id,
+      path,
+      name,
+      size,
+      thumb,
+      left: 100 + canvasImages.value.length * 20,
+      top: 100 + canvasImages.value.length * 20,
+      scaleX: 1,
+      scaleY: 1,
+      angle: 0,
+    }
+
+    canvasImages.value.push(imgData)
+
+    // 添加到 Fabric 画布
+    if (fabricCanvas.value && thumb) {
+      fabric.FabricImage.fromURL(thumb).then((img) => {
+        img.set({
+          left: imgData.left,
+          top: imgData.top,
+          scaleX: imgData.scaleX,
+          scaleY: imgData.scaleY,
+          angle: imgData.angle,
+        })
+        ;(img as any).customId = id
+        fabricCanvas.value!.add(img)
+        fabricCanvas.value!.renderAll()
+      })
+    }
   }
   error.value = ''
 }
 
-const clearMergeFiles = () => {
-  mergeFiles.value = []
+const removeCanvasImage = (index: number) => {
+  const imgData = canvasImages.value[index]
+  if (!imgData) return
+
+  // 从 Fabric 画布移除
+  if (fabricCanvas.value) {
+    const objects = fabricCanvas.value.getObjects()
+    const fabricObj = objects.find(obj => (obj as any).customId === imgData.id)
+    if (fabricObj) {
+      fabricCanvas.value.remove(fabricObj)
+      fabricCanvas.value.renderAll()
+    }
+  }
+
+  // 从状态移除
+  canvasImages.value.splice(index, 1)
+}
+
+const clearCanvasImages = () => {
+  if (fabricCanvas.value) {
+    fabricCanvas.value.clear()
+    fabricCanvas.value.backgroundColor = '#f0f0f0'
+    fabricCanvas.value.renderAll()
+  }
+  canvasImages.value = []
   mergeResult.value = null
   error.value = ''
 }
 
-const removeMergeFile = (i: number) => {
-  mergeFiles.value.splice(i, 1)
-  mergeResult.value = null
+const bringToFront = () => {
+  if (!fabricCanvas.value || !contextMenuTargetId.value) return
+  const obj = fabricCanvas.value.getObjects().find(o => (o as any).customId === contextMenuTargetId.value)
+  if (obj) {
+    fabricCanvas.value.bringObjectToFront(obj)
+    fabricCanvas.value.renderAll()
+  }
+  contextMenuVisible.value = false
 }
 
-const moveMergeFile = (i: number, dir: number) => {
-  const j = i + dir
-  if (j < 0 || j >= mergeFiles.value.length) return
-  const tmp = mergeFiles.value[i]
-  mergeFiles.value[i] = mergeFiles.value[j]
-  mergeFiles.value[j] = tmp
-  mergeResult.value = null
+const sendToBack = () => {
+  if (!fabricCanvas.value || !contextMenuTargetId.value) return
+  const obj = fabricCanvas.value.getObjects().find(o => (o as any).customId === contextMenuTargetId.value)
+  if (obj) {
+    fabricCanvas.value.sendObjectToBack(obj)
+    fabricCanvas.value.renderAll()
+  }
+  contextMenuVisible.value = false
 }
 
-const handleMerge = async () => {
-  if (mergeFiles.value.length < 2) return
+const handleCanvasMerge = async () => {
+  if (canvasImages.value.length === 0) return
   error.value = ''
   mergeLoading.value = true
+
   try {
-    mergeResult.value = await invoke('image_merge', {
-      filePaths: mergeFiles.value.map(f => f.path),
-      direction: mergeDirection.value,
-      gap: mergeGap.value,
+    const images = canvasImages.value.map(img => ({
+      file_path: img.path,
+      left: img.left,
+      top: img.top,
+      scale_x: img.scaleX,
+      scale_y: img.scaleY,
+      angle: img.angle,
+    }))
+
+    const result = await invoke<{ base64: string; width: number; height: number }>('image_canvas_merge', {
+      images,
+      canvasWidth: canvasSizeMode.value === 'manual' ? manualCanvasWidth.value : null,
+      canvasHeight: canvasSizeMode.value === 'manual' ? manualCanvasHeight.value : null,
       bgColor: mergeBgColor.value,
-      alignment: mergeAlign.value,
     })
-    ElMessage.success('拼接完成')
+
+    mergeResult.value = result
+    ElMessage.success('拼图生成完成')
   } catch (e: any) {
     error.value = e
   } finally {
@@ -760,6 +903,35 @@ html.light .image-tabs :deep(.el-tabs__header) {
   color: var(--text-secondary);
 }
 .palette-ratio {
+  color: var(--accent-cyan);
+}
+
+.fabric-canvas {
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  display: block;
+  margin: 0 auto;
+  max-width: 100%;
+}
+
+.canvas-context-menu {
+  position: fixed;
+  z-index: 100;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  padding: 4px 0;
+  min-width: 80px;
+}
+.context-menu-item {
+  padding: 6px 16px;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.context-menu-item:hover {
+  background: var(--bg-input);
   color: var(--accent-cyan);
 }
 

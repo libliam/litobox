@@ -138,6 +138,7 @@ fn main() {
             image_tools::get_thumbnail,
             image_tools::image_compress,
             image_tools::image_merge,
+            image_tools::image_canvas_merge,
             image_tools::image_watermark,
             image_tools::image_palette,
         ])

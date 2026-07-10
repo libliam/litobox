@@ -2,6 +2,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use image::{DynamicImage, GenericImageView, ImageFormat, Rgba, RgbaImage};
 use image::imageops::{self, FilterType};
 use imageproc::drawing;
+use imageproc::geometric_transformations::{rotate_about_center, Interpolation};
 use ab_glyph::{FontVec, PxScale, Font as _};
 use std::io::Cursor;
 use std::collections::HashMap;
@@ -243,6 +244,111 @@ fn do_image_merge(
         base64,
         width: canvas_w,
         height: canvas_h,
+    })
+}
+
+// ============ 自由画布拼图 ============
+
+#[derive(serde::Deserialize)]
+pub struct CanvasImageInput {
+    pub file_path: String,
+    pub left: f64,
+    pub top: f64,
+    pub scale_x: f64,
+    pub scale_y: f64,
+    pub angle: f64,
+}
+
+#[tauri::command]
+pub async fn image_canvas_merge(
+    images: Vec<CanvasImageInput>,
+    canvas_width: Option<u32>,
+    canvas_height: Option<u32>,
+    bg_color: String,
+) -> Result<MergeResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        do_image_canvas_merge(images, canvas_width, canvas_height, bg_color)
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
+}
+
+fn do_image_canvas_merge(
+    images: Vec<CanvasImageInput>,
+    canvas_width: Option<u32>,
+    canvas_height: Option<u32>,
+    bg_color: String,
+) -> Result<MergeResult, String> {
+    if images.is_empty() {
+        return Err("请至少选择一张图片".into());
+    }
+
+    let bg = parse_color(&bg_color)?;
+    let mut loaded_images: Vec<(DynamicImage, f64, f64)> = Vec::new();
+
+    for img_input in &images {
+        let bytes = std::fs::read(&img_input.file_path)
+            .map_err(|e| format!("读取文件失败 ({}): {}", img_input.file_path, e))?;
+        let img = image::load_from_memory(&bytes)
+            .map_err(|e| format!("无法解码图片 ({}): {}", img_input.file_path, e))?;
+
+        // 应用缩放
+        let new_width = (img.width() as f64 * img_input.scale_x) as u32;
+        let new_height = (img.height() as f64 * img_input.scale_y) as u32;
+        let resized = img.resize(new_width, new_height, FilterType::Lanczos3);
+        let resized_rgba = resized.into_rgba8();
+
+        // 应用旋转（前端传入的是度，需要转为弧度）
+        let rotated = if img_input.angle.abs() > 0.001 {
+            let angle_rad = (img_input.angle as f32) * (std::f32::consts::PI / 180.0);
+            let rotated_img = rotate_about_center(&resized_rgba, angle_rad, Interpolation::Bilinear, Rgba([0, 0, 0, 0]));
+            DynamicImage::ImageRgba8(rotated_img)
+        } else {
+            DynamicImage::ImageRgba8(resized_rgba)
+        };
+
+        loaded_images.push((rotated, img_input.left, img_input.top));
+    }
+
+    // 计算画布尺寸
+    let (final_width, final_height, offset_x, offset_y) = if let (Some(w), Some(h)) = (canvas_width, canvas_height) {
+        (w, h, 0.0_f64, 0.0_f64)
+    } else {
+        // 自动适应：计算所有图片的边界框
+        let mut min_left = f64::MAX;
+        let mut min_top = f64::MAX;
+        let mut max_right = f64::MIN;
+        let mut max_bottom = f64::MIN;
+        for (img, left, top) in &loaded_images {
+            let right = left + img.width() as f64;
+            let bottom = top + img.height() as f64;
+            if *left < min_left { min_left = *left; }
+            if *top < min_top { min_top = *top; }
+            if right > max_right { max_right = right; }
+            if bottom > max_bottom { max_bottom = bottom; }
+        }
+        let width = (max_right - min_left).ceil() as u32;
+        let height = (max_bottom - min_top).ceil() as u32;
+        (width, height, min_left, min_top)
+    };
+
+    // 创建画布并填充背景色
+    let mut canvas = RgbaImage::from_pixel(final_width, final_height, bg);
+
+    // 叠加图片（自动适应模式下需要偏移）
+    for (img, left, top) in loaded_images {
+        let x = (left - offset_x) as i64;
+        let y = (top - offset_y) as i64;
+        imageops::overlay(&mut canvas, &img, x, y);
+    }
+
+    let merged = DynamicImage::ImageRgba8(canvas);
+    let base64 = image_to_base64_png(&merged)?;
+
+    Ok(MergeResult {
+        base64,
+        width: final_width,
+        height: final_height,
     })
 }
 
