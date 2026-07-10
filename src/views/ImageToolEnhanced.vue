@@ -67,66 +67,102 @@
       </div>
     </div>
 
-    <!-- Tab 2: 自由画布拼图 -->
+    <!-- Tab 2: 模板拼图 -->
     <div v-if="activeTab === 'merge'" class="tool-card">
       <div class="card-header">
-        <span class="card-title">图片操作</span>
+        <span class="card-title">图片选择</span>
         <div class="card-actions">
           <el-button size="small" type="primary" @click="selectMergeFiles">选择图片</el-button>
-          <el-button v-if="canvasImages.length" size="small" @click="clearCanvasImages">清空</el-button>
+          <el-button v-if="mergeImages.length" size="small" @click="clearMergeImages">清空</el-button>
         </div>
       </div>
       <div class="card-body">
-        <div v-if="canvasImages.length" class="merge-file-list">
-          <div v-for="(f, i) in canvasImages" :key="f.id" class="merge-file-item">
-            <img v-if="f.thumb" :src="f.thumb" class="merge-thumb" />
+        <div v-if="mergeImages.length" class="merge-file-list">
+          <div v-for="(f, i) in mergeImages" :key="i" class="merge-file-item">
+            <img :src="f.thumb" class="merge-thumb" />
             <span class="file-name">{{ f.name }}</span>
             <span class="file-size">{{ formatBytes(f.size) }}</span>
-            <el-button size="small" text type="danger" @click="removeCanvasImage(i)">移除</el-button>
+            <el-button size="small" text type="danger" @click="removeMergeImage(i)">移除</el-button>
           </div>
         </div>
-        <div v-else class="upload-hint">选择图片添加到画布</div>
+        <div v-else class="upload-hint">选择图片开始拼图</div>
       </div>
     </div>
 
-    <div v-if="activeTab === 'merge'" class="tool-card">
-      <div class="card-header"><span class="card-title">画布</span></div>
+    <div v-if="activeTab === 'merge' && availableTemplates.length" class="tool-card">
+      <div class="card-header"><span class="card-title">拼图模板</span></div>
       <div class="card-body">
-        <canvas ref="fabricCanvasRef" class="fabric-canvas"></canvas>
+        <div class="template-grid">
+          <div
+            v-for="tpl in availableTemplates"
+            :key="tpl.id"
+            class="template-item"
+            :class="{ 'template-active': currentTemplate?.id === tpl.id }"
+            @click="selectTemplate(tpl)"
+          >
+            <div class="template-preview" :style="templatePreviewStyle(tpl)">
+              <div
+                v-for="(slot, si) in tpl.grid"
+                :key="si"
+                class="template-slot"
+                :style="slotStyle(slot)"
+              ></div>
+            </div>
+            <span class="template-name">{{ tpl.name }}</span>
+          </div>
+        </div>
       </div>
     </div>
 
-    <!-- 右键菜单（放在最外层避免被裁剪） -->
-    <div v-if="contextMenuVisible" class="canvas-context-menu" :style="{ left: contextMenuPos.x + 'px', top: contextMenuPos.y + 'px' }">
-      <div class="context-menu-item" @click="bringToFront">置顶</div>
-      <div class="context-menu-item" @click="sendToBack">置底</div>
+    <div v-if="activeTab === 'merge' && currentTemplate" class="tool-card">
+      <div class="card-header"><span class="card-title">拼图预览</span></div>
+      <div class="card-body">
+        <div class="merge-preview-grid" :style="mergeGridStyle">
+          <div
+            v-for="(slot, si) in currentTemplate.grid"
+            :key="si"
+            class="merge-slot"
+            :class="{
+              'merge-slot-drag-over': dragOverSlot === si,
+              'merge-slot-empty': slotMap[si] === null,
+              'merge-slot-dragging': dragFromSlot === si,
+            }"
+            :style="slotStyle(slot)"
+            @dragover.prevent="onDragOver(si)"
+            @dragleave="onDragLeave"
+            @drop="onDrop(si)"
+          >
+            <img
+              v-if="slotMap[si] !== null && mergeImages[slotMap[si]!]"
+              :src="mergeImages[slotMap[si]!].thumb"
+              class="merge-slot-img"
+              draggable="true"
+              @dragstart="onDragStart(si)"
+              @dragend="onDragEnd"
+            />
+            <span v-else class="merge-slot-placeholder">拖入图片</span>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <div v-if="activeTab === 'merge'" class="tool-card">
+    <div v-if="activeTab === 'merge' && currentTemplate" class="tool-card">
       <div class="card-header"><span class="card-title">输出设置</span></div>
       <div class="card-body">
         <div class="action-grid">
-          <div class="action-group">
-            <span class="group-label">画布尺寸</span>
-            <div class="group-buttons">
-              <el-button size="small" :type="canvasSizeMode === 'auto' ? 'primary' : ''" @click="canvasSizeMode = 'auto'">自动适应</el-button>
-              <el-button size="small" :type="canvasSizeMode === 'manual' ? 'primary' : ''" @click="canvasSizeMode = 'manual'">手动指定</el-button>
-            </div>
-          </div>
-          <div v-if="canvasSizeMode === 'manual'" class="action-group">
-            <span class="group-label">尺寸 (px)</span>
-            <el-input-number v-model="manualCanvasWidth" :min="100" :max="8000" size="small" placeholder="宽" controls-position="right" style="width: 100px" />
-            <span>×</span>
-            <el-input-number v-model="manualCanvasHeight" :min="100" :max="8000" size="small" placeholder="高" controls-position="right" style="width: 100px" />
-          </div>
           <div class="action-group">
             <span class="group-label">背景色</span>
             <el-color-picker v-model="mergeBgColor" size="small" show-alpha />
             <el-button size="small" @click="mergeBgColor = ''" style="margin-left: 8px">透明</el-button>
           </div>
+          <div class="action-group">
+            <span class="group-label">间距</span>
+            <el-input-number v-model="mergeGap" :min="0" :max="100" size="small" controls-position="right" style="width: 90px" />
+            <span style="font-size: 12px; color: var(--text-secondary)">px</span>
+          </div>
         </div>
         <div class="action-group" style="margin-top: 12px">
-          <el-button size="small" type="primary" :disabled="canvasImages.length === 0" :loading="mergeLoading" @click="handleCanvasMerge">生成拼图</el-button>
+          <el-button size="small" type="primary" :disabled="!hasFilledSlots" :loading="mergeLoading" @click="handleTemplateMerge">生成拼图</el-button>
           <el-button size="small" :disabled="!mergeResult" @click="downloadMergeResult">下载结果</el-button>
         </div>
         <div v-if="mergeResult" class="preview-area">
@@ -242,7 +278,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
@@ -369,269 +405,153 @@ const downloadAllCompressResults = async () => {
   ElMessage.success('全部下载完成')
 }
 
-// ============ Tab 2: 自由画布拼图 ============
-interface CanvasImage {
+// ============ Tab 2: 模板拼图 ============
+
+// 模板定义
+interface TemplateSlot {
+  colStart: number
+  colEnd: number
+  rowStart: number
+  rowEnd: number
+}
+
+interface Template {
   id: string
+  name: string
+  count: number
+  grid: TemplateSlot[]
+}
+
+const TEMPLATES: Template[] = [
+  { id: 'h2', name: '左右2列', count: 2, grid: [
+    { colStart: 1, colEnd: 2, rowStart: 1, rowEnd: 2 },
+    { colStart: 2, colEnd: 3, rowStart: 1, rowEnd: 2 },
+  ]},
+  { id: 'v2', name: '上下2行', count: 2, grid: [
+    { colStart: 1, colEnd: 2, rowStart: 1, rowEnd: 2 },
+    { colStart: 1, colEnd: 2, rowStart: 2, rowEnd: 3 },
+  ]},
+  { id: 'l2', name: '左大右小', count: 2, grid: [
+    { colStart: 1, colEnd: 3, rowStart: 1, rowEnd: 2 },
+    { colStart: 3, colEnd: 4, rowStart: 1, rowEnd: 2 },
+  ]},
+  { id: 'h3', name: '三等分', count: 3, grid: [
+    { colStart: 1, colEnd: 2, rowStart: 1, rowEnd: 2 },
+    { colStart: 2, colEnd: 3, rowStart: 1, rowEnd: 2 },
+    { colStart: 3, colEnd: 4, rowStart: 1, rowEnd: 2 },
+  ]},
+  { id: 't3', name: '上1下2', count: 3, grid: [
+    { colStart: 1, colEnd: 3, rowStart: 1, rowEnd: 2 },
+    { colStart: 1, colEnd: 2, rowStart: 2, rowEnd: 3 },
+    { colStart: 2, colEnd: 3, rowStart: 2, rowEnd: 3 },
+  ]},
+  { id: 'l3', name: '左1右2', count: 3, grid: [
+    { colStart: 1, colEnd: 3, rowStart: 1, rowEnd: 2 },
+    { colStart: 3, colEnd: 4, rowStart: 1, rowEnd: 2 },
+    { colStart: 3, colEnd: 4, rowStart: 2, rowEnd: 3 },
+  ]},
+  { id: 'g4', name: '四宫格', count: 4, grid: [
+    { colStart: 1, colEnd: 2, rowStart: 1, rowEnd: 2 },
+    { colStart: 2, colEnd: 3, rowStart: 1, rowEnd: 2 },
+    { colStart: 1, colEnd: 2, rowStart: 2, rowEnd: 3 },
+    { colStart: 2, colEnd: 3, rowStart: 2, rowEnd: 3 },
+  ]},
+  { id: 'l4', name: '左大右3', count: 4, grid: [
+    { colStart: 1, colEnd: 3, rowStart: 1, rowEnd: 3 },
+    { colStart: 3, colEnd: 4, rowStart: 1, rowEnd: 2 },
+    { colStart: 3, colEnd: 4, rowStart: 2, rowEnd: 3 },
+    { colStart: 3, colEnd: 4, rowStart: 3, rowEnd: 4 },
+  ]},
+  { id: 'h5', name: '五宫格', count: 5, grid: [
+    { colStart: 1, colEnd: 2, rowStart: 1, rowEnd: 2 },
+    { colStart: 2, colEnd: 3, rowStart: 1, rowEnd: 2 },
+    { colStart: 1, colEnd: 2, rowStart: 2, rowEnd: 3 },
+    { colStart: 2, colEnd: 3, rowStart: 2, rowEnd: 3 },
+    { colStart: 3, colEnd: 4, rowStart: 2, rowEnd: 3 },
+  ]},
+  { id: 'g6', name: '六宫格', count: 6, grid: [
+    { colStart: 1, colEnd: 2, rowStart: 1, rowEnd: 2 },
+    { colStart: 2, colEnd: 3, rowStart: 1, rowEnd: 2 },
+    { colStart: 3, colEnd: 4, rowStart: 1, rowEnd: 2 },
+    { colStart: 1, colEnd: 2, rowStart: 2, rowEnd: 3 },
+    { colStart: 2, colEnd: 3, rowStart: 2, rowEnd: 3 },
+    { colStart: 3, colEnd: 4, rowStart: 2, rowEnd: 3 },
+  ]},
+]
+
+interface MergeImage {
   path: string
   name: string
   size: number
-  thumb?: string
-  left: number
-  top: number
-  scaleX: number
-  scaleY: number
-  angle: number
+  thumb: string
 }
 
-const fabricCanvasRef = ref<HTMLCanvasElement>()
-const fabricCanvas = ref<fabric.Canvas>()
-const canvasImages = ref<CanvasImage[]>([])
-const canvasSizeMode = ref<'auto' | 'manual'>('auto')
-const manualCanvasWidth = ref(800)
-const manualCanvasHeight = ref(600)
+const mergeImages = ref<MergeImage[]>([])
+const slotMap = ref<(number | null)[]>([])
+const currentTemplate = ref<Template | null>(null)
 const mergeBgColor = ref('#ffffff')
+const mergeGap = ref(4)
 const mergeResult = ref<{ base64: string; width: number; height: number } | null>(null)
 const mergeLoading = ref(false)
 
-// 右键菜单
-const contextMenuVisible = ref(false)
-const contextMenuPos = ref({ x: 0, y: 0 })
-const contextMenuTargetId = ref<string | null>(null)
+// 拖拽状态
+const dragFromSlot = ref<number | null>(null)
+const dragOverSlot = ref<number | null>(null)
 
 const mergeResultUrl = computed(() =>
   mergeResult.value ? 'data:image/png;base64,' + mergeResult.value.base64 : ''
 )
 
-// 对齐线
-const alignLines = ref<fabric.Line[]>([])
-const SNAP_THRESHOLD = 5
+// 根据图片数量过滤可用模板
+const availableTemplates = computed(() =>
+  TEMPLATES.filter(t => t.count <= mergeImages.value.length)
+)
 
-// 初始化画布
-const initCanvas = () => {
-  if (fabricCanvasRef.value && !fabricCanvas.value) {
-    fabricCanvas.value = new fabric.Canvas(fabricCanvasRef.value, {
-      width: 800,
-      height: 600,
-      backgroundColor: 'transparent',
-      selection: true,
-    })
+// 至少有 1 个槽位有图片
+const hasFilledSlots = computed(() =>
+  slotMap.value.some(s => s !== null)
+)
 
-    // 绘制棋盘格背景
-    drawCheckerboard(fabricCanvas.value)
-
-    // 监听对象修改事件，同步状态
-    fabricCanvas.value.on('object:modified', (e: any) => {
-      if (e.target) {
-        const obj = e.target as fabric.FabricImage
-        const id = (obj as any).customId
-        const imgData = canvasImages.value.find(img => img.id === id)
-        if (imgData) {
-          imgData.left = obj.left || 0
-          imgData.top = obj.top || 0
-          imgData.scaleX = obj.scaleX || 1
-          imgData.scaleY = obj.scaleY || 1
-          imgData.angle = obj.angle || 0
-        }
-      }
-    })
-
-    // 右键菜单
-    fabricCanvas.value.on('contextmenu', (e: any) => {
-      if (e.target) {
-        e.e.preventDefault()
-        contextMenuTargetId.value = (e.target as any).customId || null
-        contextMenuPos.value = { x: e.e.clientX, y: e.e.clientY }
-        contextMenuVisible.value = true
-      }
-    })
-
-    // 吸附对齐 - 拖拽时
-    fabricCanvas.value.on('object:moving', (e: any) => {
-      if (!e.target) return
-      const obj = e.target
-      const canvas = fabricCanvas.value!
-      const center = obj.getCenterPoint()
-      const bounds = obj.getBoundingRect()
-
-      // 清除旧对齐线
-      clearAlignLines()
-
-      // 与其他对象对齐
-      canvas.getObjects().forEach((other: any) => {
-        if (other === obj || !other.getBoundingRect) return
-        const otherBounds = other.getBoundingRect()
-        const otherCenter = other.getCenterPoint()
-
-        // 水平对齐
-        if (Math.abs(center.x - otherCenter.x) < SNAP_THRESHOLD) {
-          obj.set({ left: otherCenter.x - obj.width! * obj.scaleX! / 2 })
-          addAlignLine(canvas, otherCenter.x, 0, otherCenter.x, canvas.height!)
-        }
-        // 垂直对齐
-        if (Math.abs(center.y - otherCenter.y) < SNAP_THRESHOLD) {
-          obj.set({ top: otherCenter.y - obj.height! * obj.scaleY! / 2 })
-          addAlignLine(canvas, 0, otherCenter.y, canvas.width!, otherCenter.y)
-        }
-        // 左边缘对齐
-        if (Math.abs(bounds.left - otherBounds.left) < SNAP_THRESHOLD) {
-          obj.set({ left: otherBounds.left })
-          addAlignLine(canvas, otherBounds.left, 0, otherBounds.left, canvas.height!)
-        }
-        // 右边缘对齐
-        if (Math.abs(bounds.left + bounds.width - otherBounds.left - otherBounds.width) < SNAP_THRESHOLD) {
-          obj.set({ left: otherBounds.left + otherBounds.width - bounds.width })
-          addAlignLine(canvas, otherBounds.left + otherBounds.width, 0, otherBounds.left + otherBounds.width, canvas.height!)
-        }
-        // 上边缘对齐
-        if (Math.abs(bounds.top - otherBounds.top) < SNAP_THRESHOLD) {
-          obj.set({ top: otherBounds.top })
-          addAlignLine(canvas, 0, otherBounds.top, canvas.width!, otherBounds.top)
-        }
-        // 下边缘对齐
-        if (Math.abs(bounds.top + bounds.height - otherBounds.top - otherBounds.height) < SNAP_THRESHOLD) {
-          obj.set({ top: otherBounds.top + otherBounds.height - bounds.height })
-          addAlignLine(canvas, 0, otherBounds.top + otherBounds.height, canvas.width!, otherBounds.top + otherBounds.height)
-        }
-      })
-
-      // 与画布中心对齐
-      if (Math.abs(center.x - canvas.width! / 2) < SNAP_THRESHOLD) {
-        obj.set({ left: canvas.width! / 2 - obj.width! * obj.scaleX! / 2 })
-        addAlignLine(canvas, canvas.width! / 2, 0, canvas.width! / 2, canvas.height!)
-      }
-      if (Math.abs(center.y - canvas.height! / 2) < SNAP_THRESHOLD) {
-        obj.set({ top: canvas.height! / 2 - obj.height! * obj.scaleY! / 2 })
-        addAlignLine(canvas, 0, canvas.height! / 2, canvas.width!, canvas.height! / 2)
-      }
-
-      canvas.renderAll()
-    })
-
-    // 拖拽结束清除对齐线
-    fabricCanvas.value.on('object:mouseup', () => {
-      clearAlignLines()
-    })
-
-    // 画布初始化后，把已有的图片加上去
-    for (const imgData of canvasImages.value) {
-      addImageToCanvas(imgData)
-    }
+// 模板预览图（缩略版 CSS Grid）
+const templatePreviewStyle = (tpl: Template) => {
+  const cols = Math.max(...tpl.grid.map(s => s.colEnd)) - 1
+  const rows = Math.max(...tpl.grid.map(s => s.rowEnd)) - 1
+  return {
+    gridTemplateColumns: `repeat(${cols}, 1fr)`,
+    gridTemplateRows: `repeat(${rows}, 1fr)`,
   }
 }
 
-// 绘制棋盘格背景
-const drawCheckerboard = (canvas: fabric.Canvas) => {
-  const size = 20
-  const w = canvas.width!
-  const h = canvas.height!
-  for (let y = 0; y < h; y += size) {
-    for (let x = 0; x < w; x += size) {
-      const color = ((x / size + y / size) % 2 === 0) ? '#e0e0e0' : '#ffffff'
-      const rect = new fabric.Rect({
-        left: x,
-        top: y,
-        width: size,
-        height: size,
-        fill: color,
-        selectable: false,
-        evented: false,
-      })
-      canvas.add(rect)
-    }
-  }
-}
-
-// 添加对齐线
-const addAlignLine = (canvas: fabric.Canvas, x1: number, y1: number, x2: number, y2: number) => {
-  const line = new fabric.Line([x1, y1, x2, y2], {
-    stroke: '#ff0000',
-    strokeWidth: 1,
-    selectable: false,
-    evented: false,
-    strokeDashArray: [5, 5],
-  })
-  canvas.add(line)
-  alignLines.value.push(line)
-}
-
-// 清除对齐线
-const clearAlignLines = () => {
-  if (!fabricCanvas.value) return
-  alignLines.value.forEach(line => fabricCanvas.value!.remove(line))
-  alignLines.value = []
-}
-
-// 添加图片到画布（使用原图 base64）
-const addImageToCanvas = (imgData: CanvasImage) => {
-  if (!fabricCanvas.value) return
-  // 使用 read_file_base64 读取原图
-  invoke<string>('read_file_base64', { filePath: imgData.path }).then((base64) => {
-    // 检测图片类型
-    const ext = imgData.path.split('.').pop()?.toLowerCase() || 'png'
-    const mimeType = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : `image/${ext}`
-    const url = `data:${mimeType};base64,${base64}`
-    
-    return fabric.FabricImage.fromURL(url)
-  }).then((img) => {
-    // 如果图片太大，缩放到画布可容纳的大小
-    const maxW = fabricCanvas.value!.width! * 0.6
-    const maxH = fabricCanvas.value!.height! * 0.6
-    let scale = 1
-    if (img.width! > maxW || img.height! > maxH) {
-      scale = Math.min(maxW / img.width!, maxH / img.height!)
-    }
-    img.set({
-      left: imgData.left,
-      top: imgData.top,
-      scaleX: scale,
-      scaleY: scale,
-      angle: imgData.angle,
-      cornerSize: 12,
-      cornerColor: '#00ffff',
-      cornerStrokeColor: '#ffffff',
-      transparentCorners: false,
-      borderColor: '#00ffff',
-      borderScaleFactor: 2,
-    })
-    ;(img as any).customId = imgData.id
-    fabricCanvas.value!.add(img)
-    fabricCanvas.value!.renderAll()
-  }).catch((err) => {
-    console.error('加载图片失败:', imgData.name, err)
-  })
-}
-
-// 监听 Tab 切换，切换到 merge 时初始化画布
-watch(() => activeTab.value, (newTab) => {
-  if (newTab === 'merge') {
-    nextTick(() => {
-      initCanvas()
-    })
+// 拼图预览 Grid（固定 1200x800 比例）
+const mergeGridStyle = computed(() => {
+  if (!currentTemplate.value) return {}
+  const cols = Math.max(...currentTemplate.value.grid.map(s => s.colEnd)) - 1
+  const rows = Math.max(...currentTemplate.value.grid.map(s => s.rowEnd)) - 1
+  return {
+    gridTemplateColumns: `repeat(${cols}, 1fr)`,
+    gridTemplateRows: `repeat(${rows}, 1fr)`,
+    aspectRatio: '1200 / 800',
+    gap: mergeGap.value + 'px',
   }
 })
 
-onMounted(() => {
-  if (activeTab.value === 'merge') {
-    nextTick(() => {
-      initCanvas()
-    })
+const slotStyle = (slot: TemplateSlot) => ({
+  gridColumn: `${slot.colStart} / ${slot.colEnd}`,
+  gridRow: `${slot.rowStart} / ${slot.rowEnd}`,
+})
+
+// 选择模板
+const selectTemplate = (tpl: Template) => {
+  currentTemplate.value = tpl
+  // 保留已有图片映射，多余槽位留空，不足的用 null 填充
+  const newSlots: (number | null)[] = new Array(tpl.grid.length).fill(null)
+  for (let i = 0; i < Math.min(tpl.grid.length, slotMap.value.length); i++) {
+    newSlots[i] = slotMap.value[i]
   }
-})
-
-onUnmounted(() => {
-  fabricCanvas.value?.dispose()
-  fabricCanvas.value = undefined
-})
-
-// 点击其他地方关闭右键菜单
-const closeContextMenu = () => {
-  contextMenuVisible.value = false
+  slotMap.value = newSlots
 }
 
-if (typeof window !== 'undefined') {
-  window.addEventListener('click', closeContextMenu)
-}
-
+// 选择图片
 const selectMergeFiles = async () => {
   const selected = await open({
     multiple: true,
@@ -648,104 +568,134 @@ const selectMergeFiles = async () => {
       size = info.size
     } catch { /* ignore */ }
 
-    let thumb: string | undefined
+    let thumb = ''
     try {
       const thumbBase64 = await invoke<string>('get_thumbnail', { filePath: path })
       thumb = 'data:image/jpeg;base64,' + thumbBase64
     } catch { /* ignore */ }
 
-    const id = `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-    const imgData: CanvasImage = {
-      id,
-      path,
-      name,
-      size,
-      thumb,
-      left: 100 + canvasImages.value.length * 20,
-      top: 100 + canvasImages.value.length * 20,
-      scaleX: 1,
-      scaleY: 1,
-      angle: 0,
-    }
-
-    canvasImages.value.push(imgData)
-
-    // 添加到 Fabric 画布
-    addImageToCanvas(imgData)
+    mergeImages.value.push({ path, name, size, thumb })
   }
+
+  // 自动选择首个匹配模板
+  if (!currentTemplate.value && availableTemplates.value.length > 0) {
+    selectTemplate(availableTemplates.value[0])
+  } else if (currentTemplate.value) {
+    // 更新 slotMap：新图片填充到空槽位
+    const tpl = currentTemplate.value
+    let imgIdx = 0
+    const newSlots: (number | null)[] = new Array(tpl.grid.length).fill(null)
+    for (let i = 0; i < tpl.grid.length && imgIdx < mergeImages.value.length; i++) {
+      newSlots[i] = imgIdx++
+    }
+    slotMap.value = newSlots
+  }
+
   error.value = ''
 }
 
-const removeCanvasImage = (index: number) => {
-  const imgData = canvasImages.value[index]
-  if (!imgData) return
-
-  // 从 Fabric 画布移除
-  if (fabricCanvas.value) {
-    const objects = fabricCanvas.value.getObjects()
-    const fabricObj = objects.find(obj => (obj as any).customId === imgData.id)
-    if (fabricObj) {
-      fabricCanvas.value.remove(fabricObj)
-      fabricCanvas.value.renderAll()
-    }
+// 删除图片
+const removeMergeImage = (index: number) => {
+  mergeImages.value.splice(index, 1)
+  // 从 slotMap 中移除，并重新映射
+  slotMap.value = slotMap.value.map(s => {
+    if (s === null) return null
+    if (s === index) return null
+    return s > index ? s - 1 : s
+  })
+  // 检查模板是否仍可用
+  if (currentTemplate.value && currentTemplate.value.count > mergeImages.value.length) {
+    currentTemplate.value = null
+    slotMap.value = []
   }
-
-  // 从状态移除
-  canvasImages.value.splice(index, 1)
 }
 
-const clearCanvasImages = () => {
-  if (fabricCanvas.value) {
-    fabricCanvas.value.clear()
-    fabricCanvas.value.backgroundColor = 'transparent'
-    drawCheckerboard(fabricCanvas.value)
-    fabricCanvas.value.renderAll()
-  }
-  canvasImages.value = []
+// 清空
+const clearMergeImages = () => {
+  mergeImages.value = []
+  slotMap.value = []
+  currentTemplate.value = null
   mergeResult.value = null
   error.value = ''
 }
 
-const bringToFront = () => {
-  if (!fabricCanvas.value || !contextMenuTargetId.value) return
-  const obj = fabricCanvas.value.getObjects().find(o => (o as any).customId === contextMenuTargetId.value)
-  if (obj) {
-    fabricCanvas.value.bringObjectToFront(obj)
-    fabricCanvas.value.renderAll()
-  }
-  contextMenuVisible.value = false
+// 拖拽开始
+const onDragStart = (slotIndex: number) => {
+  dragFromSlot.value = slotIndex
 }
 
-const sendToBack = () => {
-  if (!fabricCanvas.value || !contextMenuTargetId.value) return
-  const obj = fabricCanvas.value.getObjects().find(o => (o as any).customId === contextMenuTargetId.value)
-  if (obj) {
-    fabricCanvas.value.sendObjectToBack(obj)
-    fabricCanvas.value.renderAll()
-  }
-  contextMenuVisible.value = false
+// 拖拽结束
+const onDragEnd = () => {
+  dragFromSlot.value = null
+  dragOverSlot.value = null
 }
 
-const handleCanvasMerge = async () => {
-  if (canvasImages.value.length === 0) return
+// 拖拽经过
+const onDragOver = (slotIndex: number) => {
+  dragOverSlot.value = slotIndex
+}
+
+// 拖拽离开
+const onDragLeave = () => {
+  dragOverSlot.value = null
+}
+
+// 放置
+const onDrop = (targetSlot: number) => {
+  if (dragFromSlot.value === null) return
+  const from = dragFromSlot.value
+  // 交换两个槽位的图片
+  const temp = slotMap.value[from]
+  slotMap.value[from] = slotMap.value[targetSlot]
+  slotMap.value[targetSlot] = temp
+  dragFromSlot.value = null
+  dragOverSlot.value = null
+}
+
+// 生成拼图
+const handleTemplateMerge = async () => {
+  if (!currentTemplate.value || !hasFilledSlots.value) return
   error.value = ''
   mergeLoading.value = true
 
   try {
-    const images = canvasImages.value.map(img => ({
-      file_path: img.path,
-      left: img.left,
-      top: img.top,
-      scale_x: img.scaleX,
-      scale_y: img.scaleY,
-      angle: img.angle,
-    }))
+    const cols = Math.max(...currentTemplate.value.grid.map(s => s.colEnd)) - 1
+    const rows = Math.max(...currentTemplate.value.grid.map(s => s.rowEnd)) - 1
+    const canvasWidth = 1200
+    const canvasHeight = 800
+    const gap = mergeGap.value
 
-    const result = await invoke<{ base64: string; width: number; height: number }>('image_canvas_merge', {
+    const slotWidth = (canvasWidth - gap * (cols - 1)) / cols
+    const slotHeight = (canvasHeight - gap * (rows - 1)) / rows
+
+    const images: { file_path: string; x: number; y: number; width: number; height: number }[] = []
+
+    currentTemplate.value.grid.forEach((slot, si) => {
+      const imgIdx = slotMap.value[si]
+      if (imgIdx === null) return
+      const img = mergeImages.value[imgIdx]
+      if (!img) return
+
+      const col = slot.colStart - 1
+      const row = slot.rowStart - 1
+      const colSpan = slot.colEnd - slot.colStart
+      const rowSpan = slot.rowEnd - slot.rowStart
+
+      images.push({
+        file_path: img.path,
+        x: Math.round(col * (slotWidth + gap)),
+        y: Math.round(row * (slotHeight + gap)),
+        width: Math.round(slotWidth * colSpan + gap * (colSpan - 1)),
+        height: Math.round(slotHeight * rowSpan + gap * (rowSpan - 1)),
+      })
+    })
+
+    const result = await invoke<{ base64: string; width: number; height: number }>('image_template_merge', {
       images,
-      canvasWidth: canvasSizeMode.value === 'manual' ? manualCanvasWidth.value : null,
-      canvasHeight: canvasSizeMode.value === 'manual' ? manualCanvasHeight.value : null,
+      canvasWidth,
+      canvasHeight,
       bgColor: mergeBgColor.value,
+      gap,
     })
 
     mergeResult.value = result
@@ -1072,33 +1022,83 @@ html.light .image-tabs :deep(.el-tabs__header) {
   color: var(--accent-cyan);
 }
 
-.fabric-canvas {
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  display: block;
-  margin: 0 auto;
-  max-width: 100%;
+/* 模板选择器 */
+.template-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.template-item {
+  cursor: pointer;
+  padding: 6px;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  transition: border-color 0.2s;
+  text-align: center;
+}
+.template-item:hover {
+  border-color: var(--color-accent);
+}
+.template-active {
+  border-color: var(--color-accent);
+  background: rgba(0, 255, 255, 0.05);
+}
+.template-preview {
+  display: grid;
+  width: 80px;
+  height: 60px;
+  gap: 2px;
+  margin-bottom: 4px;
+}
+.template-slot {
+  background: var(--border-color);
+  border-radius: 2px;
+}
+.template-name {
+  font-size: 11px;
+  color: var(--text-secondary);
 }
 
-.canvas-context-menu {
-  position: fixed;
-  z-index: 100;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-  padding: 4px 0;
-  min-width: 80px;
-}
-.context-menu-item {
-  padding: 6px 16px;
-  font-size: 13px;
-  color: var(--text-primary);
-  cursor: pointer;
-}
-.context-menu-item:hover {
+/* 拼图预览 */
+.merge-preview-grid {
+  display: grid;
+  width: 100%;
+  max-width: 600px;
+  margin: 0 auto;
   background: var(--bg-input);
-  color: var(--accent-cyan);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.merge-slot {
+  position: relative;
+  background: var(--border-color);
+  border: 2px dashed transparent;
+  border-radius: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  min-height: 60px;
+  transition: border-color 0.2s, opacity 0.2s;
+}
+.merge-slot-drag-over {
+  border-color: var(--color-accent);
+}
+.merge-slot-dragging {
+  opacity: 0.4;
+}
+.merge-slot-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  cursor: grab;
+}
+.merge-slot-img:active {
+  cursor: grabbing;
+}
+.merge-slot-placeholder {
+  font-size: 12px;
+  color: var(--text-secondary);
 }
 
 .error-message {
