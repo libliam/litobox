@@ -121,7 +121,8 @@
           </div>
           <div class="action-group">
             <span class="group-label">背景色</span>
-            <el-color-picker v-model="mergeBgColor" size="small" />
+            <el-color-picker v-model="mergeBgColor" size="small" show-alpha />
+            <el-button size="small" @click="mergeBgColor = ''" style="margin-left: 8px">透明</el-button>
           </div>
         </div>
         <div class="action-group" style="margin-top: 12px">
@@ -241,12 +242,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
 import { saveFileWithDialog } from '@/utils/fileSaver'
-import * as fabric from 'fabric'
 
 const activeTab = ref('compress')
 const error = ref('')
@@ -402,15 +402,22 @@ const mergeResultUrl = computed(() =>
   mergeResult.value ? 'data:image/png;base64,' + mergeResult.value.base64 : ''
 )
 
+// 对齐线
+const alignLines = ref<fabric.Line[]>([])
+const SNAP_THRESHOLD = 5
+
 // 初始化画布
-onMounted(() => {
+const initCanvas = () => {
   if (fabricCanvasRef.value && !fabricCanvas.value) {
     fabricCanvas.value = new fabric.Canvas(fabricCanvasRef.value, {
       width: 800,
       height: 600,
-      backgroundColor: '#f0f0f0',
+      backgroundColor: 'transparent',
       selection: true,
     })
+
+    // 绘制棋盘格背景
+    drawCheckerboard(fabricCanvas.value)
 
     // 监听对象修改事件，同步状态
     fabricCanvas.value.on('object:modified', (e: any) => {
@@ -436,6 +443,177 @@ onMounted(() => {
         contextMenuPos.value = { x: e.e.clientX, y: e.e.clientY }
         contextMenuVisible.value = true
       }
+    })
+
+    // 吸附对齐 - 拖拽时
+    fabricCanvas.value.on('object:moving', (e: any) => {
+      if (!e.target) return
+      const obj = e.target
+      const canvas = fabricCanvas.value!
+      const center = obj.getCenterPoint()
+      const bounds = obj.getBoundingRect()
+
+      // 清除旧对齐线
+      clearAlignLines()
+
+      // 与其他对象对齐
+      canvas.getObjects().forEach((other: any) => {
+        if (other === obj || !other.getBoundingRect) return
+        const otherBounds = other.getBoundingRect()
+        const otherCenter = other.getCenterPoint()
+
+        // 水平对齐
+        if (Math.abs(center.x - otherCenter.x) < SNAP_THRESHOLD) {
+          obj.set({ left: otherCenter.x - obj.width! * obj.scaleX! / 2 })
+          addAlignLine(canvas, otherCenter.x, 0, otherCenter.x, canvas.height!)
+        }
+        // 垂直对齐
+        if (Math.abs(center.y - otherCenter.y) < SNAP_THRESHOLD) {
+          obj.set({ top: otherCenter.y - obj.height! * obj.scaleY! / 2 })
+          addAlignLine(canvas, 0, otherCenter.y, canvas.width!, otherCenter.y)
+        }
+        // 左边缘对齐
+        if (Math.abs(bounds.left - otherBounds.left) < SNAP_THRESHOLD) {
+          obj.set({ left: otherBounds.left })
+          addAlignLine(canvas, otherBounds.left, 0, otherBounds.left, canvas.height!)
+        }
+        // 右边缘对齐
+        if (Math.abs(bounds.left + bounds.width - otherBounds.left - otherBounds.width) < SNAP_THRESHOLD) {
+          obj.set({ left: otherBounds.left + otherBounds.width - bounds.width })
+          addAlignLine(canvas, otherBounds.left + otherBounds.width, 0, otherBounds.left + otherBounds.width, canvas.height!)
+        }
+        // 上边缘对齐
+        if (Math.abs(bounds.top - otherBounds.top) < SNAP_THRESHOLD) {
+          obj.set({ top: otherBounds.top })
+          addAlignLine(canvas, 0, otherBounds.top, canvas.width!, otherBounds.top)
+        }
+        // 下边缘对齐
+        if (Math.abs(bounds.top + bounds.height - otherBounds.top - otherBounds.height) < SNAP_THRESHOLD) {
+          obj.set({ top: otherBounds.top + otherBounds.height - bounds.height })
+          addAlignLine(canvas, 0, otherBounds.top + otherBounds.height, canvas.width!, otherBounds.top + otherBounds.height)
+        }
+      })
+
+      // 与画布中心对齐
+      if (Math.abs(center.x - canvas.width! / 2) < SNAP_THRESHOLD) {
+        obj.set({ left: canvas.width! / 2 - obj.width! * obj.scaleX! / 2 })
+        addAlignLine(canvas, canvas.width! / 2, 0, canvas.width! / 2, canvas.height!)
+      }
+      if (Math.abs(center.y - canvas.height! / 2) < SNAP_THRESHOLD) {
+        obj.set({ top: canvas.height! / 2 - obj.height! * obj.scaleY! / 2 })
+        addAlignLine(canvas, 0, canvas.height! / 2, canvas.width!, canvas.height! / 2)
+      }
+
+      canvas.renderAll()
+    })
+
+    // 拖拽结束清除对齐线
+    fabricCanvas.value.on('object:mouseup', () => {
+      clearAlignLines()
+    })
+
+    // 画布初始化后，把已有的图片加上去
+    for (const imgData of canvasImages.value) {
+      addImageToCanvas(imgData)
+    }
+  }
+}
+
+// 绘制棋盘格背景
+const drawCheckerboard = (canvas: fabric.Canvas) => {
+  const size = 20
+  const w = canvas.width!
+  const h = canvas.height!
+  for (let y = 0; y < h; y += size) {
+    for (let x = 0; x < w; x += size) {
+      const color = ((x / size + y / size) % 2 === 0) ? '#e0e0e0' : '#ffffff'
+      const rect = new fabric.Rect({
+        left: x,
+        top: y,
+        width: size,
+        height: size,
+        fill: color,
+        selectable: false,
+        evented: false,
+      })
+      canvas.add(rect)
+    }
+  }
+}
+
+// 添加对齐线
+const addAlignLine = (canvas: fabric.Canvas, x1: number, y1: number, x2: number, y2: number) => {
+  const line = new fabric.Line([x1, y1, x2, y2], {
+    stroke: '#ff0000',
+    strokeWidth: 1,
+    selectable: false,
+    evented: false,
+    strokeDashArray: [5, 5],
+  })
+  canvas.add(line)
+  alignLines.value.push(line)
+}
+
+// 清除对齐线
+const clearAlignLines = () => {
+  if (!fabricCanvas.value) return
+  alignLines.value.forEach(line => fabricCanvas.value!.remove(line))
+  alignLines.value = []
+}
+
+// 添加图片到画布（使用原图 base64）
+const addImageToCanvas = (imgData: CanvasImage) => {
+  if (!fabricCanvas.value) return
+  // 使用 read_file_base64 读取原图
+  invoke<string>('read_file_base64', { filePath: imgData.path }).then((base64) => {
+    // 检测图片类型
+    const ext = imgData.path.split('.').pop()?.toLowerCase() || 'png'
+    const mimeType = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : `image/${ext}`
+    const url = `data:${mimeType};base64,${base64}`
+    
+    return fabric.FabricImage.fromURL(url)
+  }).then((img) => {
+    // 如果图片太大，缩放到画布可容纳的大小
+    const maxW = fabricCanvas.value!.width! * 0.6
+    const maxH = fabricCanvas.value!.height! * 0.6
+    let scale = 1
+    if (img.width! > maxW || img.height! > maxH) {
+      scale = Math.min(maxW / img.width!, maxH / img.height!)
+    }
+    img.set({
+      left: imgData.left,
+      top: imgData.top,
+      scaleX: scale,
+      scaleY: scale,
+      angle: imgData.angle,
+      cornerSize: 12,
+      cornerColor: '#00ffff',
+      cornerStrokeColor: '#ffffff',
+      transparentCorners: false,
+      borderColor: '#00ffff',
+      borderScaleFactor: 2,
+    })
+    ;(img as any).customId = imgData.id
+    fabricCanvas.value!.add(img)
+    fabricCanvas.value!.renderAll()
+  }).catch((err) => {
+    console.error('加载图片失败:', imgData.name, err)
+  })
+}
+
+// 监听 Tab 切换，切换到 merge 时初始化画布
+watch(() => activeTab.value, (newTab) => {
+  if (newTab === 'merge') {
+    nextTick(() => {
+      initCanvas()
+    })
+  }
+})
+
+onMounted(() => {
+  if (activeTab.value === 'merge') {
+    nextTick(() => {
+      initCanvas()
     })
   }
 })
@@ -493,20 +671,7 @@ const selectMergeFiles = async () => {
     canvasImages.value.push(imgData)
 
     // 添加到 Fabric 画布
-    if (fabricCanvas.value && thumb) {
-      fabric.FabricImage.fromURL(thumb).then((img) => {
-        img.set({
-          left: imgData.left,
-          top: imgData.top,
-          scaleX: imgData.scaleX,
-          scaleY: imgData.scaleY,
-          angle: imgData.angle,
-        })
-        ;(img as any).customId = id
-        fabricCanvas.value!.add(img)
-        fabricCanvas.value!.renderAll()
-      })
-    }
+    addImageToCanvas(imgData)
   }
   error.value = ''
 }
@@ -532,7 +697,8 @@ const removeCanvasImage = (index: number) => {
 const clearCanvasImages = () => {
   if (fabricCanvas.value) {
     fabricCanvas.value.clear()
-    fabricCanvas.value.backgroundColor = '#f0f0f0'
+    fabricCanvas.value.backgroundColor = 'transparent'
+    drawCheckerboard(fabricCanvas.value)
     fabricCanvas.value.renderAll()
   }
   canvasImages.value = []
