@@ -2,7 +2,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use image::{DynamicImage, GenericImageView, ImageFormat, Rgba, RgbaImage};
 use image::imageops::{self, FilterType};
 use imageproc::drawing;
-use imageproc::geometric_transformations::{rotate_about_center, Interpolation};
+// rotate_about_center/Interpolation removed — no longer needed after migrating to template merge
 use ab_glyph::{FontVec, PxScale, Font as _};
 use std::io::Cursor;
 use std::collections::HashMap;
@@ -278,7 +278,7 @@ fn do_image_template_merge(
     canvas_width: u32,
     canvas_height: u32,
     bg_color: String,
-    gap: u32,
+    _gap: u32,  // ponytail: 间距由前端计算好坐标传入，此参数保留供未来扩展
 ) -> Result<MergeResult, String> {
     if images.is_empty() {
         return Err("请至少选择一张图片".into());
