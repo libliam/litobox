@@ -17,14 +17,49 @@ fn image_to_base64_png(img: &DynamicImage) -> Result<String, String> {
 }
 
 fn parse_color(hex: &str) -> Result<Rgba<u8>, String> {
-    let hex = hex.trim_start_matches('#');
-    if hex.len() != 6 {
-        return Err("颜色格式错误，需为 #RRGGBB".into());
+    let hex = hex.trim();
+
+    // 支持 rgb(r, g, b) 格式
+    if let Some(rest) = hex.strip_prefix("rgb(").and_then(|s| s.strip_suffix(')')) {
+        let parts: Vec<&str> = rest.split(',').map(|s| s.trim()).collect();
+        if parts.len() == 3 {
+            let r = parts[0].parse::<u8>().map_err(|_| "颜色解析失败")?;
+            let g = parts[1].parse::<u8>().map_err(|_| "颜色解析失败")?;
+            let b = parts[2].parse::<u8>().map_err(|_| "颜色解析失败")?;
+            return Ok(Rgba([r, g, b, 255]));
+        }
     }
-    let r = u8::from_str_radix(&hex[0..2], 16).map_err(|_| "颜色解析失败")?;
-    let g = u8::from_str_radix(&hex[2..4], 16).map_err(|_| "颜色解析失败")?;
-    let b = u8::from_str_radix(&hex[4..6], 16).map_err(|_| "颜色解析失败")?;
-    Ok(Rgba([r, g, b, 255]))
+
+    // 支持 rgba(r, g, b, a) 格式
+    if let Some(rest) = hex.strip_prefix("rgba(").and_then(|s| s.strip_suffix(')')) {
+        let parts: Vec<&str> = rest.split(',').map(|s| s.trim()).collect();
+        if parts.len() == 4 {
+            let r = parts[0].parse::<u8>().map_err(|_| "颜色解析失败")?;
+            let g = parts[1].parse::<u8>().map_err(|_| "颜色解析失败")?;
+            let b = parts[2].parse::<u8>().map_err(|_| "颜色解析失败")?;
+            let a = (parts[3].parse::<f32>().map_err(|_| "颜色解析失败")? * 255.0) as u8;
+            return Ok(Rgba([r, g, b, a]));
+        }
+    }
+
+    let hex = hex.trim_start_matches('#');
+    let (r, g, b, a) = match hex.len() {
+        6 => {
+            let r = u8::from_str_radix(&hex[0..2], 16).map_err(|_| "颜色解析失败")?;
+            let g = u8::from_str_radix(&hex[2..4], 16).map_err(|_| "颜色解析失败")?;
+            let b = u8::from_str_radix(&hex[4..6], 16).map_err(|_| "颜色解析失败")?;
+            (r, g, b, 255u8)
+        }
+        8 => {
+            let r = u8::from_str_radix(&hex[0..2], 16).map_err(|_| "颜色解析失败")?;
+            let g = u8::from_str_radix(&hex[2..4], 16).map_err(|_| "颜色解析失败")?;
+            let b = u8::from_str_radix(&hex[4..6], 16).map_err(|_| "颜色解析失败")?;
+            let a = u8::from_str_radix(&hex[6..8], 16).map_err(|_| "颜色解析失败")?;
+            (r, g, b, a)
+        }
+        _ => return Err("颜色格式错误，需为 #RRGGBB、#RRGGBBAA 或 rgb(r,g,b)".into()),
+    };
+    Ok(Rgba([r, g, b, a]))
 }
 
 // ============ B6: 图片批量压缩/格式转换 ============
@@ -256,6 +291,9 @@ pub struct MergeSlotInput {
     pub y: u32,
     pub width: u32,
     pub height: u32,
+    pub scale: f64,        // 缩放比例（1.0 = 原图填满槽位）
+    pub offset_x: f64,     // 平移偏移 X（像素）
+    pub offset_y: f64,     // 平移偏移 Y（像素）
 }
 
 #[tauri::command]
@@ -299,21 +337,32 @@ fn do_image_template_merge(
         let img = image::load_from_memory(&bytes)
             .map_err(|e| format!("无法解码图片 ({}): {}", img_input.file_path, e))?;
 
-        // cover 模式：等比缩放填满槽位，居中裁剪
         let slot_w = img_input.width;
         let slot_h = img_input.height;
         let img_w = img.width();
         let img_h = img.height();
 
-        let scale = (slot_w as f64 / img_w as f64).max(slot_h as f64 / img_h as f64);
+        // 用户缩放比例（0.5~5.0），1.0 = 原图填满槽位
+        let user_scale = img_input.scale.max(0.5).min(5.0);
+
+        // cover 模式：等比缩放填满槽位，再乘以用户缩放
+        let base_scale = (slot_w as f64 / img_w as f64).max(slot_h as f64 / img_h as f64);
+        let scale = base_scale * user_scale;
         let scaled_w = (img_w as f64 * scale) as u32;
         let scaled_h = (img_h as f64 * scale) as u32;
 
         let resized = img.resize(scaled_w, scaled_h, FilterType::Lanczos3);
 
-        // 居中裁剪到槽位尺寸
-        let crop_x = (scaled_w.saturating_sub(slot_w) / 2) as u32;
-        let crop_y = (scaled_h.saturating_sub(slot_h) / 2) as u32;
+        // 居中裁剪 + 用户偏移
+        let crop_x = (scaled_w.saturating_sub(slot_w) / 2) as i64
+            + img_input.offset_x as i64;
+        let crop_y = (scaled_h.saturating_sub(slot_h) / 2) as i64
+            + img_input.offset_y as i64;
+
+        // 确保裁剪区域在图片范围内
+        let crop_x = crop_x.max(0).min(scaled_w.saturating_sub(slot_w) as i64) as u32;
+        let crop_y = crop_y.max(0).min(scaled_h.saturating_sub(slot_h) as i64) as u32;
+
         let cropped = resized.crop_imm(crop_x, crop_y, slot_w, slot_h);
 
         imageops::overlay(&mut canvas, &cropped, img_input.x as i64, img_input.y as i64);

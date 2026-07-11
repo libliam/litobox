@@ -117,30 +117,20 @@
     <div v-if="activeTab === 'merge' && currentTemplate" class="tool-card">
       <div class="card-header"><span class="card-title">拼图预览</span></div>
       <div class="card-body">
-        <div class="merge-preview-grid" :style="mergeGridStyle">
-          <div
-            v-for="(slot, si) in currentTemplate.grid"
-            :key="si"
-            class="merge-slot"
-            :class="{
-              'merge-slot-selected': selectedSlot === si,
-              'merge-slot-empty': slotMap[si] === null,
-            }"
-            :style="slotStyle(slot)"
-            @click="onSlotClick(si)"
-            @mousedown="onSlotMouseDown($event, si)"
-            @mousemove="onSlotMouseMove($event, si)"
-            @mouseup="onSlotMouseUp"
-            @mouseleave="onSlotMouseUp"
-          >
-            <img
-              v-if="slotMap[si] !== null && mergeImages[slotMap[si]!]"
-              :src="mergeImages[slotMap[si]!].thumb"
-              class="merge-slot-img"
-              :style="{ objectPosition: slotImgPosition(si) }"
-            />
-            <span v-else class="merge-slot-placeholder">点击交换</span>
-          </div>
+        <div class="merge-canvas-container">
+          <canvas
+          ref="mergeCanvas"
+          class="merge-canvas"
+          :width="canvasWidth"
+          :height="canvasHeight"
+          :style="mergeCanvasStyle"
+          @click="onCanvasClick"
+          @mousedown="onCanvasMouseDown"
+          @mousemove="onCanvasMouseMove"
+          @mouseup="onCanvasMouseUp"
+          @mouseleave="onCanvasMouseUp"
+          @wheel="onCanvasWheel"
+        />
         </div>
       </div>
     </div>
@@ -149,6 +139,13 @@
       <div class="card-header"><span class="card-title">输出设置</span></div>
       <div class="card-body">
         <div class="action-grid">
+          <div class="action-group">
+            <span class="group-label">画布尺寸</span>
+            <el-input-number v-model="canvasWidth" :min="100" :max="8192" size="small" controls-position="right" style="width: 100px" placeholder="宽" />
+            <span>×</span>
+            <el-input-number v-model="canvasHeight" :min="100" :max="8192" size="small" controls-position="right" style="width: 100px" placeholder="高" />
+            <span style="font-size: 12px; color: var(--text-secondary)">px</span>
+          </div>
           <div class="action-group">
             <span class="group-label">背景色</span>
             <el-color-picker v-model="mergeBgColor" size="small" show-alpha />
@@ -161,11 +158,8 @@
           </div>
         </div>
         <div class="action-group" style="margin-top: 12px">
-          <el-button size="small" type="primary" :disabled="!hasFilledSlots" :loading="mergeLoading" @click="handleTemplateMerge">生成拼图</el-button>
-          <el-button size="small" :disabled="!mergeResult" @click="downloadMergeResult">下载结果</el-button>
-        </div>
-        <div v-if="mergeResult" class="preview-area">
-          <img :src="mergeResultUrl" class="merge-preview" />
+          <el-button size="small" type="primary" :disabled="!hasFilledSlots" @click="downloadMergeResult">下载结果</el-button>
+          <el-button size="small" @click="resetAllSlots">重置所有</el-button>
         </div>
         <div v-if="error" class="error-message">{{ error }}</div>
       </div>
@@ -277,7 +271,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
@@ -419,9 +413,11 @@ interface Template {
   name: string
   count: number
   grid: TemplateSlot[]
+  longImage?: boolean  // 长图模式：不裁剪，按原图比例拼接
 }
 
 const TEMPLATES: Template[] = [
+  // === 2 张 ===
   { id: 'h2', name: '左右2列', count: 2, grid: [
     { colStart: 1, colEnd: 2, rowStart: 1, rowEnd: 2 },
     { colStart: 2, colEnd: 3, rowStart: 1, rowEnd: 2 },
@@ -434,10 +430,20 @@ const TEMPLATES: Template[] = [
     { colStart: 1, colEnd: 3, rowStart: 1, rowEnd: 2 },
     { colStart: 3, colEnd: 4, rowStart: 1, rowEnd: 2 },
   ]},
+  { id: 't2', name: '上大下小', count: 2, grid: [
+    { colStart: 1, colEnd: 2, rowStart: 1, rowEnd: 3 },
+    { colStart: 1, colEnd: 2, rowStart: 3, rowEnd: 4 },
+  ]},
+  // === 3 张 ===
   { id: 'h3', name: '三等分', count: 3, grid: [
     { colStart: 1, colEnd: 2, rowStart: 1, rowEnd: 2 },
     { colStart: 2, colEnd: 3, rowStart: 1, rowEnd: 2 },
     { colStart: 3, colEnd: 4, rowStart: 1, rowEnd: 2 },
+  ]},
+  { id: 'v3', name: '三行', count: 3, grid: [
+    { colStart: 1, colEnd: 2, rowStart: 1, rowEnd: 2 },
+    { colStart: 1, colEnd: 2, rowStart: 2, rowEnd: 3 },
+    { colStart: 1, colEnd: 2, rowStart: 3, rowEnd: 4 },
   ]},
   { id: 't3', name: '上1下2', count: 3, grid: [
     { colStart: 1, colEnd: 3, rowStart: 1, rowEnd: 2 },
@@ -449,6 +455,17 @@ const TEMPLATES: Template[] = [
     { colStart: 3, colEnd: 4, rowStart: 1, rowEnd: 2 },
     { colStart: 3, colEnd: 4, rowStart: 2, rowEnd: 3 },
   ]},
+  { id: 'b3', name: '上2下1', count: 3, grid: [
+    { colStart: 1, colEnd: 2, rowStart: 1, rowEnd: 2 },
+    { colStart: 2, colEnd: 3, rowStart: 1, rowEnd: 2 },
+    { colStart: 1, colEnd: 3, rowStart: 2, rowEnd: 3 },
+  ]},
+  { id: 'r3', name: '左2右1', count: 3, grid: [
+    { colStart: 1, colEnd: 2, rowStart: 1, rowEnd: 2 },
+    { colStart: 1, colEnd: 2, rowStart: 2, rowEnd: 3 },
+    { colStart: 2, colEnd: 3, rowStart: 1, rowEnd: 3 },
+  ]},
+  // === 4 张 ===
   { id: 'g4', name: '四宫格', count: 4, grid: [
     { colStart: 1, colEnd: 2, rowStart: 1, rowEnd: 2 },
     { colStart: 2, colEnd: 3, rowStart: 1, rowEnd: 2 },
@@ -461,6 +478,19 @@ const TEMPLATES: Template[] = [
     { colStart: 3, colEnd: 4, rowStart: 2, rowEnd: 3 },
     { colStart: 3, colEnd: 4, rowStart: 3, rowEnd: 4 },
   ]},
+  { id: 't4', name: '上1下3', count: 4, grid: [
+    { colStart: 1, colEnd: 4, rowStart: 1, rowEnd: 2 },
+    { colStart: 1, colEnd: 2, rowStart: 2, rowEnd: 3 },
+    { colStart: 2, colEnd: 3, rowStart: 2, rowEnd: 3 },
+    { colStart: 3, colEnd: 4, rowStart: 2, rowEnd: 3 },
+  ]},
+  { id: 'c4', name: '中间大', count: 4, grid: [
+    { colStart: 1, colEnd: 2, rowStart: 1, rowEnd: 2 },
+    { colStart: 2, colEnd: 4, rowStart: 1, rowEnd: 3 },
+    { colStart: 1, colEnd: 2, rowStart: 2, rowEnd: 3 },
+    { colStart: 1, colEnd: 4, rowStart: 3, rowEnd: 4 },
+  ]},
+  // === 5 张 ===
   { id: 'h5', name: '五宫格', count: 5, grid: [
     { colStart: 1, colEnd: 2, rowStart: 1, rowEnd: 2 },
     { colStart: 2, colEnd: 3, rowStart: 1, rowEnd: 2 },
@@ -468,6 +498,21 @@ const TEMPLATES: Template[] = [
     { colStart: 2, colEnd: 3, rowStart: 2, rowEnd: 3 },
     { colStart: 3, colEnd: 4, rowStart: 2, rowEnd: 3 },
   ]},
+  { id: 't5', name: '上1下4', count: 5, grid: [
+    { colStart: 1, colEnd: 5, rowStart: 1, rowEnd: 2 },
+    { colStart: 1, colEnd: 2, rowStart: 2, rowEnd: 3 },
+    { colStart: 2, colEnd: 3, rowStart: 2, rowEnd: 3 },
+    { colStart: 3, colEnd: 4, rowStart: 2, rowEnd: 3 },
+    { colStart: 4, colEnd: 5, rowStart: 2, rowEnd: 3 },
+  ]},
+  { id: 'l5', name: '左大右4', count: 5, grid: [
+    { colStart: 1, colEnd: 3, rowStart: 1, rowEnd: 5 },
+    { colStart: 3, colEnd: 4, rowStart: 1, rowEnd: 2 },
+    { colStart: 3, colEnd: 4, rowStart: 2, rowEnd: 3 },
+    { colStart: 3, colEnd: 4, rowStart: 3, rowEnd: 4 },
+    { colStart: 3, colEnd: 4, rowStart: 4, rowEnd: 5 },
+  ]},
+  // === 6 张 ===
   { id: 'g6', name: '六宫格', count: 6, grid: [
     { colStart: 1, colEnd: 2, rowStart: 1, rowEnd: 2 },
     { colStart: 2, colEnd: 3, rowStart: 1, rowEnd: 2 },
@@ -476,6 +521,69 @@ const TEMPLATES: Template[] = [
     { colStart: 2, colEnd: 3, rowStart: 2, rowEnd: 3 },
     { colStart: 3, colEnd: 4, rowStart: 2, rowEnd: 3 },
   ]},
+  { id: 'v6', name: '六行', count: 6, grid: [
+    { colStart: 1, colEnd: 2, rowStart: 1, rowEnd: 2 },
+    { colStart: 1, colEnd: 2, rowStart: 2, rowEnd: 3 },
+    { colStart: 1, colEnd: 2, rowStart: 3, rowEnd: 4 },
+    { colStart: 1, colEnd: 2, rowStart: 4, rowEnd: 5 },
+    { colStart: 1, colEnd: 2, rowStart: 5, rowEnd: 6 },
+    { colStart: 1, colEnd: 2, rowStart: 6, rowEnd: 7 },
+  ]},
+  { id: 'h6', name: '六列', count: 6, grid: [
+    { colStart: 1, colEnd: 2, rowStart: 1, rowEnd: 2 },
+    { colStart: 2, colEnd: 3, rowStart: 1, rowEnd: 2 },
+    { colStart: 3, colEnd: 4, rowStart: 1, rowEnd: 2 },
+    { colStart: 4, colEnd: 5, rowStart: 1, rowEnd: 2 },
+    { colStart: 5, colEnd: 6, rowStart: 1, rowEnd: 2 },
+    { colStart: 6, colEnd: 7, rowStart: 1, rowEnd: 2 },
+  ]},
+  // === 长图拼接（纵向） ===
+  { id: 'long2', name: '长图2张', count: 2, longImage: true, grid: [
+    { colStart: 1, colEnd: 2, rowStart: 1, rowEnd: 2 },
+    { colStart: 1, colEnd: 2, rowStart: 2, rowEnd: 3 },
+  ]},
+  { id: 'long3', name: '长图3张', count: 3, longImage: true, grid: [
+    { colStart: 1, colEnd: 2, rowStart: 1, rowEnd: 2 },
+    { colStart: 1, colEnd: 2, rowStart: 2, rowEnd: 3 },
+    { colStart: 1, colEnd: 2, rowStart: 3, rowEnd: 4 },
+  ]},
+  { id: 'long4', name: '长图4张', count: 4, longImage: true, grid: [
+    { colStart: 1, colEnd: 2, rowStart: 1, rowEnd: 2 },
+    { colStart: 1, colEnd: 2, rowStart: 2, rowEnd: 3 },
+    { colStart: 1, colEnd: 2, rowStart: 3, rowEnd: 4 },
+    { colStart: 1, colEnd: 2, rowStart: 4, rowEnd: 5 },
+  ]},
+  { id: 'long5', name: '长图5张', count: 5, longImage: true, grid: [
+    { colStart: 1, colEnd: 2, rowStart: 1, rowEnd: 2 },
+    { colStart: 1, colEnd: 2, rowStart: 2, rowEnd: 3 },
+    { colStart: 1, colEnd: 2, rowStart: 3, rowEnd: 4 },
+    { colStart: 1, colEnd: 2, rowStart: 4, rowEnd: 5 },
+    { colStart: 1, colEnd: 2, rowStart: 5, rowEnd: 6 },
+  ]},
+  { id: 'long6', name: '长图6张', count: 6, longImage: true, grid: [
+    { colStart: 1, colEnd: 2, rowStart: 1, rowEnd: 2 },
+    { colStart: 1, colEnd: 2, rowStart: 2, rowEnd: 3 },
+    { colStart: 1, colEnd: 2, rowStart: 3, rowEnd: 4 },
+    { colStart: 1, colEnd: 2, rowStart: 4, rowEnd: 5 },
+    { colStart: 1, colEnd: 2, rowStart: 5, rowEnd: 6 },
+    { colStart: 1, colEnd: 2, rowStart: 6, rowEnd: 7 },
+  ]},
+  // === 长图拼接（横向） ===
+  { id: 'wide2', name: '宽图2张', count: 2, longImage: true, grid: [
+    { colStart: 1, colEnd: 2, rowStart: 1, rowEnd: 2 },
+    { colStart: 2, colEnd: 3, rowStart: 1, rowEnd: 2 },
+  ]},
+  { id: 'wide3', name: '宽图3张', count: 3, longImage: true, grid: [
+    { colStart: 1, colEnd: 2, rowStart: 1, rowEnd: 2 },
+    { colStart: 2, colEnd: 3, rowStart: 1, rowEnd: 2 },
+    { colStart: 3, colEnd: 4, rowStart: 1, rowEnd: 2 },
+  ]},
+  { id: 'wide4', name: '宽图4张', count: 4, longImage: true, grid: [
+    { colStart: 1, colEnd: 2, rowStart: 1, rowEnd: 2 },
+    { colStart: 2, colEnd: 3, rowStart: 1, rowEnd: 2 },
+    { colStart: 3, colEnd: 4, rowStart: 1, rowEnd: 2 },
+    { colStart: 4, colEnd: 5, rowStart: 1, rowEnd: 2 },
+  ]},
 ]
 
 interface MergeImage {
@@ -483,6 +591,7 @@ interface MergeImage {
   name: string
   size: number
   thumb: string
+  img?: HTMLImageElement  // 预加载的 Image 对象
 }
 
 const mergeImages = ref<MergeImage[]>([])
@@ -490,25 +599,35 @@ const slotMap = ref<(number | null)[]>([])
 const currentTemplate = ref<Template | null>(null)
 const mergeBgColor = ref('#ffffff')
 const mergeGap = ref(4)
-const mergeResult = ref<{ base64: string; width: number; height: number } | null>(null)
-const mergeLoading = ref(false)
 
-// 槽位内图片的平移偏移（像素），用于调整裁剪区域
+// 画布尺寸（可自定义）
+const canvasWidth = ref(1200)
+const canvasHeight = ref(800)
+
+// Canvas 相关
+const mergeCanvas = ref<HTMLCanvasElement | null>(null)
+const mergeCanvasStyle = computed(() => ({
+  width: '100%',
+  maxWidth: canvasWidth.value + 'px',
+  aspectRatio: `${canvasWidth.value} / ${canvasHeight.value}`,
+  cursor: 'crosshair',
+}))
+
+// 槽位内图片的平移偏移（像素，基于槽位尺寸）
 interface SlotOffset { x: number; y: number }
 const slotOffsets = ref<SlotOffset[]>([])
+
+// 槽位内图片的缩放比例（1.0 = 原图填满槽位）
+const slotScales = ref<number[]>([])
 
 // 点击交换状态
 const selectedSlot = ref<number | null>(null)
 
 // 槽位内平移状态
 const panState = ref<{ slotIndex: number; startX: number; startY: number; moved: boolean } | null>(null)
-const PAN_THRESHOLD = 5 // 超过此像素视为拖拽而非点击
+const PAN_THRESHOLD = 5
 
-const mergeResultUrl = computed(() =>
-  mergeResult.value ? 'data:image/png;base64,' + mergeResult.value.base64 : ''
-)
-
-// 根据图片数量过滤可用模板（优先显示图片数完全匹配的）
+// 根据图片数量过滤可用模板
 const availableTemplates = computed(() => {
   const n = mergeImages.value.length
   const exact = TEMPLATES.filter(t => t.count === n)
@@ -516,12 +635,11 @@ const availableTemplates = computed(() => {
   return TEMPLATES.filter(t => t.count <= n)
 })
 
-// 至少有 1 个槽位有图片
 const hasFilledSlots = computed(() =>
   slotMap.value.some(s => s !== null)
 )
 
-// 模板预览图（缩略版 CSS Grid）
+// 模板预览图样式
 const templatePreviewStyle = (tpl: Template) => {
   const cols = Math.max(...tpl.grid.map(s => s.colEnd)) - 1
   const rows = Math.max(...tpl.grid.map(s => s.rowEnd)) - 1
@@ -531,23 +649,114 @@ const templatePreviewStyle = (tpl: Template) => {
   }
 }
 
-// 拼图预览 Grid（固定 1200x800 比例）
-const mergeGridStyle = computed(() => {
-  if (!currentTemplate.value) return {}
-  const cols = Math.max(...currentTemplate.value.grid.map(s => s.colEnd)) - 1
-  const rows = Math.max(...currentTemplate.value.grid.map(s => s.rowEnd)) - 1
-  return {
-    gridTemplateColumns: `repeat(${cols}, 1fr)`,
-    gridTemplateRows: `repeat(${rows}, 1fr)`,
-    aspectRatio: '1200 / 800',
-    gap: mergeGap.value + 'px',
-  }
-})
-
+// 槽位样式
 const slotStyle = (slot: TemplateSlot) => ({
   gridColumn: `${slot.colStart} / ${slot.colEnd}`,
   gridRow: `${slot.rowStart} / ${slot.rowEnd}`,
 })
+
+// 计算每个槽位的像素坐标（基于 1200x800 画布）
+const getSlotRect = (si: number) => {
+  if (!currentTemplate.value) return null
+  const tpl = currentTemplate.value
+  const cols = Math.max(...tpl.grid.map(s => s.colEnd)) - 1
+  const rows = Math.max(...tpl.grid.map(s => s.rowEnd)) - 1
+  const gap = mergeGap.value
+  const slotW = (canvasWidth.value - gap * (cols - 1)) / cols
+  const slotH = (canvasHeight.value - gap * (rows - 1)) / rows
+  const slot = tpl.grid[si]
+  const col = slot.colStart - 1
+  const row = slot.rowStart - 1
+  const colSpan = slot.colEnd - slot.colStart
+  const rowSpan = slot.rowEnd - slot.rowStart
+  return {
+    x: col * (slotW + gap),
+    y: row * (slotH + gap),
+    w: slotW * colSpan + gap * (colSpan - 1),
+    h: slotH * rowSpan + gap * (rowSpan - 1),
+  }
+}
+
+// 绘制 Canvas
+const drawCanvas = () => {
+  const canvas = mergeCanvas.value
+  if (!canvas || !currentTemplate.value) return
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+
+  // 设置画布尺寸（只设置一次，避免重置）
+  if (canvas.width !== canvasWidth.value || canvas.height !== canvasHeight.value) {
+    canvas.width = canvasWidth.value
+    canvas.height = canvasHeight.value
+  }
+
+  // 背景
+  const bg = mergeBgColor.value
+  if (bg && bg !== 'transparent' && bg !== '') {
+    ctx.fillStyle = bg
+    ctx.fillRect(0, 0, canvasWidth.value, canvasHeight.value)
+  } else {
+    // 透明背景：绘制棋盘格
+    const checkerSize = 20
+    for (let y = 0; y < canvasHeight.value; y += checkerSize) {
+      for (let x = 0; x < canvasWidth.value; x += checkerSize) {
+        ctx.fillStyle = ((x / checkerSize + y / checkerSize) % 2 === 0) ? '#ffffff' : '#e0e0e0'
+        ctx.fillRect(x, y, checkerSize, checkerSize)
+      }
+    }
+  }
+
+  // 绘制每个槽位的图片
+  const isLongImage = currentTemplate.value.longImage
+  currentTemplate.value.grid.forEach((slot, si) => {
+    const imgIdx = slotMap.value[si]
+    if (imgIdx === null) return
+    const mergeImg = mergeImages.value[imgIdx]
+    if (!mergeImg) return
+
+    const rect = getSlotRect(si)
+    if (!rect) return
+
+    const img = mergeImg.img
+    if (!img) return
+
+    const userScale = slotScales.value[si] || 1.0
+    const offsetX = slotOffsets.value[si]?.x || 0
+    const offsetY = slotOffsets.value[si]?.y || 0
+
+    // 长图模式：contain（不裁剪，完整显示）
+    // 普通模式：cover（填满槽位，裁剪溢出）
+    const baseScale = isLongImage
+      ? Math.min(rect.w / img.width, rect.h / img.height)
+      : Math.max(rect.w / img.width, rect.h / img.height)
+    const scale = baseScale * userScale
+    const scaledW = img.width * scale
+    const scaledH = img.height * scale
+
+    if (isLongImage) {
+      // contain 模式：居中放置，不裁剪
+      const drawX = rect.x + (rect.w - scaledW) / 2 + offsetX
+      const drawY = rect.y + (rect.h - scaledH) / 2 + offsetY
+      ctx.drawImage(img, drawX, drawY, scaledW, scaledH)
+    } else {
+      // cover 模式：裁剪溢出部分
+      // 偏移直接在画布坐标系中应用
+      const centerX = rect.x + rect.w / 2 + offsetX
+      const centerY = rect.y + rect.h / 2 + offsetY
+      const drawX = centerX - scaledW / 2
+      const drawY = centerY - scaledH / 2
+
+      ctx.save()
+      ctx.beginPath()
+      ctx.rect(rect.x, rect.y, rect.w, rect.h)
+      ctx.clip()
+
+      ctx.drawImage(img, drawX, drawY, scaledW, scaledH)
+
+      ctx.restore()
+    }
+  })
+}
 
 // 选择模板
 const selectTemplate = (tpl: Template) => {
@@ -566,6 +775,10 @@ const selectTemplate = (tpl: Template) => {
     }
   }
   slotMap.value = newSlots
+  // 确保偏移和缩放数组长度匹配
+  while (slotOffsets.value.length < tpl.grid.length) slotOffsets.value.push({ x: 0, y: 0 })
+  while (slotScales.value.length < tpl.grid.length) slotScales.value.push(1.0)
+  nextTick(() => drawCanvas())
 }
 
 // 选择图片
@@ -587,19 +800,28 @@ const selectMergeFiles = async () => {
 
     let thumb = ''
     try {
-      // 使用原图而非缩略图，避免预览模糊
       const fullBase64 = await invoke<string>('read_file_base64', { filePath: path })
       thumb = 'data:image/png;base64,' + fullBase64
     } catch { /* ignore */ }
 
-    mergeImages.value.push({ path, name, size, thumb })
+    // 预加载 Image 对象用于 Canvas 绘制（使用 base64 data URL）
+    let img: HTMLImageElement | undefined
+    try {
+      img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const el = new Image()
+        el.onload = () => resolve(el)
+        el.onerror = reject
+        el.src = thumb
+      })
+    } catch { /* ignore */ }
+
+    mergeImages.value.push({ path, name, size, thumb, img })
   }
 
   // 自动选择首个匹配模板
   if (!currentTemplate.value && availableTemplates.value.length > 0) {
     selectTemplate(availableTemplates.value[0])
   } else if (currentTemplate.value) {
-    // 已有模板：刷新 slotMap（selectTemplate 会自动按图片顺序填充）
     selectTemplate(currentTemplate.value)
   }
 
@@ -609,17 +831,16 @@ const selectMergeFiles = async () => {
 // 删除图片
 const removeMergeImage = (index: number) => {
   mergeImages.value.splice(index, 1)
-  // 从 slotMap 中移除，并重新映射
   slotMap.value = slotMap.value.map(s => {
     if (s === null) return null
     if (s === index) return null
     return s > index ? s - 1 : s
   })
-  // 检查模板是否仍可用
   if (currentTemplate.value && currentTemplate.value.count > mergeImages.value.length) {
     currentTemplate.value = null
     slotMap.value = []
   }
+  nextTick(() => drawCanvas())
 }
 
 // 清空
@@ -627,166 +848,138 @@ const clearMergeImages = () => {
   mergeImages.value = []
   slotMap.value = []
   currentTemplate.value = null
-  mergeResult.value = null
   error.value = ''
+  nextTick(() => drawCanvas())
 }
 
-// 拖拽状态（已废弃，改用点击交换）
-const selectedSlot = ref<number | null>(null)
+// 获取点击位置对应的槽位索引
+const getSlotAtPoint = (clientX: number, clientY: number): number | null => {
+  const canvas = mergeCanvas.value
+  if (!canvas || !currentTemplate.value) return null
+  const rect = canvas.getBoundingClientRect()
+  const scaleX = canvasWidth.value / rect.width
+  const scaleY = canvasHeight.value / rect.height
+  const x = (clientX - rect.left) * scaleX
+  const y = (clientY - rect.top) * scaleY
 
-// 点击槽位：选中 → 交换（如果发生了拖拽则不交换）
-const onSlotClick = (slotIndex: number) => {
-  if (panState.value?.moved) {
-    panState.value.moved = false
-    return
+  for (let si = 0; si < currentTemplate.value.grid.length; si++) {
+    const slotRect = getSlotRect(si)
+    if (!slotRect) continue
+    if (x >= slotRect.x && x <= slotRect.x + slotRect.w &&
+        y >= slotRect.y && y <= slotRect.y + slotRect.h) {
+      return si
+    }
   }
+  return null
+}
+
+// 点击：选中/交换
+const onCanvasClick = (e: MouseEvent) => {
+  const si = getSlotAtPoint(e.clientX, e.clientY)
+  if (si === null) return
+
   if (selectedSlot.value === null) {
-    selectedSlot.value = slotIndex
-  } else if (selectedSlot.value === slotIndex) {
+    selectedSlot.value = si
+  } else if (selectedSlot.value === si) {
     selectedSlot.value = null
   } else {
     const from = selectedSlot.value
     const temp = slotMap.value[from]
-    slotMap.value[from] = slotMap.value[slotIndex]
-    slotMap.value[slotIndex] = temp
-    // 交换偏移
+    slotMap.value[from] = slotMap.value[si]
+    slotMap.value[si] = temp
+    // 交换偏移和缩放
     const offFrom = slotOffsets.value[from] || { x: 0, y: 0 }
-    const offTo = slotOffsets.value[slotIndex] || { x: 0, y: 0 }
+    const offTo = slotOffsets.value[si] || { x: 0, y: 0 }
     slotOffsets.value[from] = offTo
-    slotOffsets.value[slotIndex] = offFrom
+    slotOffsets.value[si] = offFrom
+    const scaleFrom = slotScales.value[from] || 1.0
+    const scaleTo = slotScales.value[si] || 1.0
+    slotScales.value[from] = scaleTo
+    slotScales.value[si] = scaleFrom
     selectedSlot.value = null
   }
+  nextTick(() => drawCanvas())
 }
 
-// 平移：鼠标按下
-const onSlotMouseDown = (e: MouseEvent, slotIndex: number) => {
-  if (slotMap.value[slotIndex] === null) return
-  panState.value = { slotIndex, startX: e.clientX, startY: e.clientY, moved: false }
+// 鼠标按下：按住 Alt 开始平移
+const onCanvasMouseDown = (e: MouseEvent) => {
+  if (!e.altKey) return
+  e.preventDefault()
+  const si = getSlotAtPoint(e.clientX, e.clientY)
+  if (si === null || slotMap.value[si] === null) return
+  panState.value = { slotIndex: si, startX: e.clientX, startY: e.clientY, moved: false }
 }
 
-// 平移：鼠标移动
-const onSlotMouseMove = (e: MouseEvent, slotIndex: number) => {
-  if (!panState.value || panState.value.slotIndex !== slotIndex) return
-  const dx = e.clientX - panState.value.startX
-  const dy = e.clientY - panState.value.startY
-  if (Math.abs(dx) > PAN_THRESHOLD || Math.abs(dy) > PAN_THRESHOLD) {
-    panState.value.moved = true
+// 鼠标移动：平移
+const onCanvasMouseMove = (e: MouseEvent) => {
+  if (panState.value) {
+    const dx = e.clientX - panState.value.startX
+    const dy = e.clientY - panState.value.startY
+    if (!panState.value.moved && (Math.abs(dx) > PAN_THRESHOLD || Math.abs(dy) > PAN_THRESHOLD)) {
+      panState.value.moved = true
+    }
+    if (panState.value.moved) {
+      const canvas = mergeCanvas.value
+      if (canvas) {
+        const rect = canvas.getBoundingClientRect()
+        const scaleX = canvasWidth.value / rect.width
+        const scaleY = canvasHeight.value / rect.height
+        const off = slotOffsets.value[panState.value.slotIndex] || { x: 0, y: 0 }
+        slotOffsets.value[panState.value.slotIndex] = {
+          x: (off.x || 0) + dx * scaleX,
+          y: (off.y || 0) + dy * scaleY,
+        }
+      }
+      panState.value.startX = e.clientX
+      panState.value.startY = e.clientY
+      drawCanvas()
+    }
   }
-  if (panState.value.moved) {
-    const off = slotOffsets.value[slotIndex] || { x: 0, y: 0 }
-    off.x = (off.x || 0) + dx
-    off.y = (off.y || 0) + dy
-    slotOffsets.value[slotIndex] = off
-    panState.value.startX = e.clientX
-    panState.value.startY = e.clientY
-  }
 }
 
-// 平移：鼠标松开
-const onSlotMouseUp = () => {
+// 鼠标松开
+const onCanvasMouseUp = () => {
   panState.value = null
 }
 
-// 图片在槽位内的 object-position（控制裁剪区域）
-const slotImgPosition = (si: number) => {
-  const off = slotOffsets.value[si]
-  if (!off || (!off.x && !off.y)) return 'center'
-  // 使用像素值：50% 居中 + 偏移
-  return `calc(50% + ${off.x}px) calc(50% + ${off.y}px)`
+// 滚轮缩放（需按住 Ctrl）
+const onCanvasWheel = (e: WheelEvent) => {
+  if (!e.ctrlKey) return
+  e.preventDefault()
+  const si = getSlotAtPoint(e.clientX, e.clientY)
+  if (si === null || slotMap.value[si] === null) return
+  const current = slotScales.value[si] || 1.0
+  const delta = e.deltaY > 0 ? -0.1 : 0.1
+  slotScales.value[si] = Math.max(0.5, Math.min(5.0, current + delta))
+  drawCanvas()
 }
 
-// 拖拽开始（已废弃，保留引用避免 TS 报错）
-const onDragStart = (slotIndex: number) => {
-  selectedSlot.value = slotIndex
+// 重置单个槽位
+const resetSlotTransform = (si: number) => {
+  slotScales.value[si] = 1.0
+  slotOffsets.value[si] = { x: 0, y: 0 }
+  drawCanvas()
 }
 
-// 拖拽结束
-const onDragEnd = () => {
-  dragFromSlot.value = null
-  dragOverSlot.value = null
+// 重置所有槽位
+const resetAllSlots = () => {
+  slotScales.value = slotScales.value.map(() => 1.0)
+  slotOffsets.value = slotOffsets.value.map(() => ({ x: 0, y: 0 }))
+  drawCanvas()
 }
 
-// 拖拽经过
-const onDragOver = (slotIndex: number) => {
-  dragOverSlot.value = slotIndex
-}
-
-// 拖拽离开
-const onDragLeave = () => {
-  dragOverSlot.value = null
-}
-
-// 放置
-const onDrop = (targetSlot: number) => {
-  if (dragFromSlot.value === null) return
-  const from = dragFromSlot.value
-  // 交换两个槽位的图片
-  const temp = slotMap.value[from]
-  slotMap.value[from] = slotMap.value[targetSlot]
-  slotMap.value[targetSlot] = temp
-  dragFromSlot.value = null
-  dragOverSlot.value = null
-}
-
-// 生成拼图
-const handleTemplateMerge = async () => {
-  if (!currentTemplate.value || !hasFilledSlots.value) return
-  error.value = ''
-  mergeLoading.value = true
-
+// 下载结果（直接导出 Canvas）
+const downloadMergeResult = async () => {
+  const canvas = mergeCanvas.value
+  if (!canvas) return
   try {
-    const cols = Math.max(...currentTemplate.value.grid.map(s => s.colEnd)) - 1
-    const rows = Math.max(...currentTemplate.value.grid.map(s => s.rowEnd)) - 1
-    const canvasWidth = 1200
-    const canvasHeight = 800
-    const gap = mergeGap.value
-
-    const slotWidth = (canvasWidth - gap * (cols - 1)) / cols
-    const slotHeight = (canvasHeight - gap * (rows - 1)) / rows
-
-    const images: { file_path: string; x: number; y: number; width: number; height: number }[] = []
-
-    currentTemplate.value.grid.forEach((slot, si) => {
-      const imgIdx = slotMap.value[si]
-      if (imgIdx === null) return
-      const img = mergeImages.value[imgIdx]
-      if (!img) return
-
-      const col = slot.colStart - 1
-      const row = slot.rowStart - 1
-      const colSpan = slot.colEnd - slot.colStart
-      const rowSpan = slot.rowEnd - slot.rowStart
-
-      images.push({
-        file_path: img.path,
-        x: Math.round(col * (slotWidth + gap)),
-        y: Math.round(row * (slotHeight + gap)),
-        width: Math.round(slotWidth * colSpan + gap * (colSpan - 1)),
-        height: Math.round(slotHeight * rowSpan + gap * (rowSpan - 1)),
-      })
-    })
-
-    const result = await invoke<{ base64: string; width: number; height: number }>('image_template_merge', {
-      images,
-      canvasWidth,
-      canvasHeight,
-      bgColor: mergeBgColor.value,
-      gap,
-    })
-
-    mergeResult.value = result
-    ElMessage.success('拼图生成完成')
+    const dataUrl = canvas.toDataURL('image/png')
+    const blob = await fetch(dataUrl).then(r => r.blob())
+    await saveFileWithDialog(blob, 'merged.png', 'png')
+    ElMessage.success('下载完成')
   } catch (e: any) {
     error.value = e
-  } finally {
-    mergeLoading.value = false
   }
-}
-
-const downloadMergeResult = async () => {
-  if (!mergeResult.value) return
-  const blob = base64ToBlob(mergeResult.value.base64)
-  await saveFileWithDialog(blob, 'merged.png', 'png')
 }
 
 // ============ Tab 3: 加水印 ============
@@ -1171,6 +1364,15 @@ html.light .image-tabs :deep(.el-tabs__header) {
   height: 100%;
   object-fit: cover;
   pointer-events: none;
+}
+.merge-slot-img-wrapper {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform-origin: center center;
 }
 .merge-slot-placeholder {
   font-size: 12px;
