@@ -543,10 +543,18 @@ const slotStyle = (slot: TemplateSlot) => ({
 // 选择模板
 const selectTemplate = (tpl: Template) => {
   currentTemplate.value = tpl
-  // 保留已有图片映射，多余槽位留空，不足的用 null 填充
   const newSlots: (number | null)[] = new Array(tpl.grid.length).fill(null)
-  for (let i = 0; i < Math.min(tpl.grid.length, slotMap.value.length); i++) {
-    newSlots[i] = slotMap.value[i]
+
+  // 如果已有槽位映射，保留它；否则按图片顺序填充
+  const hasExisting = slotMap.value.some(s => s !== null)
+  if (hasExisting) {
+    for (let i = 0; i < Math.min(tpl.grid.length, slotMap.value.length); i++) {
+      newSlots[i] = slotMap.value[i]
+    }
+  } else {
+    for (let i = 0; i < Math.min(tpl.grid.length, mergeImages.value.length); i++) {
+      newSlots[i] = i
+    }
   }
   slotMap.value = newSlots
 }
@@ -581,14 +589,8 @@ const selectMergeFiles = async () => {
   if (!currentTemplate.value && availableTemplates.value.length > 0) {
     selectTemplate(availableTemplates.value[0])
   } else if (currentTemplate.value) {
-    // 更新 slotMap：新图片填充到空槽位
-    const tpl = currentTemplate.value
-    let imgIdx = 0
-    const newSlots: (number | null)[] = new Array(tpl.grid.length).fill(null)
-    for (let i = 0; i < tpl.grid.length && imgIdx < mergeImages.value.length; i++) {
-      newSlots[i] = imgIdx++
-    }
-    slotMap.value = newSlots
+    // 已有模板：刷新 slotMap（selectTemplate 会自动按图片顺序填充）
+    selectTemplate(currentTemplate.value)
   }
 
   error.value = ''
