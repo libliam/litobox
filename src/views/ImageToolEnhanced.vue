@@ -128,11 +128,16 @@
             }"
             :style="slotStyle(slot)"
             @click="onSlotClick(si)"
+            @mousedown="onSlotMouseDown($event, si)"
+            @mousemove="onSlotMouseMove($event, si)"
+            @mouseup="onSlotMouseUp"
+            @mouseleave="onSlotMouseUp"
           >
             <img
               v-if="slotMap[si] !== null && mergeImages[slotMap[si]!]"
               :src="mergeImages[slotMap[si]!].thumb"
               class="merge-slot-img"
+              :style="{ objectPosition: slotImgPosition(si) }"
             />
             <span v-else class="merge-slot-placeholder">点击交换</span>
           </div>
@@ -488,18 +493,28 @@ const mergeGap = ref(4)
 const mergeResult = ref<{ base64: string; width: number; height: number } | null>(null)
 const mergeLoading = ref(false)
 
-// 拖拽状态
-const dragFromSlot = ref<number | null>(null)
-const dragOverSlot = ref<number | null>(null)
+// 槽位内图片的平移偏移（像素），用于调整裁剪区域
+interface SlotOffset { x: number; y: number }
+const slotOffsets = ref<SlotOffset[]>([])
+
+// 点击交换状态
+const selectedSlot = ref<number | null>(null)
+
+// 槽位内平移状态
+const panState = ref<{ slotIndex: number; startX: number; startY: number; moved: boolean } | null>(null)
+const PAN_THRESHOLD = 5 // 超过此像素视为拖拽而非点击
 
 const mergeResultUrl = computed(() =>
   mergeResult.value ? 'data:image/png;base64,' + mergeResult.value.base64 : ''
 )
 
-// 根据图片数量过滤可用模板
-const availableTemplates = computed(() =>
-  TEMPLATES.filter(t => t.count <= mergeImages.value.length)
-)
+// 根据图片数量过滤可用模板（优先显示图片数完全匹配的）
+const availableTemplates = computed(() => {
+  const n = mergeImages.value.length
+  const exact = TEMPLATES.filter(t => t.count === n)
+  if (exact.length > 0) return exact
+  return TEMPLATES.filter(t => t.count <= n)
+})
 
 // 至少有 1 个槽位有图片
 const hasFilledSlots = computed(() =>
@@ -572,8 +587,9 @@ const selectMergeFiles = async () => {
 
     let thumb = ''
     try {
-      const thumbBase64 = await invoke<string>('get_thumbnail', { filePath: path })
-      thumb = 'data:image/jpeg;base64,' + thumbBase64
+      // 使用原图而非缩略图，避免预览模糊
+      const fullBase64 = await invoke<string>('read_file_base64', { filePath: path })
+      thumb = 'data:image/png;base64,' + fullBase64
     } catch { /* ignore */ }
 
     mergeImages.value.push({ path, name, size, thumb })
@@ -618,22 +634,65 @@ const clearMergeImages = () => {
 // 拖拽状态（已废弃，改用点击交换）
 const selectedSlot = ref<number | null>(null)
 
-// 点击槽位：选中 → 交换
+// 点击槽位：选中 → 交换（如果发生了拖拽则不交换）
 const onSlotClick = (slotIndex: number) => {
+  if (panState.value?.moved) {
+    panState.value.moved = false
+    return
+  }
   if (selectedSlot.value === null) {
-    // 首次点击：选中该槽位
     selectedSlot.value = slotIndex
   } else if (selectedSlot.value === slotIndex) {
-    // 再次点击同一槽位：取消选中
     selectedSlot.value = null
   } else {
-    // 点击另一个槽位：交换
     const from = selectedSlot.value
     const temp = slotMap.value[from]
     slotMap.value[from] = slotMap.value[slotIndex]
     slotMap.value[slotIndex] = temp
+    // 交换偏移
+    const offFrom = slotOffsets.value[from] || { x: 0, y: 0 }
+    const offTo = slotOffsets.value[slotIndex] || { x: 0, y: 0 }
+    slotOffsets.value[from] = offTo
+    slotOffsets.value[slotIndex] = offFrom
     selectedSlot.value = null
   }
+}
+
+// 平移：鼠标按下
+const onSlotMouseDown = (e: MouseEvent, slotIndex: number) => {
+  if (slotMap.value[slotIndex] === null) return
+  panState.value = { slotIndex, startX: e.clientX, startY: e.clientY, moved: false }
+}
+
+// 平移：鼠标移动
+const onSlotMouseMove = (e: MouseEvent, slotIndex: number) => {
+  if (!panState.value || panState.value.slotIndex !== slotIndex) return
+  const dx = e.clientX - panState.value.startX
+  const dy = e.clientY - panState.value.startY
+  if (Math.abs(dx) > PAN_THRESHOLD || Math.abs(dy) > PAN_THRESHOLD) {
+    panState.value.moved = true
+  }
+  if (panState.value.moved) {
+    const off = slotOffsets.value[slotIndex] || { x: 0, y: 0 }
+    off.x = (off.x || 0) + dx
+    off.y = (off.y || 0) + dy
+    slotOffsets.value[slotIndex] = off
+    panState.value.startX = e.clientX
+    panState.value.startY = e.clientY
+  }
+}
+
+// 平移：鼠标松开
+const onSlotMouseUp = () => {
+  panState.value = null
+}
+
+// 图片在槽位内的 object-position（控制裁剪区域）
+const slotImgPosition = (si: number) => {
+  const off = slotOffsets.value[si]
+  if (!off || (!off.x && !off.y)) return 'center'
+  // 使用像素值：50% 居中 + 偏移
+  return `calc(50% + ${off.x}px) calc(50% + ${off.y}px)`
 }
 
 // 拖拽开始（已废弃，保留引用避免 TS 报错）
@@ -1096,8 +1155,9 @@ html.light .image-tabs :deep(.el-tabs__header) {
   justify-content: center;
   overflow: hidden;
   min-height: 60px;
-  transition: border-color 0.2s, opacity 0.2s;
+  transition: border-color 0.2s;
   cursor: pointer;
+  user-select: none;
 }
 .merge-slot-selected {
   border-color: var(--color-accent);
@@ -1110,10 +1170,7 @@ html.light .image-tabs :deep(.el-tabs__header) {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  cursor: grab;
-}
-.merge-slot-img:active {
-  cursor: grabbing;
+  pointer-events: none;
 }
 .merge-slot-placeholder {
   font-size: 12px;
