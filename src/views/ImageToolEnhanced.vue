@@ -123,24 +123,18 @@
             :key="si"
             class="merge-slot"
             :class="{
-              'merge-slot-drag-over': dragOverSlot === si,
+              'merge-slot-selected': selectedSlot === si,
               'merge-slot-empty': slotMap[si] === null,
-              'merge-slot-dragging': dragFromSlot === si,
             }"
             :style="slotStyle(slot)"
-            @dragover.prevent="onDragOver(si)"
-            @dragleave="onDragLeave"
-            @drop="onDrop(si)"
+            @click="onSlotClick(si)"
           >
             <img
               v-if="slotMap[si] !== null && mergeImages[slotMap[si]!]"
               :src="mergeImages[slotMap[si]!].thumb"
               class="merge-slot-img"
-              draggable="true"
-              @dragstart="onDragStart(si)"
-              @dragend="onDragEnd"
             />
-            <span v-else class="merge-slot-placeholder">拖入图片</span>
+            <span v-else class="merge-slot-placeholder">点击交换</span>
           </div>
         </div>
       </div>
@@ -621,9 +615,30 @@ const clearMergeImages = () => {
   error.value = ''
 }
 
-// 拖拽开始
+// 拖拽状态（已废弃，改用点击交换）
+const selectedSlot = ref<number | null>(null)
+
+// 点击槽位：选中 → 交换
+const onSlotClick = (slotIndex: number) => {
+  if (selectedSlot.value === null) {
+    // 首次点击：选中该槽位
+    selectedSlot.value = slotIndex
+  } else if (selectedSlot.value === slotIndex) {
+    // 再次点击同一槽位：取消选中
+    selectedSlot.value = null
+  } else {
+    // 点击另一个槽位：交换
+    const from = selectedSlot.value
+    const temp = slotMap.value[from]
+    slotMap.value[from] = slotMap.value[slotIndex]
+    slotMap.value[slotIndex] = temp
+    selectedSlot.value = null
+  }
+}
+
+// 拖拽开始（已废弃，保留引用避免 TS 报错）
 const onDragStart = (slotIndex: number) => {
-  dragFromSlot.value = slotIndex
+  selectedSlot.value = slotIndex
 }
 
 // 拖拽结束
@@ -1082,12 +1097,14 @@ html.light .image-tabs :deep(.el-tabs__header) {
   overflow: hidden;
   min-height: 60px;
   transition: border-color 0.2s, opacity 0.2s;
+  cursor: pointer;
 }
-.merge-slot-drag-over {
+.merge-slot-selected {
   border-color: var(--color-accent);
+  box-shadow: 0 0 8px var(--color-accent);
 }
-.merge-slot-dragging {
-  opacity: 0.4;
+.merge-slot-empty {
+  border-style: dashed;
 }
 .merge-slot-img {
   width: 100%;
