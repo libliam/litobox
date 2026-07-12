@@ -391,8 +391,8 @@ pub async fn get_audio_preview(
 
 fn do_get_audio_preview(path: &str, start: f64, end: f64) -> Result<String, String> {
     let duration = end - start;
-    if duration < 0.1 || duration > 60.0 {
-        return Err("预览区间需在 0.1-60 秒之间".to_string());
+    if duration < 0.1 {
+        return Err("预览区间不能小于 0.1 秒".to_string());
     }
 
     let (samples, sample_rate, channels) = decode_audio_segment(path, start, end)?;
