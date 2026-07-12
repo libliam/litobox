@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::io::Cursor;
+use std::os::windows::process::CommandExt;
 use tauri::Emitter;
 
 // ============ 数据结构 ============
@@ -28,6 +29,7 @@ pub struct CropOptions {
     pub output_format: String,
     pub mp3_bitrate: u32,
     pub output_path: Option<String>,
+    pub use_ffmpeg: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -293,16 +295,144 @@ fn guess_format(path: &str) -> String {
     }
 }
 
+// ============ ffmpeg 辅助 ============
+
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+fn ffmpeg_available() -> bool {
+    std::process::Command::new("ffmpeg")
+        .arg("-version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW)
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+fn ffprobe_available() -> bool {
+    std::process::Command::new("ffprobe")
+        .arg("-version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW)
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+fn get_audio_info_via_ffprobe(path: &str) -> Result<AudioInfo, String> {
+    let metadata = std::fs::metadata(path)
+        .map_err(|e| format!("无法读取文件: {}", e))?;
+    let file_size = metadata.len();
+    let format = guess_format(path);
+
+    let output = std::process::Command::new("ffprobe")
+        .args(&["-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", path])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map_err(|e| format!("ffprobe 执行失败: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value = serde_json::from_str(&stdout)
+        .map_err(|e| format!("ffprobe 输出解析失败: {}", e))?;
+
+    let format_info = &json["format"];
+    let duration = format_info["duration"].as_str()
+        .and_then(|s| s.parse::<f64>().ok())
+        .unwrap_or(0.0);
+
+    let stream = &json["streams"][0];
+    let sample_rate = stream["sample_rate"].as_str()
+        .and_then(|s| s.parse::<u32>().ok())
+        .unwrap_or(44100);
+    let channels = stream["channels"].as_u64().unwrap_or(2) as u16;
+    let bitrate = format_info["bit_rate"].as_str()
+        .and_then(|s| s.parse::<u32>().ok())
+        .map(|b| b / 1000)
+        .unwrap_or(0);
+
+    Ok(AudioInfo { duration, sample_rate, channels, format, bitrate, file_size })
+}
+
+fn crop_via_ffmpeg(app_handle: &tauri::AppHandle, path: &str, options: &CropOptions) -> Result<CropResult, String> {
+    let duration = options.end_time - options.start_time;
+    let ext = &options.output_format;
+    let input_stem = std::path::Path::new(path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("audio");
+    let output_path = if let Some(ref custom_path) = options.output_path {
+        std::path::PathBuf::from(custom_path)
+    } else {
+        std::path::Path::new(path)
+            .parent()
+            .unwrap_or(std::path::Path::new("."))
+            .join(format!("{}_cropped.{}", input_stem, ext))
+    };
+
+    let _ = app_handle.emit("audio-crop-progress", serde_json::json!({ "progress": 10.0 }));
+
+    let mut cmd = std::process::Command::new("ffmpeg");
+    cmd.arg("-y")
+        .arg("-ss").arg(format!("{:.3}", options.start_time))
+        .arg("-t").arg(format!("{:.3}", duration))
+        .arg("-i").arg(path)
+        .creation_flags(CREATE_NO_WINDOW);
+
+    match options.output_format.as_str() {
+        "mp3" => {
+            cmd.arg("-acodec").arg("libmp3lame")
+                .arg("-b:a").arg(format!("{}k", options.mp3_bitrate));
+        }
+        "wav" => {
+            cmd.arg("-acodec").arg("pcm_s16le");
+        }
+        _ => return Err("不支持的输出格式".to_string()),
+    };
+
+    cmd.arg(output_path.to_string_lossy().to_string());
+
+    let _ = app_handle.emit("audio-crop-progress", serde_json::json!({ "progress": 30.0 }));
+
+    let output = cmd.output()
+        .map_err(|e| format!("ffmpeg 执行失败: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("ffmpeg 裁剪失败: {}", stderr));
+    }
+
+    let _ = app_handle.emit("audio-crop-progress", serde_json::json!({ "progress": 100.0 }));
+
+    let output_size = std::fs::metadata(&output_path).map(|m| m.len()).unwrap_or(0);
+
+    Ok(CropResult {
+        output_path: output_path.to_string_lossy().to_string(),
+        output_size,
+        duration,
+    })
+}
+
 // ============ Tauri 命令 ============
 
 #[tauri::command]
-pub async fn get_audio_info(path: String) -> Result<AudioInfo, String> {
-    tauri::async_runtime::spawn_blocking(move || do_get_audio_info(&path))
+pub fn check_ffmpeg() -> bool {
+    ffmpeg_available() && ffprobe_available()
+}
+
+#[tauri::command]
+pub async fn get_audio_info(path: String, use_ffmpeg: bool) -> Result<AudioInfo, String> {
+    tauri::async_runtime::spawn_blocking(move || do_get_audio_info(&path, use_ffmpeg))
         .await
         .map_err(|e| format!("任务执行失败: {}", e))?
 }
 
-fn do_get_audio_info(path: &str) -> Result<AudioInfo, String> {
+fn do_get_audio_info(path: &str, use_ffmpeg: bool) -> Result<AudioInfo, String> {
+    if use_ffmpeg {
+        return get_audio_info_via_ffprobe(path);
+    }
+
     let metadata = std::fs::metadata(path)
         .map_err(|e| format!("无法读取文件: {}", e))?;
     let file_size = metadata.len();
@@ -379,6 +509,10 @@ fn do_audio_crop(app_handle: tauri::AppHandle, path: &str, options: &CropOptions
     let duration = options.end_time - options.start_time;
     if duration < 0.1 {
         return Err("裁剪区间不能小于 0.1 秒".to_string());
+    }
+
+    if options.use_ffmpeg {
+        return crop_via_ffmpeg(&app_handle, path, options);
     }
 
     let _ = app_handle.emit("audio-crop-progress", serde_json::json!({ "progress": 10.0 }));

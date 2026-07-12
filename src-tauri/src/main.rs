@@ -142,6 +142,7 @@ fn main() {
             image_tools::image_template_merge,
             image_tools::image_watermark,
             image_tools::image_palette,
+            audio_tools::check_ffmpeg,
             audio_tools::get_audio_info,
             audio_tools::generate_waveform,
             audio_tools::audio_crop,

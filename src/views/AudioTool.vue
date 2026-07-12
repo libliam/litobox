@@ -1,5 +1,16 @@
 <template>
   <div class="tool-container">
+    <!-- ffmpeg 状态提示 -->
+    <div class="ffmpeg-banner" :class="{ 'ffmpeg-detected': useFfmpeg, 'ffmpeg-missing': !useFfmpeg }" v-if="ffmpegChecked">
+      <template v-if="useFfmpeg">
+        <span class="ffmpeg-icon">🚀</span> ffmpeg 已启用，处理速度更快
+      </template>
+      <template v-else>
+        <span class="ffmpeg-icon">💡</span>
+        未检测到 ffmpeg，安装可获得更快的处理速度和更准确的音频信息。
+        <a href="https://ffmpeg.org/download.html" target="_blank" class="ffmpeg-link">如何安装？</a>
+      </template>
+    </div>
     <!-- 文件选择 -->
     <div class="tool-card">
       <div class="card-header">
@@ -186,6 +197,8 @@ const isLoadingInfo = ref(false)
 const isPreviewing = ref(false)
 const saveToSamePath = ref(true)
 const cropProgress = ref(0)
+const useFfmpeg = ref(false)
+const ffmpegChecked = ref(false)
 const error = ref('')
 
 // ============ 计算属性 ============
@@ -394,7 +407,7 @@ async function openFile() {
     fileName.value = (selected as string).split(/[/\\]/).pop() || ''
 
     isLoadingInfo.value = true
-    const info: AudioInfo = await invoke('get_audio_info', { path: filePath.value })
+    const info: AudioInfo = await invoke('get_audio_info', { path: filePath.value, useFfmpeg: useFfmpeg.value })
     audioInfo.value = info
 
     const wf: WaveformData = await invoke('generate_waveform', { path: filePath.value })
@@ -455,6 +468,7 @@ async function cropAudio() {
         output_format: outputFormat.value,
         mp3_bitrate: mp3Bitrate.value,
         output_path: outputPath,
+        use_ffmpeg: useFfmpeg.value,
       },
     })
 
@@ -494,7 +508,13 @@ function formatDuration(seconds: number): string {
 // ============ 响应式 ============
 let resizeObserver: ResizeObserver | null = null
 
-onMounted(() => {
+onMounted(async () => {
+  // 检测 ffmpeg
+  try {
+    useFfmpeg.value = await invoke('check_ffmpeg')
+  } catch { /* 忽略 */ }
+  ffmpegChecked.value = true
+
   if (canvasRef.value) {
     resizeObserver = new ResizeObserver(() => drawWaveform())
     resizeObserver.observe(canvasRef.value)
@@ -586,5 +606,41 @@ watch([startTime, endTime], () => drawWaveform())
   margin-top: 8px;
   color: var(--accent-cyan);
   font-size: 13px;
+}
+
+/* ffmpeg 状态横幅 */
+.ffmpeg-banner {
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ffmpeg-banner.ffmpeg-detected {
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: var(--accent-green);
+}
+
+.ffmpeg-banner.ffmpeg-missing {
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  color: var(--accent-blue);
+}
+
+.ffmpeg-icon {
+  font-size: 16px;
+}
+
+.ffmpeg-link {
+  color: var(--accent-cyan);
+  margin-left: 4px;
+}
+
+.ffmpeg-link:hover {
+  text-decoration: underline;
 }
 </style>
