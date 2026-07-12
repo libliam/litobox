@@ -49,8 +49,8 @@
         </div>
         <div class="action-grid" style="margin-top: 8px">
           <div class="action-group">
-            <el-button size="small" @click="togglePreview" :type="isPreviewing ? 'danger' : 'default'" :loading="isPreviewing && !audioSource">
-              {{ isPreviewing ? (audioSource ? '⏹ 停止' : '加载中…') : '▶ 预览选中区域' }}
+            <el-button size="small" @click="togglePreview" :type="isPreviewing ? 'danger' : 'default'" :loading="isPreviewLoading">
+              {{ isPreviewing ? (isPreviewLoading ? '加载中…' : '⏹ 停止') : '▶ 预览选中区域' }}
             </el-button>
           </div>
         </div>
@@ -307,6 +307,7 @@ function onCanvasMouseDown(e: MouseEvent) {
 let audioCtx: AudioContext | null = null
 let audioSource: AudioBufferSourceNode | null = null
 let previewAbortFlag = false
+const isPreviewLoading = ref(false)
 
 async function togglePreview() {
   if (isPreviewing.value) {
@@ -319,6 +320,7 @@ async function togglePreview() {
 async function previewAudio() {
   // 立即标记为预览中，按钮变为"停止"
   isPreviewing.value = true
+  isPreviewLoading.value = true
   previewAbortFlag = false
   error.value = ''
   // 停止之前的播放
@@ -357,11 +359,13 @@ async function previewAudio() {
     audioSource.connect(audioCtx.destination)
     audioSource.onended = () => { isPreviewing.value = false }
     audioSource.start()
+    isPreviewLoading.value = false
   } catch (e: any) {
     if (!previewAbortFlag) {
       error.value = '预览播放失败: ' + (typeof e === 'string' ? e : e.message || e)
     }
     isPreviewing.value = false
+    isPreviewLoading.value = false
   }
 }
 
@@ -373,6 +377,7 @@ function stopPreview() {
     audioSource = null
   }
   isPreviewing.value = false
+  isPreviewLoading.value = false
 }
 
 // ============ 文件操作 ============
