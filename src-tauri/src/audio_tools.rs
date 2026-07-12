@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::io::Cursor;
+use tauri::Emitter;
 
 // ============ 数据结构 ============
 
@@ -26,6 +27,7 @@ pub struct CropOptions {
     pub end_time: f64,
     pub output_format: String,
     pub mp3_bitrate: u32,
+    pub output_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -36,6 +38,40 @@ pub struct CropResult {
 }
 
 // ============ 内部函数 ============
+
+/// 快速探测音频元信息（不完整解码，仅读取头部/首帧）
+fn probe_audio(path: &str) -> Result<(u32, u16, f64), String> {
+    let fmt = guess_format(path);
+    if fmt == "wav" {
+        // WAV 头可直接读取完整信息
+        let reader = hound::WavReader::open(path)
+            .map_err(|e| format!("无法读取 WAV 文件: {}", e))?;
+        let spec = reader.spec();
+        let duration = reader.duration() as f64 / spec.sample_rate as f64;
+        return Ok((spec.sample_rate, spec.channels, duration));
+    }
+
+    // MP3: 用 symphonia 探测首帧获取参数
+    let file = std::fs::File::open(path)
+        .map_err(|e| format!("无法打开文件: {}", e))?;
+    let mss = symphonia::core::io::MediaSourceStream::new(Box::new(file), Default::default());
+    let hint = symphonia::core::probe::Hint::new();
+    let probed = symphonia::default::get_probe()
+        .format(&hint, mss, &Default::default(), &Default::default())
+        .map_err(|e| format!("不支持的音频格式: {}", e))?;
+
+    let track = probed.format.default_track().ok_or("未找到音频轨道")?;
+    let params = track.codec_params.clone();
+    let sample_rate = params.sample_rate.unwrap_or(44100);
+    let channels = params.channels.map(|c| c.count() as u16).unwrap_or(2);
+
+    // MP3 的 n_frames 可能为空，此时 duration = 0（前端用 generate_waveform 更新）
+    let duration = params.n_frames.and_then(|n| {
+        params.time_base.map(|tb| n as f64 * tb.numer as f64 / tb.denom as f64)
+    }).unwrap_or(0.0);
+
+    Ok((sample_rate, channels, duration))
+}
 
 /// 解码整个音频文件，返回 (PCM f32 samples, sample_rate, channels)
 fn decode_audio_full(path: &str) -> Result<(Vec<f32>, u32, u16), String> {
@@ -276,9 +312,7 @@ fn do_get_audio_info(path: &str) -> Result<AudioInfo, String> {
         return Err("不支持的音频格式，仅支持 MP3/WAV".to_string());
     }
 
-    let (samples, sample_rate, channels) = decode_audio_full(path)?;
-    let total_samples = samples.len() / channels as usize;
-    let duration = total_samples as f64 / sample_rate as f64;
+    let (sample_rate, channels, duration) = probe_audio(path)?;
 
     let bitrate = if duration > 0.0 {
         ((file_size as f64 * 8.0) / duration / 1000.0) as u32
@@ -329,15 +363,16 @@ fn do_generate_waveform(path: &str) -> Result<WaveformData, String> {
 
 #[tauri::command]
 pub async fn audio_crop(
+    app_handle: tauri::AppHandle,
     path: String,
     options: CropOptions,
 ) -> Result<CropResult, String> {
-    tauri::async_runtime::spawn_blocking(move || do_audio_crop(&path, &options))
+    tauri::async_runtime::spawn_blocking(move || do_audio_crop(app_handle, &path, &options))
         .await
         .map_err(|e| format!("任务执行失败: {}", e))?
 }
 
-fn do_audio_crop(path: &str, options: &CropOptions) -> Result<CropResult, String> {
+fn do_audio_crop(app_handle: tauri::AppHandle, path: &str, options: &CropOptions) -> Result<CropResult, String> {
     if options.start_time < 0.0 || options.end_time <= options.start_time {
         return Err("起止时间非法".to_string());
     }
@@ -346,7 +381,11 @@ fn do_audio_crop(path: &str, options: &CropOptions) -> Result<CropResult, String
         return Err("裁剪区间不能小于 0.1 秒".to_string());
     }
 
+    let _ = app_handle.emit("audio-crop-progress", serde_json::json!({ "progress": 10.0 }));
+
     let (samples, sample_rate, channels) = decode_audio_segment(path, options.start_time, options.end_time)?;
+
+    let _ = app_handle.emit("audio-crop-progress", serde_json::json!({ "progress": 50.0 }));
 
     let output_bytes = match options.output_format.as_str() {
         "mp3" => encode_mp3(&samples, sample_rate, channels, options.mp3_bitrate)?,
@@ -354,18 +393,27 @@ fn do_audio_crop(path: &str, options: &CropOptions) -> Result<CropResult, String
         _ => return Err("不支持的输出格式".to_string()),
     };
 
+    let _ = app_handle.emit("audio-crop-progress", serde_json::json!({ "progress": 80.0 }));
+
+    // 确定输出路径：用户指定 > 源文件目录
     let ext = &options.output_format;
     let input_stem = std::path::Path::new(path)
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("audio");
-    let output_path = std::path::Path::new(path)
-        .parent()
-        .unwrap_or(std::path::Path::new("."))
-        .join(format!("{}_cropped.{}", input_stem, ext));
+    let output_path = if let Some(ref custom_path) = options.output_path {
+        std::path::PathBuf::from(custom_path)
+    } else {
+        std::path::Path::new(path)
+            .parent()
+            .unwrap_or(std::path::Path::new("."))
+            .join(format!("{}_cropped.{}", input_stem, ext))
+    };
 
     std::fs::write(&output_path, &output_bytes)
         .map_err(|e| format!("写入文件失败: {}", e))?;
+
+    let _ = app_handle.emit("audio-crop-progress", serde_json::json!({ "progress": 100.0 }));
 
     let output_size = output_bytes.len() as u64;
 

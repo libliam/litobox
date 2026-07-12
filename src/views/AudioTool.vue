@@ -110,6 +110,13 @@
         <div class="segment-info" v-if="audioInfo">
           片段时长: {{ formatDuration(segmentDuration) }}
         </div>
+        <div class="action-grid" style="margin-top: 8px">
+          <div class="action-group">
+            <el-checkbox v-model="saveToSamePath" size="small">
+              与源文件相同路径
+            </el-checkbox>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -139,7 +146,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
-import { open } from '@tauri-apps/plugin-dialog'
+import { open, save } from '@tauri-apps/plugin-dialog'
+import { listen } from '@tauri-apps/api/event'
 import { ElMessage } from 'element-plus'
 
 // ============ 类型定义 ============
@@ -176,6 +184,7 @@ const mp3Bitrate = ref(192)
 const isProcessing = ref(false)
 const isLoadingInfo = ref(false)
 const isPreviewing = ref(false)
+const saveToSamePath = ref(true)
 const cropProgress = ref(0)
 const error = ref('')
 
@@ -396,6 +405,28 @@ async function cropAudio() {
     isProcessing.value = true
     cropProgress.value = 0
 
+    // 监听进度事件
+    let unlisten: (() => void) | undefined
+    const unlistenPromise = listen<{ progress: number }>('audio-crop-progress', (event) => {
+      cropProgress.value = Math.round(event.payload.progress)
+    }).then(fn => { unlisten = fn })
+
+    // 确定输出路径
+    let outputPath: string | null = null
+    if (!saveToSamePath.value) {
+      const defaultName = fileName.value.replace(/\.[^.]+$/, '') + '_cropped.' + outputFormat.value
+      outputPath = await save({
+        defaultPath: defaultName,
+        filters: [{ name: '音频文件', extensions: [outputFormat.value] }],
+      })
+      if (!outputPath) {
+        isProcessing.value = false
+        return // 用户取消
+      }
+    }
+
+    await unlistenPromise
+
     const result: CropResult = await invoke('audio_crop', {
       path: filePath.value,
       options: {
@@ -403,6 +434,7 @@ async function cropAudio() {
         end_time: endTime.value,
         output_format: outputFormat.value,
         mp3_bitrate: mp3Bitrate.value,
+        output_path: outputPath,
       },
     })
 
