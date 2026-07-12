@@ -30,8 +30,8 @@
         <span class="card-title">波形预览</span>
       </div>
       <div class="card-body">
-        <div class="waveform-container" ref="waveformContainer">
-          <canvas ref="canvasRef" class="waveform-canvas" @mousedown="onCanvasMouseDown"></canvas>
+        <div class="waveform-container" ref="waveformContainer" @contextmenu.prevent>
+          <canvas ref="canvasRef" class="waveform-canvas" @mousedown="onCanvasMouseDown" @contextmenu.prevent></canvas>
           <div
             class="slider-handle start-handle"
             :style="{ left: timeToPercent(startTime) + '%' }"
@@ -307,6 +307,9 @@ async function togglePreview() {
 }
 
 async function previewAudio() {
+  // 先停止之前的播放，避免重音
+  stopPreview()
+
   try {
     error.value = ''
     const base64Wav: string = await invoke('get_audio_preview', {
@@ -342,6 +345,7 @@ async function previewAudio() {
 function stopPreview() {
   if (audioSource) {
     try { audioSource.stop() } catch (_) { /* 忽略已停止错误 */ }
+    audioSource.disconnect()
     audioSource = null
   }
   isPreviewing.value = false
