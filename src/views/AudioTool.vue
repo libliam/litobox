@@ -49,8 +49,8 @@
         </div>
         <div class="action-grid" style="margin-top: 8px">
           <div class="action-group">
-            <el-button size="small" @click="togglePreview" :type="isPreviewing ? 'danger' : 'default'">
-              {{ isPreviewing ? '⏹ 停止' : '▶ 预览选中区域' }}
+            <el-button size="small" @click="togglePreview" :type="isPreviewing ? 'danger' : 'default'" :loading="isPreviewing && !audioSource">
+              {{ isPreviewing ? (audioSource ? '⏹ 停止' : '加载中…') : '▶ 预览选中区域' }}
             </el-button>
           </div>
         </div>
@@ -306,26 +306,37 @@ function onCanvasMouseDown(e: MouseEvent) {
 // ============ 音频预览 ============
 let audioCtx: AudioContext | null = null
 let audioSource: AudioBufferSourceNode | null = null
+let previewAbortFlag = false
 
 async function togglePreview() {
   if (isPreviewing.value) {
     stopPreview()
     return
   }
-  await previewAudio()
+  previewAudio()
 }
 
 async function previewAudio() {
-  // 先停止之前的播放，避免重音
-  stopPreview()
+  // 立即标记为预览中，按钮变为"停止"
+  isPreviewing.value = true
+  previewAbortFlag = false
+  error.value = ''
+  // 停止之前的播放
+  if (audioSource) {
+    try { audioSource.stop() } catch (_) { /* 忽略 */ }
+    audioSource.disconnect()
+    audioSource = null
+  }
 
   try {
-    error.value = ''
     const base64Wav: string = await invoke('get_audio_preview', {
       path: filePath.value,
       start: startTime.value,
       end: endTime.value,
     })
+
+    // 加载期间被取消
+    if (previewAbortFlag) return
 
     const binaryStr = atob(base64Wav)
     const bytes = new Uint8Array(binaryStr.length)
@@ -338,20 +349,24 @@ async function previewAudio() {
     }
     await audioCtx.resume()
 
+    if (previewAbortFlag) return
+
     const audioBuffer = await audioCtx.decodeAudioData(bytes.buffer.slice(0))
     audioSource = audioCtx.createBufferSource()
     audioSource.buffer = audioBuffer
     audioSource.connect(audioCtx.destination)
     audioSource.onended = () => { isPreviewing.value = false }
     audioSource.start()
-    isPreviewing.value = true
   } catch (e: any) {
-    error.value = '预览播放失败: ' + (typeof e === 'string' ? e : e.message || e)
+    if (!previewAbortFlag) {
+      error.value = '预览播放失败: ' + (typeof e === 'string' ? e : e.message || e)
+    }
     isPreviewing.value = false
   }
 }
 
 function stopPreview() {
+  previewAbortFlag = true
   if (audioSource) {
     try { audioSource.stop() } catch (_) { /* 忽略已停止错误 */ }
     audioSource.disconnect()
