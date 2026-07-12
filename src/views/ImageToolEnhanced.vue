@@ -708,7 +708,7 @@ const drawCanvas = () => {
 
   // 绘制每个槽位的图片
   const isLongImage = currentTemplate.value.longImage
-  currentTemplate.value.grid.forEach((slot, si) => {
+  currentTemplate.value.grid.forEach((_slot, si) => {
     const imgIdx = slotMap.value[si]
     if (imgIdx === null) return
     const mergeImg = mergeImages.value[imgIdx]
@@ -951,13 +951,6 @@ const onCanvasWheel = (e: WheelEvent) => {
   const current = slotScales.value[si] || 1.0
   const delta = e.deltaY > 0 ? -0.1 : 0.1
   slotScales.value[si] = Math.max(0.5, Math.min(5.0, current + delta))
-  drawCanvas()
-}
-
-// 重置单个槽位
-const resetSlotTransform = (si: number) => {
-  slotScales.value[si] = 1.0
-  slotOffsets.value[si] = { x: 0, y: 0 }
   drawCanvas()
 }
 

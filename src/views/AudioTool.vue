@@ -3,12 +3,16 @@
     <!-- ffmpeg 状态提示 -->
     <div class="ffmpeg-banner" :class="{ 'ffmpeg-detected': useFfmpeg, 'ffmpeg-missing': !useFfmpeg }" v-if="ffmpegChecked">
       <template v-if="useFfmpeg">
-        <span class="ffmpeg-icon">🚀</span> ffmpeg 已启用，处理速度更快
+        <span class="ffmpeg-icon">🚀</span> ffmpeg 已启用，处理速度更快、音频信息更准确
       </template>
       <template v-else>
         <span class="ffmpeg-icon">💡</span>
-        未检测到 ffmpeg，安装可获得更快的处理速度和更准确的音频信息。
-        <a href="https://ffmpeg.org/download.html" target="_blank" class="ffmpeg-link">如何安装？</a>
+        未检测到 ffmpeg，当前使用内置引擎（功能完整，速度较慢）。
+        <span class="ffmpeg-tip">
+          安装 ffmpeg 可加速处理：
+          <code class="ffmpeg-cmd">winget install ffmpeg</code>
+          <a href="https://www.wikihow.com/Install-FFmpeg-on-Windows" target="_blank" class="ffmpeg-link">详细教程</a>
+        </span>
       </template>
     </div>
     <!-- 文件选择 -->
@@ -439,10 +443,9 @@ async function cropAudio() {
     cropProgress.value = 0
 
     // 监听进度事件
-    let unlisten: (() => void) | undefined
-    const unlistenPromise = listen<{ progress: number }>('audio-crop-progress', (event) => {
+    const unlisten = await listen<{ progress: number }>('audio-crop-progress', (event) => {
       cropProgress.value = Math.round(event.payload.progress)
-    }).then(fn => { unlisten = fn })
+    })
 
     // 确定输出路径
     let outputPath: string | null = null
@@ -453,12 +456,11 @@ async function cropAudio() {
         filters: [{ name: '音频文件', extensions: [outputFormat.value] }],
       })
       if (!outputPath) {
+        unlisten()
         isProcessing.value = false
         return // 用户取消
       }
     }
-
-    await unlistenPromise
 
     const result: CropResult = await invoke('audio_crop', {
       path: filePath.value,
@@ -472,6 +474,7 @@ async function cropAudio() {
       },
     })
 
+    unlisten()
     cropProgress.value = 100
     ElMessage.success(`裁剪完成，已保存到: ${result.output_path}`)
   } catch (e: any) {
@@ -642,5 +645,19 @@ watch([startTime, endTime], () => drawWaveform())
 
 .ffmpeg-link:hover {
   text-decoration: underline;
+}
+
+.ffmpeg-tip {
+  margin-left: 8px;
+}
+
+.ffmpeg-cmd {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 12px;
+  color: var(--accent-orange);
+  user-select: all;
 }
 </style>

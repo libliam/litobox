@@ -22,3 +22,13 @@ Base commit: b7d4a4e
 - Task 2: `get_collect_status_returns_none_when_empty` 测试清空全局 `COLLECT_STATE`，单线程测试无干扰，若未来并行测试需重新评估 → defer
 - Task 5 review-package diff 文件中文乱码（PowerShell Out-File 编码问题），源码 UTF-8 正常，不影响功能 → defer
 - 跨切面: post-kill 刷新被 `collect()` 重入拦截跳过（kill 时若已有采集在跑，刷新被忽略，用户可手动点刷新）→ defer，可接受权衡
+
+Plan: docs/superpowers/plans/2026-07-13-audio-crop.md
+Spec: docs/superpowers/specs/2026-07-13-audio-crop-design.md
+Base commit: 988cdc5
+
+## Task Progress
+
+| Task | Status | Commit(s) | Notes |
+|------|--------|-----------|-------|
+| 1: ���� Rust ���� | ? | 12c5a84 | review clean; mp3lame-encoder 0.5��0.2.4 (API ������֪��Task 3 ����) |
