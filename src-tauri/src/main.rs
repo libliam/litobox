@@ -13,6 +13,7 @@ mod disk_analyzer;
 mod file_searcher;
 mod icon_generator;
 mod image_tools;
+mod audio_tools;
 
 use tauri::{Manager, Emitter};
 use tauri_plugin_dialog::{DialogExt, MessageDialogBuilder, MessageDialogButtons, MessageDialogKind};
@@ -141,6 +142,10 @@ fn main() {
             image_tools::image_template_merge,
             image_tools::image_watermark,
             image_tools::image_palette,
+            audio_tools::get_audio_info,
+            audio_tools::generate_waveform,
+            audio_tools::audio_crop,
+            audio_tools::get_audio_preview,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
