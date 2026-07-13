@@ -1966,6 +1966,37 @@ html.light .pdf-tabs :deep(.el-tabs__header) {
 
 .compress-table {
   width: 100%;
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(0, 0, 0, 0.2);
+  --el-table-row-hover-bg-color: rgba(0, 212, 255, 0.05);
+  --el-table-border-color: var(--border-color);
+  --el-table-text-color: var(--text-primary);
+  --el-table-header-text-color: var(--text-secondary);
+}
+
+:deep(.compress-table .el-table__header th) {
+  background: rgba(0, 0, 0, 0.2);
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+:deep(.compress-table .el-table__body td) {
+  background: transparent;
+  color: var(--text-primary);
+  border-bottom: 1px solid rgba(30, 58, 95, 0.3);
+}
+
+:deep(.compress-table .el-table__body tr:hover > td) {
+  background: rgba(0, 212, 255, 0.05) !important;
+}
+
+html.light :deep(.compress-table .el-table__header th) {
+  background: #f8fafc;
+}
+
+html.light :deep(.compress-table .el-table__body td) {
+  border-bottom: 1px solid rgba(226, 232, 240, 0.5);
 }
 
 .ratio-positive {
