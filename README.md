@@ -308,6 +308,7 @@ Vibe Coding 不是一次性的对话，而是**持续进化的工程实践**：
 | V4.8 | ✅ | 图标生成器：一张图生成多尺寸 PNG 图标和 .ico 文件，支持 Favicon / App Icon 预设 |
 | V4.9 | ✅ | 模板拼图：CSS Grid 预设布局模板 + 原生拖拽交换，支持 10 种模板、图片缩放/平移、透明背景 |
 | V5.0 | ✅ | 音频裁剪工具：支持 MP3/WAV 单段裁剪，Canvas 波形可视化 + 滑块拖拽，Web Audio API 实时预览 |
+| V5.1 | ✅ | PDF 压缩：3档预设（快速/标准/极限）+ 批量处理，纯 Rust 后端（lopdf + image crate），Ghostscript 可选增强 |
 
 ---
 
