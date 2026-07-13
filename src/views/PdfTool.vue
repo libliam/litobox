@@ -470,7 +470,8 @@
         <div
           class="compress-drop-zone"
           @dragover.prevent="isDragOver = true"
-          @dragleave.prevent="isDragOver = false"
+          @dragenter.prevent="handleCompressDragEnter"
+          @dragleave.prevent="handleCompressDragLeave"
           @drop.prevent="handleCompressDrop"
           :class="{ 'drag-over': isDragOver }"
         >
@@ -599,6 +600,7 @@ const compressFiles = ref<File[]>([])
 const compressLevel = ref(2)
 const isCompressing = ref(false)
 const isDragOver = ref(false)
+const compressDragCounter = ref(0)
 const compressError = ref('')
 const gsAvailable = ref(false)
 
@@ -646,8 +648,22 @@ const handleCompressFileSelect = (e: Event) => {
   input.value = ''
 }
 
+const handleCompressDragEnter = () => {
+  compressDragCounter.value++
+  isDragOver.value = true
+}
+
+const handleCompressDragLeave = () => {
+  compressDragCounter.value--
+  if (compressDragCounter.value <= 0) {
+    compressDragCounter.value = 0
+    isDragOver.value = false
+  }
+}
+
 const handleCompressDrop = (e: DragEvent) => {
   isDragOver.value = false
+  compressDragCounter.value = 0
   const files = e.dataTransfer?.files
   if (!files) return
   addCompressFiles(Array.from(files))
