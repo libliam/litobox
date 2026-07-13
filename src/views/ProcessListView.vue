@@ -10,7 +10,7 @@
             <el-option label="按内存排序" value="memory" />
           </el-select>
           <span v-if="lastRefresh" class="refresh-time">{{ lastRefresh }}</span>
-          <el-button type="primary" size="small" :loading="loading" @click="loadData">刷新</el-button>
+          <el-button type="primary" size="small" :loading="collecting" @click="collect">刷新</el-button>
         </div>
       </div>
     </div>
@@ -19,7 +19,13 @@
       <div class="card-body"><div class="error-message">{{ error }}</div></div>
     </div>
 
-    <div v-if="data" class="tool-card">
+    <div v-if="!data || !data.length" class="tool-card">
+      <div class="card-body">
+        <el-empty description="暂无数据，点击右上角「刷新」采集进程列表" />
+      </div>
+    </div>
+
+    <div v-if="data && data.length" class="tool-card">
       <div class="card-header">
         <span class="card-title">进程 ({{ filteredData.length }} / {{ data.length }})</span>
       </div>
@@ -34,6 +40,21 @@
             <template #default="{ row }">{{ formatBytes(row.memory_bytes) }}</template>
           </el-table-column>
           <el-table-column prop="status" label="状态" width="80" />
+          <el-table-column label="操作" width="160" fixed="right">
+            <template #default="{ row }">
+              <el-button type="danger" size="small" link
+                :loading="killingPids.has(row.pid)"
+                @click="handleKill(row)">
+                结束
+              </el-button>
+              <el-button type="danger" size="small" link
+                v-if="getSameNameCount(row.name) > 1"
+                :loading="killingNames.has(row.name)"
+                @click="handleKillAll(row)">
+                全部结束
+              </el-button>
+            </template>
+          </el-table-column>
         </el-table>
       </div>
     </div>
@@ -41,18 +62,102 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
-import { ElLoading } from 'element-plus'
-import { getProcessList, formatBytes, formatTimestamp, type ProcessItem } from '@/utils/systemInfoClient'
+import { ref, computed, watch, onMounted, onActivated } from 'vue'
+import { ElMessageBox, ElMessage } from 'element-plus'
+import { killProcess, killProcessByName, formatBytes, formatTimestamp, type ProcessItem } from '@/utils/systemInfoClient'
 import { useToolboxStore } from '@/store'
+import { useBackgroundCollect } from '@/composables/useBackgroundCollect'
 
 const store = useToolboxStore()
 const data = ref<ProcessItem[]>([])
-const loading = ref(false)
 const error = ref('')
 const lastRefresh = ref('')
 const searchQuery = ref('')
 const sortBy = ref('cpu')
+
+const killingPids = ref(new Set<number>())
+const killingNames = ref(new Set<string>())
+
+const getSameNameCount = (name: string) => {
+  return data.value.filter(p => p.name === name).length
+}
+
+const handleKillAll = async (row: ProcessItem) => {
+  const count = getSameNameCount(row.name)
+  try {
+    await ElMessageBox.confirm(
+      `确定结束所有 "${row.name}" 进程？共 ${count} 个进程。\n强制结束可能导致未保存的数据丢失。`,
+      '批量结束进程确认',
+      { type: 'warning', confirmButtonText: '全部结束', cancelButtonText: '取消' }
+    )
+  } catch {
+    return
+  }
+
+  killingNames.value.add(row.name)
+  try {
+    const result = await killProcessByName(row.name)
+    store.addHistory({
+      tool: 'processList',
+      action: '结束全部同名进程',
+      inputPreview: `${row.name} (${count} 个)`,
+      outputPreview: result.message,
+      inputFull: JSON.stringify({ name: row.name, count }),
+      outputFull: JSON.stringify(result),
+    })
+    if (result.success) {
+      ElMessage.success(result.message)
+    } else if (result.message.includes('管理员')) {
+      ElMessage.error(result.message)
+    } else {
+      ElMessage.warning(result.message)
+    }
+    await new Promise(r => setTimeout(r, 300))
+    collect()
+  } catch (e) {
+    ElMessage.error(String(e))
+  } finally {
+    killingNames.value.delete(row.name)
+  }
+}
+
+const handleKill = async (row: ProcessItem) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定结束进程 "${row.name}" (PID: ${row.pid})？\n强制结束可能导致未保存的数据丢失。`,
+      '结束进程确认',
+      { type: 'warning', confirmButtonText: '结束', cancelButtonText: '取消' }
+    )
+  } catch {
+    return  // 用户取消
+  }
+
+  killingPids.value.add(row.pid)
+  try {
+    const result = await killProcess(row.pid)
+    store.addHistory({
+      tool: 'processList',
+      action: '结束进程',
+      inputPreview: `${row.name} (PID: ${row.pid})`,
+      outputPreview: result.message,
+      inputFull: JSON.stringify({ pid: row.pid, name: row.name }),
+      outputFull: JSON.stringify(result),
+    })
+    if (result.success) {
+      ElMessage.success(result.message)
+    } else if (result.message.includes('管理员') || result.message.includes('系统关键') || result.message.includes('无法结束')) {
+      ElMessage.error(result.message)
+    } else {
+      ElMessage.warning(result.message)
+    }
+    await new Promise(r => setTimeout(r, 300))
+    collect()
+  } catch (e) {
+    ElMessage.error(String(e))
+  } finally {
+    killingPids.value.delete(row.pid)
+  }
+}
 
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 const searchTrigger = ref('')
@@ -81,30 +186,27 @@ const filteredData = computed(() => {
 const sortByCpu = (a: ProcessItem, b: ProcessItem) => b.cpu_usage - a.cpu_usage
 const sortByMemory = (a: ProcessItem, b: ProcessItem) => b.memory_bytes - a.memory_bytes
 
-const loadData = async () => {
-  loading.value = true
-  error.value = ''
-  const loadingInstance = ElLoading.service({ text: '采集中...' })
-  try {
-    data.value = await getProcessList()
-    lastRefresh.value = formatTimestamp()
-    store.addHistory({
-      tool: 'processList',
-      action: '查看进程列表',
-      inputPreview: '',
-      outputPreview: `${data.value.length} 个进程`,
-      inputFull: '',
-      outputFull: data.value.map(p => `${p.name} (PID: ${p.pid})`).join('\n'),
-    })
-  } catch (e) {
-    error.value = String(e)
-  } finally {
-    loading.value = false
-    loadingInstance.close()
-  }
-}
+const { collect, collectIfEmpty, collecting } = useBackgroundCollect('process')
 
-onMounted(() => { loadData() })
+// 采集完成 → 填充数据 + 记录历史（watch 替代 onMounted，兼容 KeepAlive 缓存）
+watch(() => store.collectResults['process'], (val) => {
+  if (!val) return
+  const list = val as ProcessItem[]
+  data.value = list
+  lastRefresh.value = formatTimestamp()
+  store.addHistory({
+    tool: 'processList',
+    action: '查看进程列表',
+    inputPreview: '',
+    outputPreview: `${list.length} 个进程`,
+    inputFull: '',
+    outputFull: list.map(p => `${p.name} (PID: ${p.pid})`).join('\n'),
+  })
+}, { immediate: true })
+
+// 进入页面即自动采集（首次挂载 + KeepAlive 激活）
+onMounted(() => collectIfEmpty())
+onActivated(() => collectIfEmpty())
 </script>
 
 <style scoped>

@@ -13,6 +13,12 @@ use std::process::Command;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+use std::time::{SystemTime, UNIX_EPOCH};
+use tauri::{AppHandle, Emitter};
+use uuid::Uuid;
+
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
@@ -100,6 +106,22 @@ pub struct ProcessItem {
     pub memory_bytes: u64,
     pub status: String,
     pub command: String,
+}
+
+#[derive(Serialize, Debug)]
+pub struct KillResult {
+    pub success: bool,
+    pub pid: u32,
+    pub process_name: String,
+    pub message: String,
+}
+
+#[derive(Serialize, Debug)]
+pub struct KillBatchResult {
+    pub success: bool,
+    pub process_name: String,
+    pub killed_count: u32,
+    pub message: String,
 }
 
 #[derive(Serialize)]
@@ -319,6 +341,65 @@ fn run_powershell_json<T: for<'de> Deserialize<'de>>(script: &str) -> Result<Vec
     }
 }
 
+// ============ 进程 kill 辅助函数 ============
+
+/// 解析 taskkill 命令输出，构造友好的 KillResult
+/// ponytail: 依赖中文 Windows taskkill 输出关键词匹配，英文系统需额外适配
+fn parse_taskkill_output(
+    exit_code: i32,
+    stdout: &str,
+    stderr: &str,
+    pid: u32,
+    process_name: &str,
+) -> KillResult {
+    // taskkill 成功时 exit_code == 0
+    if exit_code == 0 {
+        let message = if process_name.is_empty() {
+            format!("已结束 PID: {}", pid)
+        } else {
+            format!("已结束 {} (PID: {})", process_name, pid)
+        };
+        return KillResult {
+            success: true,
+            pid,
+            process_name: process_name.to_string(),
+            message,
+        };
+    }
+
+    // 失败时合并 stdout + stderr 做关键词匹配
+    let combined = format!("{}\n{}", stdout, stderr);
+
+    let message = if combined.contains("拒绝访问") || combined.contains("Access is denied") {
+        "拒绝访问，可能需要管理员权限".to_string()
+    } else if combined.contains("系统关键进程") || combined.contains("critical system process") {
+        "系统关键进程，无法结束".to_string()
+    } else if combined.contains("没有找到") || combined.contains("找不到") || combined.contains("not found") {
+        "进程不存在或已退出".to_string()
+    } else {
+        // 未知错误，返回原始输出（截断 200 字符避免过长）
+        let raw = combined.trim();
+        // ponytail: 按 UTF-8 字符边界截断，避免 &raw[..200] 在中文字符中间 panic
+        let truncated = if raw.len() > 200 {
+            let mut end = 200;
+            while end < raw.len() && !raw.is_char_boundary(end) {
+                end += 1;
+            }
+            &raw[..end]
+        } else {
+            raw
+        };
+        format!("未知错误: {}", truncated)
+    };
+
+    KillResult {
+        success: false,
+        pid,
+        process_name: process_name.to_string(),
+        message,
+    }
+}
+
 // ponytail: 解析 reg query 输出行，提取指定字段值
 // 格式: "    DisplayName    REG_SZ    Value"
 fn parse_reg_line(line: &str, field: &str) -> Option<String> {
@@ -334,6 +415,99 @@ fn parse_reg_line(line: &str, field: &str) -> Option<String> {
         return None;
     }
     Some(parts[1].trim().to_string())
+}
+
+// ============ 后台采集状态 ============
+
+#[derive(serde::Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[serde(rename_all = "lowercase")]
+pub enum CollectKind {
+    System,
+    Network,
+    Process,
+    Hardware,
+    Software,
+}
+
+#[derive(serde::Serialize, Clone)]
+pub struct TaskState {
+    pub task_id: String,
+    pub kind: CollectKind,
+    pub status: String,                  // "running" | "done" | "error"
+    pub data: Option<serde_json::Value>,
+    pub error: Option<String>,
+    pub updated_at: u64,                 // unix secs
+}
+
+#[derive(serde::Serialize, Clone)]
+pub struct CollectComplete {
+    pub kind: CollectKind,
+    pub task_id: String,
+    pub ok: bool,
+    pub data: Option<serde_json::Value>,
+    pub error: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+pub struct CollectStartResult {
+    pub task_id: String,
+    pub kind: CollectKind,
+}
+
+// ponytail: 全局状态表，5 个 kind 各记最新一条任务。上限固定 5 条，无内存增长风险
+static COLLECT_STATE: OnceLock<Mutex<HashMap<CollectKind, TaskState>>> = OnceLock::new();
+
+fn collect_state() -> &'static Mutex<HashMap<CollectKind, TaskState>> {
+    COLLECT_STATE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn now_secs() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+fn upsert_state(kind: CollectKind, task_id: &str, status: &str, data: Option<serde_json::Value>, error: Option<String>) {
+    if let Ok(mut m) = collect_state().lock() {
+        m.insert(kind, TaskState {
+            task_id: task_id.to_string(),
+            kind,
+            status: status.to_string(),
+            data,
+            error,
+            updated_at: now_secs(),
+        });
+    }
+}
+
+/// 通用：启动一个后台采集任务。`work` 在 spawn_blocking 线程内执行原同步采集逻辑。
+fn spawn_collect<F, T>(app: AppHandle, kind: CollectKind, work: F) -> CollectStartResult
+where
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+    T: serde::Serialize + Send + 'static,
+{
+    let task_id = Uuid::new_v4().to_string();
+    upsert_state(kind, &task_id, "running", None, None);
+    let task_id_clone = task_id.clone();
+    let app2 = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        match work() {
+            Ok(data) => {
+                let val = serde_json::to_value(&data).unwrap_or(serde_json::Value::Null);
+                upsert_state(kind, &task_id_clone, "done", Some(val.clone()), None);
+                debug_log!("collect {:?} done, task_id={}", kind, task_id_clone);
+                let _ = app2.emit("collect-complete", CollectComplete {
+                    kind, task_id: task_id_clone, ok: true, data: Some(val), error: None,
+                });
+            }
+            Err(e) => {
+                debug_log!("collect {:?} error: {}, task_id={}", kind, e, task_id_clone);
+                upsert_state(kind, &task_id_clone, "error", None, Some(e.clone()));
+                let _ = app2.emit("collect-complete", CollectComplete {
+                    kind, task_id: task_id_clone, ok: false, data: None, error: Some(e),
+                });
+            }
+        }
+    });
+    CollectStartResult { task_id, kind }
 }
 
 // ============ 命令实现（后续 Task 填充） ============
@@ -354,8 +528,7 @@ pub fn is_admin() -> bool {
     }
 }
 
-#[tauri::command]
-pub fn get_system_info() -> Result<SystemInfo, String> {
+fn get_system_info_inner() -> Result<SystemInfo, String> {
     use sysinfo::{System, Disks};
 
     let mut sys = System::new_all();
@@ -417,8 +590,7 @@ pub fn get_system_info() -> Result<SystemInfo, String> {
     })
 }
 
-#[tauri::command]
-pub fn get_network_info() -> Result<NetworkInfo, String> {
+fn get_network_info_inner() -> Result<NetworkInfo, String> {
     use sysinfo::System;
 
     let hostname = System::host_name().unwrap_or_default();
@@ -597,8 +769,7 @@ pub fn get_network_info() -> Result<NetworkInfo, String> {
     })
 }
 
-#[tauri::command]
-pub fn get_process_list() -> Result<Vec<ProcessItem>, String> {
+fn get_process_list_inner() -> Result<Vec<ProcessItem>, String> {
     use sysinfo::System;
 
     let mut sys = System::new_all();
@@ -629,7 +800,148 @@ pub fn get_process_list() -> Result<Vec<ProcessItem>, String> {
 }
 
 #[tauri::command]
-pub fn get_hardware_info() -> Result<HardwareInfo, String> {
+pub fn kill_process(pid: u32) -> Result<KillResult, String> {
+    debug_log!("kill_process: pid={}", pid);
+
+    // 1. best-effort 预查进程名（查不到也继续，taskkill 是真相源）
+    use sysinfo::System;
+    let mut sys = System::new();
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All);
+    let process_name = sys
+        .process(sysinfo::Pid::from_u32(pid))
+        .map(|p| p.name().to_string_lossy().to_string())
+        .unwrap_or_default();
+    debug_log!("kill_process: 预查进程名 = {:?}", process_name);
+
+    // 2. 调用 taskkill /PID <pid> /F 强制结束
+    let mut cmd = Command::new("taskkill");
+    cmd.args(["/PID", &pid.to_string(), "/F"]);
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    let output = cmd.output().map_err(|e| {
+        debug_log!("kill_process: taskkill 执行失败: {}", e);
+        format!("taskkill 执行失败: {}", e)
+    })?;
+
+    // 3. GBK 解码输出（中文 Windows taskkill 输出为 GBK 编码）
+    let (stdout, _, _) = encoding_rs::GBK.decode(&output.stdout);
+    let (stderr, _, _) = encoding_rs::GBK.decode(&output.stderr);
+    let exit_code = output.status.code().unwrap_or(-1);
+    debug_log!(
+        "kill_process: exit_code={}, stdout={}, stderr={}",
+        exit_code,
+        stdout,
+        stderr
+    );
+
+    // 4. 解析输出构造结果
+    let result = parse_taskkill_output(
+        exit_code,
+        &stdout,
+        &stderr,
+        pid,
+        &process_name,
+    );
+    debug_log!("kill_process result: {:?}", result);
+
+    Ok(result)
+}
+
+/// 解析 taskkill /IM 输出，构造 KillBatchResult
+/// taskkill /IM 成功时会输出类似 "成功: 给进程 "notepad.exe" 发送了终止信号..." 并显示进程数
+fn parse_taskkill_im_output(
+    exit_code: i32,
+    stdout: &str,
+    stderr: &str,
+    process_name: &str,
+) -> KillBatchResult {
+    let combined = format!("{}\n{}", stdout, stderr);
+
+    if exit_code == 0 {
+        // taskkill /IM 成功输出会包含进程 PID 列表，数一下有多少个 "PID" 来估算 kill 数
+        // 中文: "成功: 给进程 "xxx.exe" (PID 1234) 发送了终止信号。"
+        // 英文: "SUCCESS: Sent termination signal to the process "xxx.exe" with PID 1234."
+        let count = combined.matches("PID").count() as u32;
+        let killed = if count > 0 { count } else { 1 };
+        KillBatchResult {
+            success: true,
+            process_name: process_name.to_string(),
+            killed_count: killed,
+            message: format!("已结束 {} 个 \"{}\" 进程", killed, process_name),
+        }
+    } else if combined.contains("没有找到") || combined.contains("找不到") || combined.contains("not found") {
+        KillBatchResult {
+            success: false,
+            process_name: process_name.to_string(),
+            killed_count: 0,
+            message: "没有找到同名进程".to_string(),
+        }
+    } else if combined.contains("拒绝访问") || combined.contains("Access is denied") {
+        KillBatchResult {
+            success: false,
+            process_name: process_name.to_string(),
+            killed_count: 0,
+            message: "拒绝访问，可能需要管理员权限".to_string(),
+        }
+    } else {
+        let raw = combined.trim();
+        let truncated = if raw.len() > 200 {
+            let mut end = 200;
+            while end < raw.len() && !raw.is_char_boundary(end) {
+                end += 1;
+            }
+            &raw[..end]
+        } else {
+            raw
+        };
+        KillBatchResult {
+            success: false,
+            process_name: process_name.to_string(),
+            killed_count: 0,
+            message: format!("未知错误: {}", truncated),
+        }
+    }
+}
+
+#[tauri::command]
+pub fn kill_process_by_name(process_name: String) -> Result<KillBatchResult, String> {
+    debug_log!("kill_process_by_name: name={}", process_name);
+
+    // 确保进程名带 .exe 后缀（taskkill /IM 需要完整镜像名）
+    let image_name = if process_name.to_lowercase().ends_with(".exe") {
+        process_name.clone()
+    } else {
+        format!("{}.exe", process_name)
+    };
+
+    // 调用 taskkill /IM <image_name> /F 结束所有同名进程
+    let mut cmd = Command::new("taskkill");
+    cmd.args(["/IM", &image_name, "/F"]);
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    let output = cmd.output().map_err(|e| {
+        debug_log!("kill_process_by_name: taskkill 执行失败: {}", e);
+        format!("taskkill 执行失败: {}", e)
+    })?;
+
+    // GBK 解码输出
+    let (stdout, _, _) = encoding_rs::GBK.decode(&output.stdout);
+    let (stderr, _, _) = encoding_rs::GBK.decode(&output.stderr);
+    let exit_code = output.status.code().unwrap_or(-1);
+    debug_log!(
+        "kill_process_by_name: exit_code={}, stdout={}, stderr={}",
+        exit_code,
+        stdout,
+        stderr
+    );
+
+    let result = parse_taskkill_im_output(exit_code, &stdout, &stderr, &process_name);
+    debug_log!("kill_process_by_name result: {:?}", result);
+
+    Ok(result)
+}
+
+fn get_hardware_info_inner() -> Result<HardwareInfo, String> {
     // === CPU 信息 ===
     #[derive(Deserialize)]
     struct PsCpu {
@@ -903,8 +1215,7 @@ pub fn get_hardware_info() -> Result<HardwareInfo, String> {
     })
 }
 
-#[tauri::command]
-pub fn get_software_env() -> Result<SoftwareEnv, String> {
+fn get_software_env_inner() -> Result<SoftwareEnv, String> {
     // ponytail: PowerShell 注册表访问在子进程中可能失败，改用 reg query 直接读取注册表
     // reg query 输出为 OEM 编码（中文 Windows 为 CP936），需用 encoding_rs 解码
     let mut installed_software: Vec<SoftwareItem> = Vec::new();
@@ -970,4 +1281,109 @@ pub fn get_software_env() -> Result<SoftwareEnv, String> {
         environment_variables,
         startup_items,
     })
+}
+
+// ============ 后台采集命令 ============
+
+#[tauri::command]
+pub async fn collect_system(app: AppHandle) -> Result<CollectStartResult, String> {
+    Ok(spawn_collect(app, CollectKind::System, get_system_info_inner))
+}
+
+#[tauri::command]
+pub async fn collect_network(app: AppHandle) -> Result<CollectStartResult, String> {
+    Ok(spawn_collect(app, CollectKind::Network, get_network_info_inner))
+}
+
+#[tauri::command]
+pub async fn collect_process(app: AppHandle) -> Result<CollectStartResult, String> {
+    Ok(spawn_collect(app, CollectKind::Process, get_process_list_inner))
+}
+
+#[tauri::command]
+pub async fn collect_hardware(app: AppHandle) -> Result<CollectStartResult, String> {
+    Ok(spawn_collect(app, CollectKind::Hardware, get_hardware_info_inner))
+}
+
+#[tauri::command]
+pub async fn collect_software(app: AppHandle) -> Result<CollectStartResult, String> {
+    Ok(spawn_collect(app, CollectKind::Software, get_software_env_inner))
+}
+
+#[tauri::command]
+pub fn get_collect_status(kind: CollectKind) -> Option<TaskState> {
+    collect_state().lock().ok().and_then(|m| m.get(&kind).cloned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_taskkill_success() {
+        let r = parse_taskkill_output(0, "成功: 已终止 PID 为 1234 的进程。", "", 1234, "notepad.exe");
+        assert!(r.success);
+        assert_eq!(r.pid, 1234);
+        assert_eq!(r.process_name, "notepad.exe");
+        assert!(r.message.contains("notepad.exe"));
+        assert!(r.message.contains("1234"));
+    }
+
+    #[test]
+    fn parse_taskkill_success_without_name() {
+        let r = parse_taskkill_output(0, "成功: 已终止 PID 为 1234 的进程。", "", 1234, "");
+        assert!(r.success);
+        assert_eq!(r.process_name, "");
+        assert!(r.message.contains("1234"));
+        assert!(!r.message.contains("notepad"));
+    }
+
+    #[test]
+    fn parse_taskkill_access_denied() {
+        let r = parse_taskkill_output(1, "", "错误: 无法终止 PID 1234 的进程。拒绝访问。", 1234, "");
+        assert!(!r.success);
+        assert!(r.message.contains("管理员"));
+    }
+
+    #[test]
+    fn parse_taskkill_not_found() {
+        let r = parse_taskkill_output(128, "", "错误: 没有找到进程 \"9999\"。", 9999, "");
+        assert!(!r.success);
+        assert!(r.message.contains("不存在"));
+    }
+
+    #[test]
+    fn parse_taskkill_unknown_error() {
+        let r = parse_taskkill_output(1, "", "未知错误输出内容", 1234, "");
+        assert!(!r.success);
+        assert!(r.message.contains("未知错误"));
+    }
+
+    #[test]
+    fn parse_taskkill_long_output_truncation() {
+        // 验证长输出截断不会 panic，且保留 UTF-8 字符边界
+        let long_msg = "未知错误：".to_string() + &"测试".repeat(200);
+        let r = parse_taskkill_output(1, "", &long_msg, 1234, "");
+        assert!(!r.success);
+        assert!(r.message.contains("未知错误"));
+        // 截断后消息不应超过 250 字符（200 字节上限 + "未知错误: " 前缀的字符数）
+        assert!(r.message.chars().count() < 250);
+    }
+
+    #[test]
+    fn get_collect_status_returns_none_when_empty() {
+        // 清空状态表后查询任意 kind 应返回 None
+        if let Ok(mut m) = collect_state().lock() {
+            m.clear();
+        }
+        assert!(get_collect_status(CollectKind::Process).is_none());
+    }
+
+    #[test]
+    fn collect_kind_serializes_lowercase() {
+        // 守护前后端序列化约定：前端 TS 类型为小写 union，后端必须序列化为小写
+        assert_eq!(serde_json::to_string(&CollectKind::Process).unwrap(), r#""process""#);
+        assert_eq!(serde_json::to_string(&CollectKind::System).unwrap(), r#""system""#);
+        assert_eq!(serde_json::to_string(&CollectKind::Software).unwrap(), r#""software""#);
+    }
 }

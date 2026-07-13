@@ -1,6 +1,6 @@
 [package]
 name = "litobox"
-version = "4.3.0"
+version = "5.0.0"
 description = "栗的百宝箱"
 authors = ["developer"]
 edition = "2021"
@@ -29,6 +29,14 @@ walkdir = "2.5"
 trash = "5.1"
 sha2 = "0.10"
 uuid = { version = "1.10", features = ["v4"] }
+regex = "1.10"
+image = "0.25"
+imageproc = "0.25"
+ab_glyph = "0.2"
+symphonia = { version = "0.5", features = ["mp3", "wav"], default-features = false }
+symphonia-core = "0.5"
+hound = "3.5"
+mp3lame-encoder = "0.2.4"
 
 [dev-dependencies]
 tempfile = "3.10"

@@ -5,7 +5,7 @@
         <span class="logo-icon">⚡</span>
         <div class="logo-text">
           <h1 class="app-title">栗的百宝箱</h1>
-          <span class="app-version">v4.3</span>
+          <span class="app-version">v{{ appVersion }}</span>
         </div>
       </div>
     </div>
@@ -188,6 +188,7 @@ const emit = defineEmits<{
 const store = useToolboxStore()
 const currentTheme = ref(store.config.theme)
 const isPinned = ref(false)
+const appVersion = __APP_VERSION__
 
 const expandedCategories = ref<Record<string, boolean>>({})
 
@@ -372,6 +373,7 @@ const toggleCollapse = (categoryKey: string) => {
 }
 
 const handleSelect = (toolId: string) => {
+  // 多 Tab 模式：v-model setter 走 store.openTab（已存在则激活，否则新建 tab）
   emit('update:modelValue', toolId)
   store.addRecentTool(toolId)
 }

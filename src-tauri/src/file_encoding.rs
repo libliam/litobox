@@ -232,3 +232,69 @@ pub async fn detect_file_encoding(path: String) -> Result<String, String> {
     
     Ok("UTF-8".to_string())
 }
+
+/// 读取文件并自动检测编码解码为字符串（单次读盘，供内容搜索复用）
+/// ponytail: 与 detect_file_encoding 逻辑一致但单次读盘，避免搜索时双读
+pub fn read_file_auto(path: &Path) -> Result<String, String> {
+    let bytes = fs::read(path).map_err(|e| format!("读取失败: {}", e))?;
+    // BOM 优先（与 detect_file_encoding 一致）
+    if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        return Ok(String::from_utf8_lossy(&bytes[3..]).into_owned());
+    }
+    if bytes.starts_with(&[0xFF, 0xFE]) || bytes.starts_with(&[0xFE, 0xFF]) {
+        let utf16: Vec<u16> = bytes[2..]
+            .chunks_exact(2)
+            .map(|c| {
+                if bytes[1] == 0xFE {
+                    u16::from_le_bytes([c[0], c[1]])
+                } else {
+                    u16::from_be_bytes([c[0], c[1]])
+                }
+            })
+            .collect();
+        return Ok(String::from_utf16_lossy(&utf16));
+    }
+    // 无 BOM：先试 UTF-8 严格，失败回退 GBK（与项目惯例一致）
+    match std::str::from_utf8(&bytes) {
+        Ok(s) => Ok(s.to_string()),
+        Err(_) => {
+            let (decoded, _, _) = GBK.decode(&bytes);
+            Ok(decoded.into_owned())
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn read_file_auto_handles_gbk_and_utf16() {
+        let dir = tempfile::TempDir::new().unwrap();
+
+        // GBK 文件："中文" 的 GBK 字节是 D6 D0 CE C4
+        let gbk_path = dir.path().join("gbk.txt");
+        std::fs::write(&gbk_path, [0xD6, 0xD0, 0xCE, 0xC4]).unwrap();
+        let s = read_file_auto(&gbk_path).unwrap();
+        assert_eq!(s, "中文", "GBK 文件应解码为中文");
+
+        // UTF-16 LE with BOM: "Hi" -> FF FE 48 00 69 00
+        let u16_path = dir.path().join("u16.txt");
+        let u16_bytes: Vec<u8> = vec![0xFF, 0xFE, b'H', 0x00, b'i', 0x00];
+        std::fs::write(&u16_path, u16_bytes).unwrap();
+        let s2 = read_file_auto(&u16_path).unwrap();
+        assert_eq!(s2, "Hi", "UTF-16 LE BOM 文件应正确解码");
+
+        // UTF-8 BOM
+        let u8_path = dir.path().join("u8.txt");
+        std::fs::write(&u8_path, [0xEF, 0xBB, 0xBF, b'h', b'i']).unwrap();
+        let s3 = read_file_auto(&u8_path).unwrap();
+        assert_eq!(s3, "hi", "UTF-8 BOM 文件应正确解码");
+
+        // 纯 ASCII（无 BOM）
+        let ascii_path = dir.path().join("ascii.txt");
+        std::fs::write(&ascii_path, b"plain ascii").unwrap();
+        let s4 = read_file_auto(&ascii_path).unwrap();
+        assert_eq!(s4, "plain ascii", "纯 ASCII 应原样返回");
+    }
+}

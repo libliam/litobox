@@ -5,13 +5,19 @@
         <span class="card-title">网络信息</span>
         <div class="card-actions">
           <span v-if="lastRefresh" class="refresh-time">采集于 {{ lastRefresh }}</span>
-          <el-button type="primary" size="small" :loading="loading" @click="loadData">刷新</el-button>
+          <el-button type="primary" size="small" :loading="collecting" @click="collect">刷新</el-button>
         </div>
       </div>
     </div>
 
     <div v-if="error" class="tool-card">
       <div class="card-body"><div class="error-message">{{ error }}</div></div>
+    </div>
+
+    <div v-if="!data" class="tool-card">
+      <div class="card-body">
+        <el-empty description="暂无数据，点击「刷新」采集网络信息" />
+      </div>
     </div>
 
     <template v-if="data">
@@ -42,6 +48,32 @@
       </div>
 
       <div class="tool-card">
+        <div class="card-header">
+          <span class="card-title">监听端口 ({{ filteredListeningPorts.length }} / {{ data.listening_ports.length }})</span>
+          <div class="card-actions">
+            <el-input v-model="portSearchQuery" size="small" placeholder="搜索端口/进程/PID..." style="width: 200px" clearable />
+          </div>
+        </div>
+        <div class="card-body">
+          <el-table :data="filteredListeningPorts" border size="small" max-height="400" style="width: 100%">
+            <el-table-column prop="protocol" label="协议" width="60" />
+            <el-table-column prop="local_addr" label="地址" min-width="160" />
+            <el-table-column prop="pid" label="PID" width="70" />
+            <el-table-column prop="process_name" label="进程" min-width="120" />
+            <el-table-column label="操作" width="100" fixed="right">
+              <template #default="{ row }">
+                <el-button type="danger" size="small" link
+                  :loading="killingPids.has(row.pid)"
+                  @click="handleReleasePort(row)">
+                  释放
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+      </div>
+
+      <div class="tool-card">
         <div class="card-header"><span class="card-title">活动连接 ({{ data.active_connections.length }})</span></div>
         <div class="card-body">
           <el-table :data="data.active_connections" border size="small" max-height="400" style="width: 100%">
@@ -53,58 +85,94 @@
           </el-table>
         </div>
       </div>
-
-      <div class="tool-card">
-        <div class="card-header"><span class="card-title">监听端口 ({{ data.listening_ports.length }})</span></div>
-        <div class="card-body">
-          <el-table :data="data.listening_ports" border size="small" max-height="400" style="width: 100%">
-            <el-table-column prop="protocol" label="协议" width="60" />
-            <el-table-column prop="local_addr" label="地址" min-width="160" />
-            <el-table-column prop="pid" label="PID" width="70" />
-            <el-table-column prop="process_name" label="进程" min-width="120" />
-          </el-table>
-        </div>
-      </div>
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { ElLoading } from 'element-plus'
-import { getNetworkInfo, formatTimestamp, type NetworkInfo } from '@/utils/systemInfoClient'
+import { ref, computed, watch, onMounted, onActivated } from 'vue'
+import { ElMessageBox, ElMessage } from 'element-plus'
+import { killProcess, formatTimestamp, type NetworkInfo, type ListeningPort } from '@/utils/systemInfoClient'
 import { useToolboxStore } from '@/store'
+import { useBackgroundCollect } from '@/composables/useBackgroundCollect'
 
 const store = useToolboxStore()
 const data = ref<NetworkInfo | null>(null)
-const loading = ref(false)
 const error = ref('')
 const lastRefresh = ref('')
 
-const loadData = async () => {
-  loading.value = true
-  error.value = ''
-  const loadingInstance = ElLoading.service({ text: '采集中...' })
+const killingPids = ref(new Set<number>())
+const portSearchQuery = ref('')
+
+const filteredListeningPorts = computed(() => {
+  if (!data.value) return []
+  const q = portSearchQuery.value.toLowerCase().trim()
+  if (!q) return data.value.listening_ports
+  return data.value.listening_ports.filter(p =>
+    p.local_addr.toLowerCase().includes(q) ||
+    p.process_name.toLowerCase().includes(q) ||
+    p.pid.toString().includes(q) ||
+    p.protocol.toLowerCase().includes(q)
+  )
+})
+
+const handleReleasePort = async (row: ListeningPort) => {
   try {
-    data.value = await getNetworkInfo()
-    lastRefresh.value = formatTimestamp()
+    await ElMessageBox.confirm(
+      `确定释放端口 ${row.local_addr}？\n将强制结束占用进程 "${row.process_name}" (PID: ${row.pid})。`,
+      '释放端口确认',
+      { type: 'warning', confirmButtonText: '释放', cancelButtonText: '取消' }
+    )
+  } catch {
+    return  // 用户取消
+  }
+
+  killingPids.value.add(row.pid)
+  try {
+    const result = await killProcess(row.pid)
     store.addHistory({
       tool: 'networkInfo',
-      action: '查看网络信息',
-      inputPreview: '',
-      outputPreview: `${data.value.interfaces.length} 个接口 | ${data.value.listening_ports.length} 个监听端口`,
-      inputFull: '',
-      outputFull: JSON.stringify(data.value, null, 2),
+      action: '释放端口',
+      inputPreview: `${row.local_addr} (${row.process_name} PID: ${row.pid})`,
+      outputPreview: result.message,
+      inputFull: JSON.stringify({ local_addr: row.local_addr, pid: row.pid, process_name: row.process_name }),
+      outputFull: JSON.stringify(result),
     })
+    if (result.success) {
+      ElMessage.success(result.message)
+    } else if (result.message.includes('管理员') || result.message.includes('系统关键') || result.message.includes('无法结束')) {
+      ElMessage.error(result.message)
+    } else {
+      ElMessage.warning(result.message)
+    }
+    await new Promise(r => setTimeout(r, 300))
+    collect()
   } catch (e) {
-    error.value = String(e)
+    ElMessage.error(String(e))
   } finally {
-    loading.value = false
-    loadingInstance.close()
+    killingPids.value.delete(row.pid)
   }
 }
 
-onMounted(() => { loadData() })
+const { collect, collectIfEmpty, collecting } = useBackgroundCollect('network')
+
+watch(() => store.collectResults['network'], (val) => {
+  if (!val) return
+  data.value = val as NetworkInfo
+  lastRefresh.value = formatTimestamp()
+  store.addHistory({
+    tool: 'networkInfo',
+    action: '查看网络信息',
+    inputPreview: '',
+    outputPreview: `接口 ${(val as NetworkInfo).interfaces.length} 个`,
+    inputFull: '',
+    outputFull: JSON.stringify(val),
+  })
+}, { immediate: true })
+
+// 进入页面即自动采集（首次挂载 + KeepAlive 激活）
+onMounted(() => collectIfEmpty())
+onActivated(() => collectIfEmpty())
 </script>
 
 <style scoped>

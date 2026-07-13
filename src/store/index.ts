@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import * as db from '@/utils/dbClient'
 
 export interface ToolboxConfig {
@@ -71,6 +71,9 @@ export const TOOL_LIST: ToolItem[] = [
   { id: 'calculator', name: '计算器', icon: '∑', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="10" x2="16" y2="10"/><line x1="8" y1="14" x2="12" y2="14"/><line x1="14" y1="14" x2="16" y2="14"/><line x1="8" y1="18" x2="12" y2="18"/><line x1="14" y1="18" x2="16" y2="18"/></svg>`, description: '表达式计算、单位换算、日期计算、时间戳转换', keywords: ['计算器', '计算', '单位换算', '日期', '时间戳'], category: 'utility' },
   { id: 'qr', name: '二维码', icon: 'QR', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="8" height="8" rx="1"/><rect x="14" y="2" width="8" height="8" rx="1"/><rect x="2" y="14" width="8" height="8" rx="1"/><rect x="14" y="14" width="4" height="4"/><rect x="20" y="14" width="2" height="2"/><rect x="14" y="20" width="2" height="2"/><rect x="20" y="20" width="2" height="2"/></svg>`, description: '二维码生成与解码，支持文本/URL转二维码、图片解码', keywords: ['二维码', 'qr', 'qrcode', '生成', '解码', '扫码'], category: 'utility' },
   { id: 'image', name: '图片工具', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>`, description: '图片压缩、尺寸缩放、转Base64', keywords: ['图片', '压缩', '缩放', 'base64', 'image'], category: 'utility' },
+  { id: 'imageToolEnhanced', name: '图片增强', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>`, description: '批量压缩/格式转换、图片拼接、加水印、调色板提取', keywords: ['图片', '压缩', '拼接', '水印', '调色板', '格式转换', 'image'], category: 'utility' },
+  { id: 'audioTool', name: '音频裁剪', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>`, description: '音频裁剪，支持 MP3/WAV 格式，波形可视化、实时预览', keywords: ['音频', '裁剪', 'mp3', 'wav', '波形', 'audio'], category: 'utility' },
+  { id: 'iconGenerator', name: '图标生成', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><rect x="7" y="7" width="3" height="3" rx="0.5"/><rect x="14" y="7" width="3" height="3" rx="0.5"/><rect x="7" y="14" width="3" height="3" rx="0.5"/><rect x="14" y="14" width="3" height="3" rx="0.5"/></svg>`, description: '一张图生成多尺寸图标（favicon/icon set），支持 PNG/ICO 格式', keywords: ['图标', 'icon', 'favicon', 'ico', '生成', '尺寸'], category: 'utility' },
   { id: 'ocr', name: 'OCR识别', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>`, description: '图片文字识别，支持上传和剪贴板粘贴', keywords: ['ocr', '文字识别', '图片', '识别'], category: 'utility' },
   { id: 'mockData', name: '随机数据', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/><circle cx="8" cy="8" r="1" fill="currentColor"/><circle cx="16" cy="8" r="1" fill="currentColor"/><circle cx="8" cy="16" r="1" fill="currentColor"/><circle cx="16" cy="16" r="1" fill="currentColor"/></svg>`, description: '姓名、身份证、手机号等随机生成', keywords: ['随机', '假数据', 'mock', '测试数据'], category: 'utility' },
   { id: 'fileprocessing', name: '文件处理', icon: '📁', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>`, description: '批量文本处理、文件编码转换', keywords: ['文件', '编码', '转换', '批量', '替换'], category: 'utility' },
@@ -85,6 +88,7 @@ export const TOOL_LIST: ToolItem[] = [
   { id: 'softwareEnv', name: '软件环境', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>`, description: '已安装软件、环境变量、启动项', keywords: ['软件', '环境变量', '启动项', 'env'], category: 'system' },
   { id: 'sqliteViewer', name: 'SQLite查看器', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 5v6c0 1.66-4.03 3-9 3s-9-1.34-9-3V5"/><path d="M21 11v6c0 1.66-4.03 3-9 3s-9-1.34-9-3v-6"/></svg>`, description: '浏览本地SQLite数据库表结构和数据，执行SELECT查询，导出CSV', keywords: ['sqlite', '数据库', 'db', '查询', '查看', 'database'], category: 'dev' },
   { id: 'diskAnalyzer', name: '磁盘分析', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>`, description: '分析磁盘空间占用，查找大文件和重复文件', keywords: ['磁盘', '空间', '重复', '清理', 'disk', 'space', 'duplicate'], category: 'system' },
+  { id: 'fileSearcher', name: '全文搜索', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`, description: '按文件名或内容搜索，支持正则表达式，类似 Everything + grep', keywords: ['搜索', '全文', '文件名', '内容', 'grep', 'find', 'search'], category: 'system' },
 ]
 
 const MAX_HISTORY = 100
@@ -108,10 +112,98 @@ export const useToolboxStore = defineStore('toolbox', () => {
   const history = ref<HistoryRecord[]>([])
   const recentTools = ref<string[]>([])
 
+  // ============ 后台采集状态 ============
+  type CollectKind = 'system' | 'network' | 'process' | 'hardware' | 'software'
+  const collectResults = ref<Record<CollectKind, unknown>>({
+    system: null, network: null, process: null, hardware: null, software: null,
+  })
+  const collecting = ref<Record<CollectKind, boolean>>({
+    system: false, network: false, process: false, hardware: false, software: false,
+  })
+
   const pendingHistoryRestore = ref<HistoryRestoreState | null>(null)
   let restoreTimeout: ReturnType<typeof setTimeout> | null = null
 
-  const activeTool = ref('home')
+  // ============ 多 Tab 状态 ============
+  interface Tab {
+    toolId: string  // 同工具不允许多实例，toolId 即 tab 唯一标识
+  }
+
+  const MAX_TABS = 8
+  const tabs = ref<Tab[]>([{ toolId: 'home' }])
+  const activeTabId = ref('home')
+  // 记录每个 toolId 被关闭的次数，作为 KeepAlive :key 的一部分，
+  // 关闭后重新打开时 key 变化 → 强制创建新实例（不复用旧缓存状态）
+  const closedCount = ref<Record<string, number>>({})
+
+  /** 打开工具：已存在则激活，否则新建 tab（超出上限 LRU 关闭最早非 home tab） */
+  const openTab = (toolId: string) => {
+    const existing = tabs.value.find(t => t.toolId === toolId)
+    if (existing) {
+      activeTabId.value = toolId
+      return
+    }
+    // LRU：超出上限时关闭最早的非 home tab
+    if (tabs.value.length >= MAX_TABS) {
+      const idx = tabs.value.findIndex(t => t.toolId !== 'home')
+      if (idx !== -1) {
+        const removed = tabs.value.splice(idx, 1)[0]
+        closedCount.value[removed.toolId] = (closedCount.value[removed.toolId] || 0) + 1
+      }
+    }
+    tabs.value.push({ toolId })
+    activeTabId.value = toolId
+  }
+
+  /** 切换 tab */
+  const switchTab = (toolId: string) => {
+    if (tabs.value.find(t => t.toolId === toolId)) {
+      activeTabId.value = toolId
+    }
+  }
+
+  /** 关闭 tab：home 不可关闭；关闭当前 tab 时激活相邻 tab */
+  const closeTab = (toolId: string) => {
+    if (toolId === 'home') return
+    const idx = tabs.value.findIndex(t => t.toolId === toolId)
+    if (idx === -1) return
+    tabs.value.splice(idx, 1)
+    closedCount.value[toolId] = (closedCount.value[toolId] || 0) + 1
+    // 调整 activeTabId
+    if (activeTabId.value === toolId) {
+      const next = tabs.value[Math.min(idx, tabs.value.length - 1)]
+      activeTabId.value = next ? next.toolId : 'home'
+    }
+  }
+
+  /** 关闭其他：保留 home 和指定 tab */
+  const closeOthers = (keepToolId: string) => {
+    const removed = tabs.value.filter(t => t.toolId !== 'home' && t.toolId !== keepToolId)
+    for (const t of removed) {
+      closedCount.value[t.toolId] = (closedCount.value[t.toolId] || 0) + 1
+    }
+    tabs.value = tabs.value.filter(t => t.toolId === 'home' || t.toolId === keepToolId)
+    activeTabId.value = keepToolId
+  }
+
+  /** 关闭全部：仅保留 home */
+  const closeAllTabs = () => {
+    const removed = tabs.value.filter(t => t.toolId !== 'home')
+    for (const t of removed) {
+      closedCount.value[t.toolId] = (closedCount.value[t.toolId] || 0) + 1
+    }
+    tabs.value = [{ toolId: 'home' }]
+    activeTabId.value = 'home'
+  }
+
+  /** 获取 KeepAlive 的 :key（toolId + 关闭计数，保证关闭后重开是新实例） */
+  const getTabKey = (toolId: string) => `${toolId}-${closedCount.value[toolId] || 0}`
+
+  /** 兼容旧代码：activeTool 作为计算属性指向 activeTabId，setter 走 openTab 以复用 LRU/tab 创建逻辑 */
+  const activeTool = computed({
+    get: () => activeTabId.value,
+    set: (val: string) => { openTab(val) }
+  })
 
   const triggerHistoryRestore = (data: HistoryRestoreState) => {
     if (restoreTimeout) clearTimeout(restoreTimeout)
@@ -261,5 +353,18 @@ export const useToolboxStore = defineStore('toolbox', () => {
     triggerHistoryRestore,
     clearHistoryRestore,
     activeTool,
+    // 多 Tab
+    tabs,
+    activeTabId,
+    closedCount,
+    openTab,
+    switchTab,
+    closeTab,
+    closeOthers,
+    closeAllTabs,
+    getTabKey,
+    // 后台采集
+    collectResults,
+    collecting,
   }
 })

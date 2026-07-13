@@ -10,6 +10,10 @@ mod note_manager;
 mod system_info;
 mod sqlite_viewer;
 mod disk_analyzer;
+mod file_searcher;
+mod icon_generator;
+mod image_tools;
+mod audio_tools;
 
 use tauri::{Manager, Emitter};
 use tauri_plugin_dialog::{DialogExt, MessageDialogBuilder, MessageDialogButtons, MessageDialogKind};
@@ -93,11 +97,14 @@ fn main() {
             note_manager::note_write,
             db::cmd_db_register_shortcuts,
             system_info::is_admin,
-            system_info::get_system_info,
-            system_info::get_network_info,
-            system_info::get_process_list,
-            system_info::get_hardware_info,
-            system_info::get_software_env,
+            system_info::collect_system,
+            system_info::collect_network,
+            system_info::collect_process,
+            system_info::collect_hardware,
+            system_info::collect_software,
+            system_info::get_collect_status,
+            system_info::kill_process,
+            system_info::kill_process_by_name,
             // SQLite 查看器命令
             sqlite_viewer::sqlite_list_tables,
             sqlite_viewer::sqlite_get_schema,
@@ -117,6 +124,29 @@ fn main() {
             disk_analyzer::disk_delete_files,
             disk_analyzer::disk_clear_scan,
             disk_analyzer::disk_locate_in_explorer,
+            // 全文搜索命令
+            file_searcher::file_search_start,
+            file_searcher::file_search_cancel,
+            file_searcher::file_search_status,
+            file_searcher::file_search_get_summary,
+            file_searcher::file_search_get_results,
+            file_searcher::file_search_clear,
+            // 图标生成命令
+            icon_generator::generate_icon,
+            icon_generator::read_file_base64,
+            // 图片工具增强命令
+            image_tools::get_file_info,
+            image_tools::get_thumbnail,
+            image_tools::image_compress,
+            image_tools::image_merge,
+            image_tools::image_template_merge,
+            image_tools::image_watermark,
+            image_tools::image_palette,
+            audio_tools::check_ffmpeg,
+            audio_tools::get_audio_info,
+            audio_tools::generate_waveform,
+            audio_tools::audio_crop,
+            audio_tools::get_audio_preview,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
