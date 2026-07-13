@@ -803,7 +803,7 @@ const handleSaveSingleCompressed = async (idx: number) => {
   const result = compressResults.value[idx]
   if (!result) return
   try {
-    const base64: string = await invoke('read_file_base64', { path: result.outputPath })
+    const base64: string = await invoke('read_file_base64', { filePath: result.outputPath })
     const originalName = result.fileName
     const baseName = originalName.replace(/\.pdf$/i, '')
     await saveFileWithDialog(
