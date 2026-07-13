@@ -51,13 +51,15 @@ pub async fn compress_pdf(
     file_path: String,
     level: u8,
     gs_available: bool,
+    target_dpi: Option<f64>,
+    jpeg_quality: Option<u8>,
 ) -> Result<CompressResult, String> {
     let original_size = fs::metadata(&file_path)
         .map_err(|e| format!("读取文件失败: {}", e))?
         .len();
 
     let result = tauri::async_runtime::spawn_blocking(move || {
-        do_compress_pdf(&file_path, level, gs_available)
+        do_compress_pdf(&file_path, level, gs_available, target_dpi, jpeg_quality)
     })
     .await
     .map_err(|e| format!("压缩线程异常: {}", e))??;
@@ -71,7 +73,13 @@ pub async fn compress_pdf(
     })
 }
 
-fn do_compress_pdf(file_path: &str, level: u8, gs_available: bool) -> Result<CompressResult, String> {
+fn do_compress_pdf(
+    file_path: &str,
+    level: u8,
+    gs_available: bool,
+    custom_dpi: Option<f64>,
+    custom_quality: Option<u8>,
+) -> Result<CompressResult, String> {
     let mut doc = Document::load(file_path)
         .map_err(|e| format!("PDF 加载失败: {}", e))?;
 
@@ -80,11 +88,14 @@ fn do_compress_pdf(file_path: &str, level: u8, gs_available: bool) -> Result<Com
         return Err("不支持加密 PDF".into());
     }
 
-    // 压缩参数
-    let (target_dpi, _jpeg_quality) = match level {
-        1 => (150.0, 85u8),
-        2 => (150.0, 70u8),
-        _ => (72.0, 50u8),
+    // 压缩参数：自定义覆盖预设
+    let (target_dpi, _jpeg_quality) = match (custom_dpi, custom_quality) {
+        (Some(dpi), Some(q)) => (dpi, q),
+        _ => match level {
+            1 => (150.0, 85u8),
+            2 => (150.0, 70u8),
+            _ => (72.0, 50u8),
+        },
     };
 
     // 遍历所有页面，处理图片 XObject

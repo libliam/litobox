@@ -520,6 +520,38 @@
         <div class="compress-level-hint">
           {{ compressLevelHint }}
         </div>
+        <div class="compress-custom-toggle">
+          <el-switch v-model="useCustomSettings" size="small" />
+          <span class="custom-toggle-label">自定义参数</span>
+        </div>
+        <div v-if="useCustomSettings" class="compress-custom-params">
+          <div class="custom-param">
+            <span class="param-label">图片 DPI</span>
+            <el-slider
+              v-model="customDpi"
+              :min="36"
+              :max="300"
+              :step="6"
+              size="small"
+              show-input
+              :format-tooltip="(v: number) => v + ' DPI'"
+              style="width: 220px"
+            />
+          </div>
+          <div class="custom-param">
+            <span class="param-label">JPEG 质量</span>
+            <el-slider
+              v-model="customQuality"
+              :min="10"
+              :max="100"
+              :step="5"
+              size="small"
+              show-input
+              :format-tooltip="(v: number) => v + '%'"
+              style="width: 220px"
+            />
+          </div>
+        </div>
         <div v-if="gsAvailable" class="gs-hint">
           <span>已检测到 Ghostscript，「极限压缩」将获得更佳效果</span>
         </div>
@@ -598,6 +630,9 @@ const error = ref('')
 const compressInputRef = ref<HTMLInputElement | null>(null)
 const compressFiles = ref<File[]>([])
 const compressLevel = ref(2)
+const useCustomSettings = ref(false)
+const customDpi = ref(72)
+const customQuality = ref(50)
 const isCompressing = ref(false)
 const isDragOver = ref(false)
 const compressDragCounter = ref(0)
@@ -730,6 +765,8 @@ const handleCompress = async () => {
           filePath: tempPath,
           level: compressLevel.value,
           gsAvailable: gsAvailable.value,
+          targetDpi: useCustomSettings.value ? customDpi.value : null,
+          jpegQuality: useCustomSettings.value ? customQuality.value : null,
         })
 
       const originalSize = result.original_size
@@ -1966,6 +2003,44 @@ html.light .pdf-tabs :deep(.el-tabs__header) {
   background: var(--bg-input);
   border-radius: 4px;
   line-height: 1.5;
+}
+
+.compress-custom-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: var(--bg-input);
+  border-radius: 4px;
+}
+
+.custom-toggle-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.compress-custom-params {
+  margin-top: 12px;
+  padding: 12px 16px;
+  background: var(--bg-input);
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.custom-param {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.param-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+  width: 80px;
+  flex-shrink: 0;
 }
 
 .gs-hint {
