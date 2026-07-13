@@ -14,6 +14,7 @@ mod file_searcher;
 mod icon_generator;
 mod image_tools;
 mod audio_tools;
+mod pdf_tools;
 
 use tauri::{Manager, Emitter};
 use tauri_plugin_dialog::{DialogExt, MessageDialogBuilder, MessageDialogButtons, MessageDialogKind};
@@ -147,6 +148,10 @@ fn main() {
             audio_tools::generate_waveform,
             audio_tools::audio_crop,
             audio_tools::get_audio_preview,
+            pdf_tools::detect_ghostscript,
+            pdf_tools::get_pdf_page_count,
+            pdf_tools::compress_pdf,
+            pdf_tools::save_temp_file,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
