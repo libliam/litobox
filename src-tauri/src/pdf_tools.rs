@@ -1,11 +1,13 @@
 use std::fs;
-use std::io::Cursor;
+use std::io::Read;
 use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use image::{DynamicImage, ImageFormat};
+use flate2::read::ZlibDecoder;
+use image::codecs::jpeg::JpegEncoder;
+use image::{DynamicImage, RgbImage, GrayImage, RgbaImage};
 use image::imageops::FilterType;
 use lopdf::{Document, Object, Stream, Dictionary};
 use serde::Serialize;
@@ -89,12 +91,12 @@ fn do_compress_pdf(
     }
 
     // 压缩参数：自定义覆盖预设
-    let (target_dpi, _jpeg_quality) = match (custom_dpi, custom_quality) {
+    let (target_dpi, jpeg_quality) = match (custom_dpi, custom_quality) {
         (Some(dpi), Some(q)) => (dpi, q),
         _ => match level {
-            1 => (150.0, 85u8),
-            2 => (150.0, 70u8),
-            _ => (72.0, 50u8),
+            1 => (150.0, 92u8),  // 快速：高质量，轻微压缩
+            2 => (150.0, 75u8),  // 标准：均衡质量
+            _ => (72.0, 50u8),   // 极限：低质量，最大压缩
         },
     };
 
@@ -107,7 +109,7 @@ fn do_compress_pdf(
                 if let Ok(page_dict) = page_obj.as_dict() {
                     let resources = page_dict.get(b"Resources").ok().cloned().unwrap_or(Object::Null);
                     if resources.as_dict().is_ok() {
-                        process_page_resources(&mut doc, &resources, target_dpi)?;
+                        process_page_resources(&mut doc, &resources, target_dpi, jpeg_quality, level, custom_dpi)?;
                     }
                 }
             }
@@ -173,6 +175,9 @@ fn process_page_resources(
     doc: &mut Document,
     resources: &lopdf::Object,
     target_dpi: f64,
+    jpeg_quality: u8,
+    level: u8,
+    custom_dpi: Option<f64>,
 ) -> Result<(), String> {
     let dict = match resources.as_dict() {
         Ok(d) => d,
@@ -187,29 +192,79 @@ fn process_page_resources(
                         if let Ok(stream) = obj.as_stream() {
                             let sdict = &stream.dict;
                             if sdict.get(b"Subtype").ok().map(|o| o.as_name().ok()) == Some(Some(b"Image")) {
-                                let (width, height) = (
-                                    sdict.get(b"Width").ok().and_then(|o| o.as_i64().ok()).unwrap_or(0),
-                                    sdict.get(b"Height").ok().and_then(|o| o.as_i64().ok()).unwrap_or(0),
-                                );
-                                if width > 0 && height > 0 {
-                                    let raw_data = stream.content.clone();
-                                    if let Ok(img) = image::load_from_memory(&raw_data) {
-                                        let new_img = resize_image(&img, width as u32, height as u32, target_dpi);
-                                        let mut buf = Vec::new();
-                                        if new_img.write_to(&mut Cursor::new(&mut buf), ImageFormat::Jpeg).is_ok() {
-                                            let mut new_dict = Dictionary::new();
-                                            new_dict.set("Type", Object::Name(b"XObject".to_vec()));
-                                            new_dict.set("Subtype", Object::Name(b"Image".to_vec()));
-                                            new_dict.set("Width", Object::Integer(width));
-                                            new_dict.set("Height", Object::Integer(height));
-                                            new_dict.set("ColorSpace", Object::Name(b"DeviceRGB".to_vec()));
-                                            new_dict.set("BitsPerComponent", Object::Integer(8));
-                                            new_dict.set("Filter", Object::Name(b"DCTDecode".to_vec()));
-                                            let mut new_stream = Stream::new(new_dict, buf);
-                                            let _ = new_stream.compress();
-                                            *obj = Object::Stream(new_stream);
+                                let width = sdict.get(b"Width").ok().and_then(|o| o.as_i64().ok()).unwrap_or(0) as u32;
+                                let height = sdict.get(b"Height").ok().and_then(|o| o.as_i64().ok()).unwrap_or(0) as u32;
+                                if width == 0 || height == 0 {
+                                    continue;
+                                }
+
+                                let raw_data = stream.content.clone();
+                                let bpc = sdict.get(b"BitsPerComponent").ok().and_then(|o| o.as_i64().ok()).unwrap_or(8) as u8;
+                                let color_space = sdict.get(b"ColorSpace").ok().and_then(|o| o.as_name().ok().map(|n| String::from_utf8_lossy(n).to_string())).unwrap_or_else(|| "Unknown".into());
+                                let filter = sdict.get(b"Filter").ok().and_then(|o| o.as_name().ok().map(|n| String::from_utf8_lossy(n).to_string())).unwrap_or_else(|| "None".into());
+
+                                eprintln!("[PDF压缩] 图片: {}x{}, BPC={}, ColorSpace={}, Filter={}, 数据大小={} bytes",
+                                    width, height, bpc, color_space, filter, raw_data.len());
+
+                                // 尝试构建 DynamicImage
+                                let img = build_image_from_pdf(&raw_data, width, height, sdict, bpc);
+
+                                if let Some(img) = img {
+                                    // 计算目标像素尺寸：预设档位用固定缩放比，自定义 DPI 用公式
+                                    let scale_factor = if custom_dpi.is_some() {
+                                        // 自定义模式：DPI 越低缩越狠，300=不缩，72≈25%
+                                        (target_dpi / 300.0).clamp(0.15, 1.0)
+                                    } else {
+                                        // 预设模式：只对超大图片缩放，普通图片只做 JPEG 重编码（质量降低）
+                                        let max_dim = width.max(height);
+                                        match level {
+                                            1 => {
+                                                // 快速：>4000px 缩到 85%，其余不缩
+                                                if max_dim > 4000 { 0.85 } else { 1.0 }
+                                            }
+                                            2 => {
+                                                // 标准：>3000px 缩到 75%，其余不缩
+                                                if max_dim > 3000 { 0.75 } else { 1.0 }
+                                            }
+                                            _ => {
+                                                // 极限：>800px 缩到 50%，其余不缩
+                                                if max_dim > 800 { 0.50 } else { 1.0 }
+                                            }
                                         }
+                                    };
+
+                                    let (new_w, new_h) = if scale_factor < 1.0 {
+                                        let nw = (width as f64 * scale_factor).round() as u32;
+                                        let nh = (height as f64 * scale_factor).round() as u32;
+                                        (nw.max(1), nh.max(1))
+                                    } else {
+                                        (width, height)
+                                    };
+
+                                    let resized = if (new_w, new_h) != (width, height) {
+                                        img.resize_exact(new_w, new_h, FilterType::Lanczos3)
+                                    } else {
+                                        img
+                                    };
+
+                                    let mut buf = Vec::new();
+                                    let mut encoder = JpegEncoder::new_with_quality(&mut buf, jpeg_quality);
+                                    if encoder.encode_image(&resized).is_ok() {
+                                        let mut new_dict = Dictionary::new();
+                                        new_dict.set("Type", Object::Name(b"XObject".to_vec()));
+                                        new_dict.set("Subtype", Object::Name(b"Image".to_vec()));
+                                        new_dict.set("Width", Object::Integer(new_w as i64));
+                                        new_dict.set("Height", Object::Integer(new_h as i64));
+                                        new_dict.set("ColorSpace", Object::Name(b"DeviceRGB".to_vec()));
+                                        new_dict.set("BitsPerComponent", Object::Integer(8));
+                                        new_dict.set("Filter", Object::Name(b"DCTDecode".to_vec()));
+                                        let mut new_stream = Stream::new(new_dict, buf);
+                                        let _ = new_stream.compress();
+                                        *obj = Object::Stream(new_stream);
+                                        eprintln!("[PDF压缩] 图片已压缩: {}x{} -> {}x{}, JPEG质量={}", width, height, new_w, new_h, jpeg_quality);
                                     }
+                                } else {
+                                    eprintln!("[PDF压缩] 图片解码失败，跳过: {}x{} ColorSpace={}", width, height, color_space);
                                 }
                             }
                         }
@@ -222,18 +277,91 @@ fn process_page_resources(
     Ok(())
 }
 
-fn resize_image(img: &DynamicImage, orig_width: u32, orig_height: u32, target_dpi: f64) -> DynamicImage {
-    let assumed_dpi = 300.0;
-    if target_dpi >= assumed_dpi {
-        return img.clone();
+/// 从 PDF 图片流构建 DynamicImage
+/// PDF 图片可能是：
+/// 1. DCTDecode（JPEG）— 直接解码
+/// 2. FlateDecode（zlib）— 解压后是原始像素
+/// 3. 无 Filter — 原始像素
+fn build_image_from_pdf(
+    raw_data: &[u8],
+    width: u32,
+    height: u32,
+    dict: &Dictionary,
+    bpc: u8,
+) -> Option<DynamicImage> {
+    // 优先尝试作为完整图片文件解码（DCTDecode 通常是 JPEG）
+    if let Ok(img) = image::load_from_memory(raw_data) {
+        return Some(img);
     }
-    let scale = target_dpi / assumed_dpi;
-    let new_w = (orig_width as f64 * scale) as u32;
-    let new_h = (orig_height as f64 * scale) as u32;
-    if new_w < 1 || new_h < 1 {
-        return img.clone();
+
+    // 尝试指定 JPEG 格式解码
+    if let Ok(img) = image::load_from_memory_with_format(raw_data, image::ImageFormat::Jpeg) {
+        return Some(img);
     }
-    img.resize_exact(new_w, new_h, FilterType::Lanczos3)
+
+    // 尝试指定 PNG 格式解码
+    if let Ok(img) = image::load_from_memory_with_format(raw_data, image::ImageFormat::Png) {
+        return Some(img);
+    }
+
+    // 尝试 FlateDecode 解压（zlib）
+    let decompressed = if let Ok(filter) = dict.get(b"Filter") {
+        if let Ok(name) = filter.as_name() {
+            if name == b"FlateDecode" {
+                let mut decoder = ZlibDecoder::new(raw_data);
+                let mut buf = Vec::new();
+                if decoder.read_to_end(&mut buf).is_ok() {
+                    Some(buf)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let pixel_data = decompressed.as_deref().unwrap_or(raw_data);
+
+    // 原始像素数据：根据 ColorSpace 和 BitsPerComponent 构建
+    let color_space = dict.get(b"ColorSpace").ok().and_then(|o| o.as_name().ok());
+    let channels = match color_space {
+        Some(b"DeviceGray") => 1u8,
+        Some(b"DeviceRGB") => 3u8,
+        Some(b"DeviceCMYK") => return None, // CMYK 暂不处理
+        _ => 3u8, // 默认 RGB
+    };
+
+    if bpc != 8 {
+        return None; // 只处理 8 位
+    }
+
+    let expected_len = (width * height * channels as u32) as usize;
+    if pixel_data.len() < expected_len {
+        return None; // 数据不足
+    }
+
+    let pixel_data = &pixel_data[..expected_len];
+
+    match channels {
+        1 => {
+            let img = GrayImage::from_raw(width, height, pixel_data.to_vec())?;
+            Some(DynamicImage::ImageLuma8(img))
+        }
+        3 => {
+            let img = RgbImage::from_raw(width, height, pixel_data.to_vec())?;
+            Some(DynamicImage::ImageRgb8(img))
+        }
+        4 => {
+            let img = RgbaImage::from_raw(width, height, pixel_data.to_vec())?;
+            Some(DynamicImage::ImageRgba8(img))
+        }
+        _ => None,
+    }
 }
 
 #[tauri::command]

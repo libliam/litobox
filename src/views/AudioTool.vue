@@ -15,143 +15,154 @@
         </span>
       </template>
     </div>
-    <!-- 文件选择 -->
-    <div class="tool-card">
-      <div class="card-header">
-        <span class="card-title">选择音频文件</span>
-      </div>
-      <div class="card-body">
-        <div class="action-grid">
-          <div class="action-group">
-            <el-button type="primary" size="small" @click="openFile" :loading="isLoadingInfo">
-              打开文件
-            </el-button>
-          </div>
-        </div>
-        <div v-if="filePath" class="audio-file-info">
-          <span class="file-name">{{ fileName }}</span>
-          <span class="file-detail" v-if="audioInfo">
-            {{ formatDuration(audioInfo.duration) }} | {{ audioInfo.format.toUpperCase() }} |
-            {{ audioInfo.sample_rate }}Hz | {{ audioInfo.channels === 2 ? '立体声' : '单声道' }} |
-            {{ audioInfo.bitrate }}kbps
-          </span>
-        </div>
-      </div>
+
+    <!-- Tab 栏（sticky 置顶） -->
+    <div class="tool-card sticky-card">
+      <el-tabs v-model="activeTab" class="audio-tool-tabs">
+        <el-tab-pane label="音频裁剪" name="crop" />
+      </el-tabs>
     </div>
 
-    <!-- 波形预览 -->
-    <div v-if="waveformData.points.length > 0" class="tool-card">
-      <div class="card-header">
-        <span class="card-title">波形预览</span>
-      </div>
-      <div class="card-body">
-        <div class="waveform-container" ref="waveformContainer" @contextmenu.prevent>
-          <canvas ref="canvasRef" class="waveform-canvas" @mousedown="onCanvasMouseDown" @contextmenu.prevent></canvas>
-          <div
-            class="slider-handle start-handle"
-            :style="{ left: timeToPercent(startTime) + '%' }"
-            @mousedown.stop="onSliderMouseDown($event, 'start')"
-          ></div>
-          <div
-            class="slider-handle end-handle"
-            :style="{ left: timeToPercent(endTime) + '%' }"
-            @mousedown.stop="onSliderMouseDown($event, 'end')"
-          ></div>
+    <!-- ====== Tab: 音频裁剪 ====== -->
+    <template v-if="activeTab === 'crop'">
+      <!-- 文件选择 -->
+      <div class="tool-card">
+        <div class="card-header">
+          <span class="card-title">选择音频文件</span>
         </div>
-        <div class="waveform-labels">
-          <span>{{ formatTime(startTime) }}</span>
-          <span>{{ formatTime(endTime) }}</span>
-        </div>
-        <div class="action-grid" style="margin-top: 8px">
-          <div class="action-group">
-            <el-button size="small" @click="togglePreview" :type="isPreviewing ? 'danger' : 'default'" :loading="isPreviewLoading">
-              {{ isPreviewing ? (isPreviewLoading ? '加载中…' : '⏹ 停止') : '▶ 预览选中区域' }}
-            </el-button>
+        <div class="card-body">
+          <div class="action-grid">
+            <div class="action-group">
+              <el-button type="primary" size="small" @click="openFile" :loading="isLoadingInfo">
+                打开文件
+              </el-button>
+            </div>
+          </div>
+          <div v-if="filePath" class="audio-file-info">
+            <span class="file-name">{{ fileName }}</span>
+            <span class="file-detail" v-if="audioInfo">
+              {{ formatDuration(audioInfo.duration) }} | {{ audioInfo.format.toUpperCase() }} |
+              {{ audioInfo.sample_rate }}Hz | {{ audioInfo.channels === 2 ? '立体声' : '单声道' }} |
+              {{ audioInfo.bitrate }}kbps
+            </span>
           </div>
         </div>
       </div>
-    </div>
 
-    <!-- 裁剪设置 -->
-    <div v-if="waveformData.points.length > 0" class="tool-card">
-      <div class="card-header">
-        <span class="card-title">裁剪设置</span>
-      </div>
-      <div class="card-body">
-        <div class="action-grid">
-          <div class="action-group">
-            <div class="group-label">起始时间</div>
-            <el-input-number
-              v-model="startTime"
-              :min="0"
-              :max="endTime - 0.1"
-              :step="0.1"
-              :precision="1"
-              size="small"
-              style="width: 140px"
-            />
-            <span class="unit-text">秒</span>
-          </div>
-          <div class="action-group">
-            <div class="group-label">结束时间</div>
-            <el-input-number
-              v-model="endTime"
-              :min="startTime + 0.1"
-              :max="waveformData.duration"
-              :step="0.1"
-              :precision="1"
-              size="small"
-              style="width: 140px"
-            />
-            <span class="unit-text">秒</span>
-          </div>
-          <div class="action-group">
-            <div class="group-label">输出格式</div>
-            <el-select v-model="outputFormat" size="small" style="width: 100px">
-              <el-option label="MP3" value="mp3" />
-              <el-option label="WAV" value="wav" />
-            </el-select>
-          </div>
-          <div class="action-group" v-if="outputFormat === 'mp3'">
-            <div class="group-label">比特率</div>
-            <el-select v-model="mp3Bitrate" size="small" style="width: 120px">
-              <el-option label="128 kbps" :value="128" />
-              <el-option label="192 kbps" :value="192" />
-              <el-option label="256 kbps" :value="256" />
-              <el-option label="320 kbps" :value="320" />
-            </el-select>
-          </div>
+      <!-- 波形预览 -->
+      <div v-if="waveformData.points.length > 0" class="tool-card">
+        <div class="card-header">
+          <span class="card-title">波形预览</span>
         </div>
-        <div class="segment-info" v-if="audioInfo">
-          片段时长: {{ formatDuration(segmentDuration) }}
-        </div>
-        <div class="action-grid" style="margin-top: 8px">
-          <div class="action-group">
-            <el-checkbox v-model="saveToSamePath" size="small">
-              与源文件相同路径
-            </el-checkbox>
+        <div class="card-body">
+          <div class="waveform-container" ref="waveformContainer" @contextmenu.prevent>
+            <canvas ref="canvasRef" class="waveform-canvas" @mousedown="onCanvasMouseDown" @contextmenu.prevent></canvas>
+            <div
+              class="slider-handle start-handle"
+              :style="{ left: timeToPercent(startTime) + '%' }"
+              @mousedown.stop="onSliderMouseDown($event, 'start')"
+            ></div>
+            <div
+              class="slider-handle end-handle"
+              :style="{ left: timeToPercent(endTime) + '%' }"
+              @mousedown.stop="onSliderMouseDown($event, 'end')"
+            ></div>
+          </div>
+          <div class="waveform-labels">
+            <span>{{ formatTime(startTime) }}</span>
+            <span>{{ formatTime(endTime) }}</span>
+          </div>
+          <div class="action-grid" style="margin-top: 8px">
+            <div class="action-group">
+              <el-button size="small" @click="togglePreview" :type="isPreviewing ? 'danger' : 'default'" :loading="isPreviewLoading">
+                {{ isPreviewing ? (isPreviewLoading ? '加载中…' : '⏹ 停止') : '▶ 预览选中区域' }}
+              </el-button>
+            </div>
           </div>
         </div>
       </div>
-    </div>
 
-    <!-- 操作 -->
-    <div v-if="waveformData.points.length > 0" class="tool-card">
-      <div class="card-header">
-        <span class="card-title">操作</span>
-      </div>
-      <div class="card-body">
-        <div class="action-grid">
-          <div class="action-group">
-            <el-button type="primary" size="small" @click="cropAudio" :loading="isProcessing" :disabled="!isRangeValid">
-              裁剪并导出
-            </el-button>
-            <el-button size="small" @click="resetForm">重置</el-button>
+      <!-- 裁剪设置 -->
+      <div v-if="waveformData.points.length > 0" class="tool-card">
+        <div class="card-header">
+          <span class="card-title">裁剪设置</span>
+        </div>
+        <div class="card-body">
+          <div class="action-grid">
+            <div class="action-group">
+              <div class="group-label">起始时间</div>
+              <el-input-number
+                v-model="startTime"
+                :min="0"
+                :max="endTime - 0.1"
+                :step="0.1"
+                :precision="1"
+                size="small"
+                style="width: 140px"
+              />
+              <span class="unit-text">秒</span>
+            </div>
+            <div class="action-group">
+              <div class="group-label">结束时间</div>
+              <el-input-number
+                v-model="endTime"
+                :min="startTime + 0.1"
+                :max="waveformData.duration"
+                :step="0.1"
+                :precision="1"
+                size="small"
+                style="width: 140px"
+              />
+              <span class="unit-text">秒</span>
+            </div>
+            <div class="action-group">
+              <div class="group-label">输出格式</div>
+              <el-select v-model="outputFormat" size="small" style="width: 100px">
+                <el-option label="MP3" value="mp3" />
+                <el-option label="WAV" value="wav" />
+              </el-select>
+            </div>
+            <div class="action-group" v-if="outputFormat === 'mp3'">
+              <div class="group-label">比特率</div>
+              <el-select v-model="mp3Bitrate" size="small" style="width: 120px">
+                <el-option label="128 kbps" :value="128" />
+                <el-option label="192 kbps" :value="192" />
+                <el-option label="256 kbps" :value="256" />
+                <el-option label="320 kbps" :value="320" />
+              </el-select>
+            </div>
+          </div>
+          <div class="segment-info" v-if="audioInfo">
+            片段时长: {{ formatDuration(segmentDuration) }}
+          </div>
+          <div class="action-grid" style="margin-top: 8px">
+            <div class="action-group">
+              <el-checkbox v-model="saveToSamePath" size="small">
+                与源文件相同路径
+              </el-checkbox>
+            </div>
           </div>
         </div>
-        <el-progress v-if="isProcessing" :percentage="cropProgress" :stroke-width="6" style="margin-top: 12px" />
       </div>
-    </div>
+
+      <!-- 操作 -->
+      <div v-if="waveformData.points.length > 0" class="tool-card">
+        <div class="card-header">
+          <span class="card-title">操作</span>
+        </div>
+        <div class="card-body">
+          <div class="action-grid">
+            <div class="action-group">
+              <el-button type="primary" size="small" @click="cropAudio" :loading="isProcessing" :disabled="!isRangeValid">
+                裁剪并导出
+              </el-button>
+              <el-button size="small" @click="resetForm">重置</el-button>
+            </div>
+          </div>
+          <el-progress v-if="isProcessing" :percentage="cropProgress" :stroke-width="6" style="margin-top: 12px" />
+        </div>
+      </div>
+    </template>
 
     <!-- 错误提示 -->
     <div v-if="error" class="error-message">{{ error }}</div>
@@ -186,6 +197,9 @@ interface CropResult {
   output_size: number
   duration: number
 }
+
+// ============ Tab 状态 ============
+const activeTab = ref('crop')
 
 // ============ 状态 ============
 const filePath = ref('')
@@ -402,7 +416,7 @@ async function openFile() {
   try {
     error.value = ''
     const selected = await open({
-      filters: [{ name: '音频文件', extensions: ['mp3', 'wav'] }],
+      filters: [{ name: '音频文件', extensions: ['mp3', 'wav', 'm4a'] }],
       multiple: false,
     })
     if (!selected) return
@@ -535,6 +549,44 @@ watch([startTime, endTime], () => drawWaveform())
 </script>
 
 <style scoped>
+/* ===== Tab 样式 ===== */
+.audio-tool-tabs :deep(.el-tabs__header) {
+  margin-bottom: 16px;
+  padding-left: 8px;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--bg-primary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+html.light .audio-tool-tabs :deep(.el-tabs__header) {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.audio-tool-tabs :deep(.el-tabs__nav-wrap) {
+  padding-left: 4px;
+}
+
+.audio-tool-tabs :deep(.el-tabs__item) {
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.audio-tool-tabs :deep(.el-tabs__item.is-active) {
+  color: var(--accent-cyan);
+}
+
+.audio-tool-tabs :deep(.el-tabs__active-bar) {
+  background-color: var(--accent-cyan);
+}
+
+.audio-tool-tabs :deep(.el-tabs__nav-wrap::after) {
+  background-color: var(--border-color);
+}
+
+/* ===== 页面特有样式 ===== */
 .audio-file-info {
   margin-top: 12px;
   display: flex;

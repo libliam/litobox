@@ -53,7 +53,7 @@ fn probe_audio(path: &str) -> Result<(u32, u16, f64), String> {
         return Ok((spec.sample_rate, spec.channels, duration));
     }
 
-    // MP3: 用 symphonia 探测首帧获取参数
+    // 非 WAV 格式: 用 symphonia 探测首帧获取参数
     let file = std::fs::File::open(path)
         .map_err(|e| format!("无法打开文件: {}", e))?;
     let mss = symphonia::core::io::MediaSourceStream::new(Box::new(file), Default::default());
@@ -95,7 +95,7 @@ fn decode_audio_full(path: &str) -> Result<(Vec<f32>, u32, u16), String> {
 
     let probed = symphonia::default::get_probe()
         .format(&hint, mss, &format_opts, &metadata_opts)
-        .map_err(|e| format!("不支持的音频格式，仅支持 MP3/WAV: {}", e))?;
+        .map_err(|e| format!("不支持的音频格式，仅支持 MP3/WAV/M4A: {}", e))?;
 
     let mut format = probed.format;
     let track = format.default_track().ok_or("未找到音频轨道")?;
@@ -290,6 +290,8 @@ fn guess_format(path: &str) -> String {
         "wav".to_string()
     } else if lower.ends_with(".mp3") {
         "mp3".to_string()
+    } else if lower.ends_with(".m4a") || lower.ends_with(".mp4") {
+        "m4a".to_string()
     } else {
         "unknown".to_string()
     }
@@ -439,7 +441,7 @@ fn do_get_audio_info(path: &str, use_ffmpeg: bool) -> Result<AudioInfo, String> 
 
     let format = guess_format(path);
     if format == "unknown" {
-        return Err("不支持的音频格式，仅支持 MP3/WAV".to_string());
+        return Err("不支持的音频格式，仅支持 MP3/WAV/M4A".to_string());
     }
 
     let (sample_rate, channels, duration) = probe_audio(path)?;
