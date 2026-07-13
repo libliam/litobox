@@ -33,10 +33,11 @@ regex = "1.10"
 image = "0.25"
 imageproc = "0.25"
 ab_glyph = "0.2"
-symphonia = { version = "0.5", features = ["mp3", "wav"], default-features = false }
+symphonia = { version = "0.5", features = ["mp3", "wav", "isomp4", "aac"], default-features = false }
 symphonia-core = "0.5"
 hound = "3.5"
 mp3lame-encoder = "0.2.4"
+lopdf = "0.34"
 
 [dev-dependencies]
 tempfile = "3.10"
