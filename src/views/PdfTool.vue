@@ -8,6 +8,7 @@
         <el-tab-pane label="PDF文本提取" name="textExtract" />
         <el-tab-pane label="PDF转Markdown" name="pdfToMarkdown" />
         <el-tab-pane label="PDF合并/拆分" name="mergeSplit" />
+        <el-tab-pane label="PDF压缩" name="compress" />
       </el-tabs>
     </div>
 
@@ -436,11 +437,142 @@
         <div v-if="error" class="error-message">{{ error }}</div>
       </div>
     </div>
+
+    <!-- Tab 6: PDF压缩 -->
+    <div v-if="activeTab === 'compress'" class="tool-card">
+      <div class="card-header">
+        <div class="header-left">
+          <span class="card-title">PDF 输入</span>
+          <el-tooltip placement="top" effect="dark">
+            <template #content>
+              <div class="tooltip-content">
+                <p>支持拖入多个 PDF 文件批量压缩</p>
+                <p>单文件最大 100MB</p>
+              </div>
+            </template>
+            <el-icon class="hint-icon"><QuestionFilled /></el-icon>
+          </el-tooltip>
+        </div>
+        <div class="card-actions">
+          <el-button size="small" type="primary" @click="triggerCompressInput">添加 PDF</el-button>
+          <el-button v-if="compressFiles.length" size="small" @click="handleClearCompressFiles">清空</el-button>
+        </div>
+      </div>
+      <div class="card-body">
+        <input
+          ref="compressInputRef"
+          type="file"
+          accept=".pdf"
+          multiple
+          style="display: none"
+          @change="handleCompressFileSelect"
+        />
+        <div
+          class="compress-drop-zone"
+          @dragover.prevent="isDragOver = true"
+          @dragleave.prevent="isDragOver = false"
+          @drop.prevent="handleCompressDrop"
+          :class="{ 'drag-over': isDragOver }"
+        >
+          <div v-if="compressFiles.length" class="compress-file-list">
+            <div v-for="(file, idx) in compressFiles" :key="idx" class="compress-file-item">
+              <span class="file-index">{{ idx + 1 }}</span>
+              <span class="file-name">{{ file.name }}</span>
+              <span class="file-size">{{ formatFileSize(file.size) }}</span>
+              <el-button size="small" type="danger" link @click="handleRemoveCompressFile(idx)">移除</el-button>
+            </div>
+          </div>
+          <div v-else class="upload-hint">点击「添加 PDF」或拖入 PDF 文件</div>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="activeTab === 'compress'" class="tool-card">
+      <div class="card-header">
+        <span class="card-title">压缩设置</span>
+      </div>
+      <div class="card-body">
+        <div class="action-grid">
+          <div class="action-group">
+            <div class="group-label">压缩级别</div>
+            <el-radio-group v-model="compressLevel" size="small">
+              <el-radio-button :value="1">快速压缩</el-radio-button>
+              <el-radio-button :value="2">标准压缩</el-radio-button>
+              <el-radio-button :value="3">极限压缩</el-radio-button>
+            </el-radio-group>
+          </div>
+          <div class="action-group">
+            <div class="group-label">执行</div>
+            <div class="group-buttons">
+              <el-button
+                type="primary"
+                size="small"
+                :disabled="!compressFiles.length || isCompressing"
+                :loading="isCompressing"
+                @click="handleCompress"
+              >
+                开始压缩
+              </el-button>
+            </div>
+          </div>
+        </div>
+        <div class="compress-level-hint">
+          {{ compressLevelHint }}
+        </div>
+        <div v-if="gsAvailable" class="gs-hint">
+          <span>已检测到 Ghostscript，「极限压缩」将获得更佳效果</span>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="activeTab === 'compress' && compressResults.length" class="tool-card">
+      <div class="card-header">
+        <span class="card-title">压缩结果</span>
+        <div class="card-actions">
+          <el-button size="small" @click="handleSaveAllCompressed">全部保存</el-button>
+        </div>
+      </div>
+      <div class="card-body">
+        <el-table :data="compressResults" stripe size="small" class="compress-table">
+          <el-table-column prop="fileName" label="文件" min-width="200" />
+          <el-table-column label="原始大小" width="110">
+            <template #default="{ row }">
+              <span>{{ formatFileSize(row.originalSize) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="压缩后" width="110">
+            <template #default="{ row }">
+              <span>{{ formatFileSize(row.compressedSize) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="压缩率" width="90">
+            <template #default="{ row }">
+              <span :class="row.ratio > 0 ? 'ratio-positive' : 'ratio-negative'">
+                {{ row.ratio > 0 ? `-${row.ratio}%` : `+${Math.abs(row.ratio)}%` }}
+              </span>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="90">
+            <template #default="{ $index }">
+              <el-button size="small" @click="handleSaveSingleCompressed($index)">保存</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <div class="compress-summary">
+          <span>合计：{{ formatFileSize(totalOriginalSize) }} → {{ formatFileSize(totalCompressedSize) }}，</span>
+          <span :class="totalRatio > 0 ? 'ratio-positive' : 'ratio-negative'">
+            缩小 {{ totalRatio }}%
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="activeTab === 'compress' && compressError" class="error-message">{{ compressError }}</div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElLoading } from 'element-plus'
 import { QuestionFilled, Warning } from '@element-plus/icons-vue'
 import {
@@ -455,10 +587,197 @@ import {
 } from '@/utils/pdfUtils'
 import { recognizeImage, recognizeMarkdown } from '@/utils/ocrUtils'
 import { useToolboxStore } from '@/store'
+import { invoke } from '@tauri-apps/api/core'
 
 const store = useToolboxStore()
 const activeTab = ref('pdfToImages')
 const error = ref('')
+
+// ============ Tab 6: PDF压缩 ============
+const compressInputRef = ref<HTMLInputElement | null>(null)
+const compressFiles = ref<File[]>([])
+const compressLevel = ref(2)
+const isCompressing = ref(false)
+const isDragOver = ref(false)
+const compressError = ref('')
+const gsAvailable = ref(false)
+
+interface CompressResultItem {
+  fileName: string
+  originalSize: number
+  compressedSize: number
+  ratio: number
+  outputPath: string
+}
+
+const compressResults = ref<CompressResultItem[]>([])
+
+const compressLevelHint = computed(() => {
+  switch (compressLevel.value) {
+    case 1: return '快速压缩：图片150DPI/85%质量，清除XMP元数据，速度最快'
+    case 2: return '标准压缩：图片150DPI/70%质量，清除全部元数据，平衡体积与质量'
+    case 3: return '极限压缩：图片72DPI/50%质量，清除全部元数据，最小体积（有Ghostscript效果更佳）'
+    default: return ''
+  }
+})
+
+const totalOriginalSize = computed(() =>
+  compressResults.value.reduce((sum, r) => sum + r.originalSize, 0)
+)
+
+const totalCompressedSize = computed(() =>
+  compressResults.value.reduce((sum, r) => sum + r.compressedSize, 0)
+)
+
+const totalRatio = computed(() => {
+  const orig = totalOriginalSize.value
+  const comp = totalCompressedSize.value
+  if (orig === 0) return 0
+  return Math.round((1 - comp / orig) * 100)
+})
+
+const triggerCompressInput = () => compressInputRef.value?.click()
+
+const handleCompressFileSelect = (e: Event) => {
+  const input = e.target as HTMLInputElement
+  const files = input.files
+  if (!files) return
+  addCompressFiles(Array.from(files))
+  input.value = ''
+}
+
+const handleCompressDrop = (e: DragEvent) => {
+  isDragOver.value = false
+  const files = e.dataTransfer?.files
+  if (!files) return
+  addCompressFiles(Array.from(files))
+}
+
+const addCompressFiles = (files: File[]) => {
+  compressError.value = ''
+  const pdfFiles = files.filter(f => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'))
+  if (pdfFiles.length === 0) {
+    compressError.value = '请选择 PDF 文件'
+    return
+  }
+  const maxSize = 100 * 1024 * 1024
+  const oversize = pdfFiles.find(f => f.size > maxSize)
+  if (oversize) {
+    compressError.value = `文件 "${oversize.name}" 超过 100MB 限制`
+    return
+  }
+  compressFiles.value = [...compressFiles.value, ...pdfFiles]
+  compressResults.value = []
+}
+
+const handleRemoveCompressFile = (idx: number) => {
+  compressFiles.value.splice(idx, 1)
+  compressResults.value = []
+}
+
+const handleClearCompressFiles = () => {
+  compressFiles.value = []
+  compressResults.value = []
+  compressError.value = ''
+  if (compressInputRef.value) compressInputRef.value.value = ''
+}
+
+/**
+ * 分块 base64 编码，避免大文件栈溢出
+ */
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer)
+  const chunkSize = 0x8000 // 32KB
+  const chunks: string[] = []
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize)
+    chunks.push(String.fromCharCode(...chunk))
+  }
+  return btoa(chunks.join(''))
+}
+
+const handleCompress = async () => {
+  if (!compressFiles.value.length) return
+  compressError.value = ''
+  compressResults.value = []
+  isCompressing.value = true
+
+  try {
+    for (let i = 0; i < compressFiles.value.length; i++) {
+      const file = compressFiles.value[i]
+      const buffer = await file.arrayBuffer()
+      const base64 = arrayBufferToBase64(buffer)
+      const tempPath: string = await invoke('save_temp_file', { data: base64, filename: file.name })
+
+      const result: { output_path: string; original_size: number; compressed_size: number } =
+        await invoke('compress_pdf', {
+          filePath: tempPath,
+          level: compressLevel.value,
+          gsAvailable: gsAvailable.value,
+        })
+
+      const originalSize = result.original_size
+      const compressedSize = result.compressed_size
+      const ratio = originalSize > 0
+        ? Math.round((1 - compressedSize / originalSize) * 100)
+        : 0
+
+      compressResults.value.push({
+        fileName: file.name,
+        originalSize,
+        compressedSize,
+        ratio,
+        outputPath: result.output_path,
+      })
+    }
+    ElMessage.success(`压缩完成，共 ${compressResults.value.length} 个文件`)
+    store.addHistory({
+      tool: 'pdf',
+      action: `PDF压缩 (${compressLevel.value === 1 ? '快速' : compressLevel.value === 2 ? '标准' : '极限'})`,
+      inputPreview: `${compressFiles.value.length} 个文件`,
+      outputPreview: `缩小 ${totalRatio.value}%`,
+      inputFull: compressFiles.value.map(f => f.name).join('\n'),
+      outputFull: `${formatFileSize(totalOriginalSize.value)} → ${formatFileSize(totalCompressedSize.value)}，缩小 ${totalRatio.value}%`,
+    })
+  } catch (e: any) {
+    compressError.value = typeof e === 'string' ? e : (e.message || '压缩失败')
+  } finally {
+    isCompressing.value = false
+  }
+}
+
+const handleSaveSingleCompressed = async (idx: number) => {
+  const result = compressResults.value[idx]
+  if (!result) return
+  try {
+    const base64: string = await invoke('read_file_base64', { path: result.outputPath })
+    const originalName = result.fileName
+    const baseName = originalName.replace(/\.pdf$/i, '')
+    await saveFileWithDialog(
+      new Blob([Uint8Array.from(atob(base64), c => c.charCodeAt(0))], { type: 'application/pdf' }),
+      `${baseName}_compressed.pdf`,
+      'pdf'
+    )
+    ElMessage.success('已保存')
+  } catch (e: any) {
+    ElMessage.error(typeof e === 'string' ? e : '保存失败')
+  }
+}
+
+const handleSaveAllCompressed = async () => {
+  for (let i = 0; i < compressResults.value.length; i++) {
+    await handleSaveSingleCompressed(i)
+  }
+}
+
+// 检测 Ghostscript
+onMounted(async () => {
+  try {
+    gsAvailable.value = await invoke('detect_ghostscript')
+  } catch {
+    gsAvailable.value = false
+  }
+})
 
 // ============ OCR 识别 ============
 const ocrResults = ref<string[]>([])
@@ -1572,5 +1891,100 @@ html.light .pdf-tabs :deep(.el-tabs__header) {
   .markdown-output-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* ===== PDF压缩 ===== */
+.compress-drop-zone {
+  border: 2px dashed var(--border-color);
+  border-radius: 8px;
+  padding: 16px;
+  transition: border-color 0.3s, background-color 0.3s;
+  min-height: 60px;
+  display: flex;
+  align-items: center;
+}
+
+.compress-drop-zone.drag-over {
+  border-color: var(--accent-cyan);
+  background: rgba(0, 212, 255, 0.05);
+}
+
+.compress-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.compress-file-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-input);
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.file-index {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-cyan);
+  color: var(--bg-card);
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.compress-level-hint {
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding: 8px 12px;
+  background: var(--bg-input);
+  border-radius: 4px;
+  line-height: 1.5;
+}
+
+.gs-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--accent-green);
+  padding: 6px 12px;
+  background: rgba(16, 185, 129, 0.08);
+  border-radius: 4px;
+}
+
+.compress-table {
+  width: 100%;
+}
+
+.ratio-positive {
+  color: var(--accent-green);
+  font-weight: 600;
+}
+
+.ratio-negative {
+  color: var(--accent-orange);
+  font-weight: 600;
+}
+
+.compress-summary {
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: var(--bg-input);
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-align: right;
 }
 </style>
