@@ -14,6 +14,7 @@ mod file_searcher;
 mod icon_generator;
 mod image_tools;
 mod audio_tools;
+mod video_tools;
 mod pdf_tools;
 
 use tauri::{Manager, Emitter};
@@ -145,6 +146,9 @@ fn main() {
             image_tools::image_palette,
             audio_tools::check_ffmpeg,
             audio_tools::get_audio_info,
+            video_tools::get_video_info,
+            video_tools::extract_thumbnails,
+            video_tools::video_crop,
             audio_tools::generate_waveform,
             audio_tools::audio_crop,
             audio_tools::get_audio_preview,
