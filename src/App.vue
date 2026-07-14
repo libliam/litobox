@@ -76,6 +76,7 @@ import FileSearcher from '@/views/FileSearcher.vue'
 import IconGenerator from '@/views/IconGenerator.vue'
 import ImageToolEnhanced from '@/views/ImageToolEnhanced.vue'
 import AudioTool from '@/views/AudioTool.vue'
+import VideoTool from '@/views/VideoTool.vue'
 
 // toolId → 组件 映射表（替代 v-if 链）
 const toolComponentMap: Record<string, any> = {
@@ -127,6 +128,7 @@ const toolComponentMap: Record<string, any> = {
   iconGenerator: IconGenerator,
   imageToolEnhanced: ImageToolEnhanced,
   audioTool: AudioTool,
+  videoTool: VideoTool,
 }
 
 const store = useToolboxStore()
