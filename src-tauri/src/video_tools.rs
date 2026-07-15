@@ -70,8 +70,9 @@ fn guess_video_format(path: &str) -> String {
     }
 }
 
-fn ffmpeg_available() -> bool {
-    std::process::Command::new("ffmpeg")
+// ponytail: 测试 exe 是否可以执行（带 -version 参数）
+fn test_exe(path: &str) -> bool {
+    std::process::Command::new(path)
         .arg("-version")
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -81,15 +82,99 @@ fn ffmpeg_available() -> bool {
         .unwrap_or(false)
 }
 
+// ponytail: dev 模式下 PATH 可能不完整，搜索常见安装路径作为回退
+// 找到后把目录加入进程 PATH，后续所有 Command::new("ffmpeg") 自动生效
+use std::sync::OnceLock;
+static FFMPEG_PATH_INITIALIZED: OnceLock<bool> = OnceLock::new();
+
+/// 递归搜索目录下 depth 层内的 ffmpeg.exe，返回 bin 目录路径
+fn search_ffmpeg_in_dir(base: &std::path::Path, depth: u32) -> Option<String> {
+    if depth == 0 { return None; }
+    let exe = base.join("ffmpeg.exe");
+    if exe.exists() {
+        return Some(base.to_string_lossy().to_string());
+    }
+    if let Ok(entries) = std::fs::read_dir(base) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                if let Some(found) = search_ffmpeg_in_dir(&p, depth - 1) {
+                    return Some(found);
+                }
+            }
+        }
+    }
+    None
+}
+
+pub(crate) fn ensure_ffmpeg_in_path() {
+    FFMPEG_PATH_INITIALIZED.get_or_init(|| {
+        debug_log!("[ffmpeg] 开始检测 ffmpeg...");
+        if test_exe("ffmpeg") {
+            debug_log!("[ffmpeg] PATH 中找到 ffmpeg");
+            return true;
+        }
+        debug_log!("[ffmpeg] PATH 中未找到，开始搜索常见安装路径...");
+
+        let mut search_dirs: Vec<String> = vec![
+            r"C:\ffmpeg\bin".to_string(),
+            r"C:\Program Files\ffmpeg\bin".to_string(),
+        ];
+
+        // winget 安装路径: %LOCALAPPDATA%\Microsoft\WinGet\Packages\*
+        if let Ok(local) = std::env::var("LOCALAPPDATA") {
+            let winget_base = std::path::PathBuf::from(&local)
+                .join("Microsoft").join("WinGet").join("Packages");
+            debug_log!("[ffmpeg] 搜索 winget 目录: {}", winget_base.display());
+            if winget_base.exists() {
+                if let Ok(entries) = std::fs::read_dir(&winget_base) {
+                    for entry in entries.flatten() {
+                        let p = entry.path();
+                        if !p.is_dir() { continue; }
+                        debug_log!("[ffmpeg] 搜索 winget 包: {}", p.display());
+                        // 递归搜索包目录下最多 3 层，适配 ffmpeg-X.Y.Z-full_build\bin 结构
+                        if let Some(bin_dir) = search_ffmpeg_in_dir(&p, 3) {
+                            debug_log!("[ffmpeg] winget 包中找到: {}", bin_dir);
+                            search_dirs.push(bin_dir);
+                        }
+                    }
+                }
+            }
+        }
+
+        // scoop shims
+        if let Ok(home) = std::env::var("USERPROFILE") {
+            let scoop = std::path::PathBuf::from(&home).join("scoop").join("shims");
+            if scoop.join("ffmpeg.exe").exists() {
+                search_dirs.push(scoop.to_string_lossy().to_string());
+            }
+        }
+
+        debug_log!("[ffmpeg] 搜索目录列表: {:?}", search_dirs);
+
+        for dir in &search_dirs {
+            let exe = std::path::PathBuf::from(dir).join("ffmpeg.exe");
+            debug_log!("[ffmpeg] 尝试: {}", exe.display());
+            if test_exe(&exe.to_string_lossy()) {
+                let current = std::env::var("PATH").unwrap_or_default();
+                std::env::set_var("PATH", format!("{};{}", dir, current));
+                debug_log!("[ffmpeg] 成功! 已将 {} 添加到 PATH", dir);
+                return true;
+            }
+        }
+        debug_log!("[ffmpeg] 未找到 ffmpeg");
+        false
+    });
+}
+
+fn ffmpeg_available() -> bool {
+    ensure_ffmpeg_in_path();
+    test_exe("ffmpeg")
+}
+
 fn ffprobe_available() -> bool {
-    std::process::Command::new("ffprobe")
-        .arg("-version")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .creation_flags(CREATE_NO_WINDOW)
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+    ensure_ffmpeg_in_path();
+    test_exe("ffprobe")
 }
 
 // ============ 纯 Rust 视频元信息读取（mp4 crate） ============
@@ -922,7 +1007,8 @@ pub async fn extract_thumbnails(path: String, count: u32) -> Result<ThumbnailRes
             // 无 ffmpeg 时返回空结果，前端降级为纯文本时间轴
             return Ok(ThumbnailResult { images: vec![], timestamps: vec![] });
         }
-        extract_thumbnails_ffmpeg(&path, count, 160)
+        // ponytail: 320px 宽度让缩略图在 180px 高的 canvas 中更清晰
+        extract_thumbnails_ffmpeg(&path, count, 320)
     })
     .await
     .map_err(|e| format!("任务执行失败: {}", e))?
@@ -943,4 +1029,493 @@ pub async fn video_crop(
     })
     .await
     .map_err(|e| format!("任务执行失败: {}", e))?
+}
+
+// ============ 视频转码 (F16) ============
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VideoTranscodeOptions {
+    pub output_format: String,
+    pub video_codec: String,
+    pub audio_codec: String,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub fps: Option<f64>,
+    pub video_bitrate: Option<String>,
+    pub audio_bitrate: Option<String>,
+    pub output_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranscodeResult {
+    pub output_path: String,
+    pub output_size: u64,
+    pub input_size: u64,
+    pub duration: f64,
+}
+
+#[tauri::command]
+pub async fn video_transcode(
+    app_handle: tauri::AppHandle,
+    path: String,
+    options: VideoTranscodeOptions,
+) -> Result<TranscodeResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if !ffmpeg_available() {
+            return Err("视频转码需要 ffmpeg，请先安装 ffmpeg".to_string());
+        }
+        do_video_transcode(&app_handle, &path, &options)
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
+}
+
+fn do_video_transcode(
+    app_handle: &tauri::AppHandle,
+    path: &str,
+    options: &VideoTranscodeOptions,
+) -> Result<TranscodeResult, String> {
+    let input_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+
+    // 获取输入视频时长
+    let duration = get_video_info_ffprobe(path)?.duration;
+
+    let input_stem = std::path::Path::new(path)
+        .file_stem().and_then(|s| s.to_str()).unwrap_or("video");
+    let ext = &options.output_format;
+    let output_path = if let Some(ref custom_path) = options.output_path {
+        std::path::PathBuf::from(custom_path)
+    } else {
+        std::path::Path::new(path)
+            .parent().unwrap_or(std::path::Path::new("."))
+            .join(format!("{}_transcoded.{}", input_stem, ext))
+    };
+
+    let _ = app_handle.emit("video-transcode-progress", serde_json::json!({ "progress": 5.0 }));
+
+    let mut args: Vec<String> = vec![
+        "-y".to_string(),
+        "-i".to_string(), path.to_string(),
+    ];
+
+    // 视频编码器
+    args.push("-c:v".to_string());
+    args.push(options.video_codec.clone());
+
+    // 音频编码器
+    args.push("-c:a".to_string());
+    args.push(options.audio_codec.clone());
+
+    // 分辨率
+    if let (Some(w), Some(h)) = (options.width, options.height) {
+        args.push("-vf".to_string());
+        args.push(format!("scale={}:{}", w, h));
+    }
+
+    // 帧率
+    if let Some(fps) = options.fps {
+        args.push("-r".to_string());
+        args.push(format!("{:.1}", fps));
+    }
+
+    // 视频比特率
+    if let Some(ref bitrate) = options.video_bitrate {
+        args.push("-b:v".to_string());
+        args.push(bitrate.clone());
+    }
+
+    // 音频比特率
+    if let Some(ref bitrate) = options.audio_bitrate {
+        args.push("-b:a".to_string());
+        args.push(bitrate.clone());
+    }
+
+    args.push(output_path.to_string_lossy().to_string());
+
+    let _ = app_handle.emit("video-transcode-progress", serde_json::json!({ "progress": 20.0 }));
+
+    debug_log!("ffmpeg 转码: {:?}", args);
+
+    let output = std::process::Command::new("ffmpeg")
+        .args(&args)
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map_err(|e| format!("ffmpeg 执行失败: {}", e))?;
+
+    let _ = app_handle.emit("video-transcode-progress", serde_json::json!({ "progress": 90.0 }));
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let preview: String = stderr.chars().take(300).collect();
+        return Err(format!("ffmpeg 转码失败: {}", preview));
+    }
+
+    let output_size = std::fs::metadata(&output_path).map(|m| m.len()).unwrap_or(0);
+
+    let _ = app_handle.emit("video-transcode-progress", serde_json::json!({ "progress": 100.0 }));
+
+    Ok(TranscodeResult { output_path: output_path.to_string_lossy().to_string(), output_size, input_size, duration })
+}
+
+// ============ 音频提取 (F17) ============
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioExtractOptions {
+    pub output_format: String,
+    pub audio_codec: String,
+    pub bitrate: Option<String>,
+    pub quality: Option<u32>,
+    pub output_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioExtractResult {
+    pub output_path: String,
+    pub output_size: u64,
+    pub duration: f64,
+}
+
+#[tauri::command]
+pub async fn audio_extract(
+    app_handle: tauri::AppHandle,
+    path: String,
+    options: AudioExtractOptions,
+) -> Result<AudioExtractResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if !ffmpeg_available() {
+            return Err("音频提取需要 ffmpeg，请先安装 ffmpeg".to_string());
+        }
+        do_audio_extract(&app_handle, &path, &options)
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
+}
+
+fn do_audio_extract(
+    app_handle: &tauri::AppHandle,
+    path: &str,
+    options: &AudioExtractOptions,
+) -> Result<AudioExtractResult, String> {
+    let duration = get_video_info_ffprobe(path)?.duration;
+
+    let input_stem = std::path::Path::new(path)
+        .file_stem().and_then(|s| s.to_str()).unwrap_or("audio");
+    let ext = &options.output_format;
+    let output_path = if let Some(ref custom_path) = options.output_path {
+        std::path::PathBuf::from(custom_path)
+    } else {
+        std::path::Path::new(path)
+            .parent().unwrap_or(std::path::Path::new("."))
+            .join(format!("{}_audio.{}", input_stem, ext))
+    };
+
+    let _ = app_handle.emit("audio-extract-progress", serde_json::json!({ "progress": 5.0 }));
+
+    let mut args: Vec<String> = vec![
+        "-y".to_string(),
+        "-i".to_string(), path.to_string(),
+        "-vn".to_string(), // 去除视频流
+        "-c:a".to_string(), options.audio_codec.clone(),
+    ];
+
+    if let Some(ref bitrate) = options.bitrate {
+        args.push("-b:a".to_string());
+        args.push(bitrate.clone());
+    }
+
+    // WAV 格式特殊处理
+    if options.output_format == "wav" {
+        args.push("-acodec".to_string());
+        args.push("pcm_s16le".to_string());
+    }
+
+    args.push(output_path.to_string_lossy().to_string());
+
+    let _ = app_handle.emit("audio-extract-progress", serde_json::json!({ "progress": 20.0 }));
+
+    debug_log!("ffmpeg 音频提取: {:?}", args);
+
+    let output = std::process::Command::new("ffmpeg")
+        .args(&args)
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map_err(|e| format!("ffmpeg 执行失败: {}", e))?;
+
+    let _ = app_handle.emit("audio-extract-progress", serde_json::json!({ "progress": 90.0 }));
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let preview: String = stderr.chars().take(300).collect();
+        return Err(format!("ffmpeg 音频提取失败: {}", preview));
+    }
+
+    let output_size = std::fs::metadata(&output_path).map(|m| m.len()).unwrap_or(0);
+
+    let _ = app_handle.emit("audio-extract-progress", serde_json::json!({ "progress": 100.0 }));
+
+    Ok(AudioExtractResult { output_path: output_path.to_string_lossy().to_string(), output_size, duration })
+}
+
+// ============ 视频压缩 (F18) ============
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VideoCompressOptions {
+    pub crf: u32,
+    pub preset: String,
+    pub video_codec: String,
+    pub audio_codec: String,
+    pub width: Option<u32>,
+    pub keep_resolution: bool,
+    pub output_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompressResult {
+    pub output_path: String,
+    pub output_size: u64,
+    pub input_size: u64,
+    pub compression_ratio: f64,
+    pub duration: f64,
+}
+
+#[tauri::command]
+pub async fn video_compress(
+    app_handle: tauri::AppHandle,
+    path: String,
+    options: VideoCompressOptions,
+) -> Result<CompressResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if !ffmpeg_available() {
+            return Err("视频压缩需要 ffmpeg，请先安装 ffmpeg".to_string());
+        }
+        do_video_compress(&app_handle, &path, &options)
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
+}
+
+fn do_video_compress(
+    app_handle: &tauri::AppHandle,
+    path: &str,
+    options: &VideoCompressOptions,
+) -> Result<CompressResult, String> {
+    let input_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    let duration = get_video_info_ffprobe(path)?.duration;
+
+    let input_stem = std::path::Path::new(path)
+        .file_stem().and_then(|s| s.to_str()).unwrap_or("video");
+    let output_path = if let Some(ref custom_path) = options.output_path {
+        std::path::PathBuf::from(custom_path)
+    } else {
+        std::path::Path::new(path)
+            .parent().unwrap_or(std::path::Path::new("."))
+            .join(format!("{}_compressed.mp4", input_stem))
+    };
+
+    let _ = app_handle.emit("video-compress-progress", serde_json::json!({ "progress": 5.0 }));
+
+    let mut args: Vec<String> = vec![
+        "-y".to_string(),
+        "-i".to_string(), path.to_string(),
+        "-c:v".to_string(), options.video_codec.clone(),
+        "-crf".to_string(), options.crf.to_string(),
+        "-preset".to_string(), options.preset.clone(),
+        "-c:a".to_string(), options.audio_codec.clone(),
+    ];
+
+    // 缩放分辨率
+    if !options.keep_resolution {
+        if let Some(w) = options.width {
+            args.push("-vf".to_string());
+            args.push(format!("scale={}:-1", w));
+        }
+    }
+
+    args.push(output_path.to_string_lossy().to_string());
+
+    let _ = app_handle.emit("video-compress-progress", serde_json::json!({ "progress": 20.0 }));
+
+    debug_log!("ffmpeg 压缩: {:?}", args);
+
+    let output = std::process::Command::new("ffmpeg")
+        .args(&args)
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map_err(|e| format!("ffmpeg 执行失败: {}", e))?;
+
+    let _ = app_handle.emit("video-compress-progress", serde_json::json!({ "progress": 90.0 }));
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let preview: String = stderr.chars().take(300).collect();
+        return Err(format!("ffmpeg 压缩失败: {}", preview));
+    }
+
+    let output_size = std::fs::metadata(&output_path).map(|m| m.len()).unwrap_or(0);
+    let compression_ratio = if input_size > 0 {
+        (output_size as f64 / input_size as f64 * 100.0).round()
+    } else {
+        100.0
+    };
+
+    let _ = app_handle.emit("video-compress-progress", serde_json::json!({ "progress": 100.0 }));
+
+    Ok(CompressResult {
+        output_path: output_path.to_string_lossy().to_string(),
+        output_size,
+        input_size,
+        compression_ratio,
+        duration,
+    })
+}
+
+// ============ 视频合并 (F19) ============
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VideoMergeOptions {
+    pub paths: Vec<String>,
+    pub output_format: String,
+    pub video_codec: String,
+    pub audio_codec: String,
+    pub output_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MergeResult {
+    pub output_path: String,
+    pub output_size: u64,
+    pub duration: f64,
+    pub file_count: u32,
+}
+
+#[tauri::command]
+pub async fn video_merge(
+    app_handle: tauri::AppHandle,
+    options: VideoMergeOptions,
+) -> Result<MergeResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if !ffmpeg_available() {
+            return Err("视频合并需要 ffmpeg，请先安装 ffmpeg".to_string());
+        }
+        do_video_merge(&app_handle, &options)
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
+}
+
+fn do_video_merge(
+    app_handle: &tauri::AppHandle,
+    options: &VideoMergeOptions,
+) -> Result<MergeResult, String> {
+    if options.paths.len() < 2 {
+        return Err("至少需要 2 个视频文件".to_string());
+    }
+
+    let file_count = options.paths.len() as u32;
+    let _ = app_handle.emit("video-merge-progress", serde_json::json!({ "progress": 5.0 }));
+
+    // 判断是否所有文件格式相同 → 无损合并
+    let all_same_format = options.paths.iter().all(|p| {
+        let ext = std::path::Path::new(p).extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+        ext == options.output_format
+    });
+
+    let first_path = &options.paths[0];
+    let input_stem = std::path::Path::new(first_path)
+        .file_stem().and_then(|s| s.to_str()).unwrap_or("merged");
+    let output_path = if let Some(ref custom_path) = options.output_path {
+        std::path::PathBuf::from(custom_path)
+    } else {
+        std::path::Path::new(first_path)
+            .parent().unwrap_or(std::path::Path::new("."))
+            .join(format!("{}_merged.{}", input_stem, &options.output_format))
+    };
+
+    let _ = app_handle.emit("video-merge-progress", serde_json::json!({ "progress": 10.0 }));
+
+    if all_same_format {
+        // 同格式无损合并（concat demuxer）
+        let temp_dir = std::env::temp_dir().join("litobox_video_merge");
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let filelist_path = temp_dir.join("filelist.txt");
+
+        let filelist: String = options.paths.iter()
+            .map(|p| format!("file '{}'", p.replace('\\', "\\\\").replace('\'', "\\'")))
+            .collect::<Vec<_>>()
+            .join("\n");
+        std::fs::write(&filelist_path, &filelist)
+            .map_err(|e| format!("写入文件列表失败: {}", e))?;
+
+        let _ = app_handle.emit("video-merge-progress", serde_json::json!({ "progress": 20.0 }));
+
+        let output = std::process::Command::new("ffmpeg")
+            .args(&[
+                "-y",
+                "-f", "concat",
+                "-safe", "0",
+                "-i", &filelist_path.to_string_lossy(),
+                "-c", "copy",
+                &output_path.to_string_lossy(),
+            ])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+            .map_err(|e| format!("ffmpeg 执行失败: {}", e))?;
+
+        let _ = std::fs::remove_file(&filelist_path);
+        let _ = std::fs::remove_dir_all(&temp_dir);
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let preview: String = stderr.chars().take(300).collect();
+            return Err(format!("ffmpeg 合并失败: {}", preview));
+        }
+    } else {
+        // 不同格式需转码合并（concat filter）
+        let mut args: Vec<String> = vec!["-y".to_string()];
+        for p in &options.paths {
+            args.push("-i".to_string());
+            args.push(p.clone());
+        }
+        // 构建 filter_complex: concat=n=N:v=1:a=1
+        let filter = format!("concat=n={}:v=1:a=1", options.paths.len());
+        args.push("-filter_complex".to_string());
+        args.push(filter);
+        // 编码器
+        args.push("-c:v".to_string());
+        args.push(options.video_codec.clone());
+        args.push("-c:a".to_string());
+        args.push(options.audio_codec.clone());
+        args.push(output_path.to_string_lossy().to_string());
+
+        let _ = app_handle.emit("video-merge-progress", serde_json::json!({ "progress": 20.0 }));
+
+        debug_log!("ffmpeg 合并(转码): {:?}", args);
+
+        let output = std::process::Command::new("ffmpeg")
+            .args(&args)
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+            .map_err(|e| format!("ffmpeg 执行失败: {}", e))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let preview: String = stderr.chars().take(300).collect();
+            return Err(format!("ffmpeg 合并失败: {}", preview));
+        }
+    }
+
+    let _ = app_handle.emit("video-merge-progress", serde_json::json!({ "progress": 90.0 }));
+
+    let output_size = std::fs::metadata(&output_path).map(|m| m.len()).unwrap_or(0);
+    let duration = get_video_info_ffprobe(&output_path.to_string_lossy())
+        .map(|info| info.duration).unwrap_or(0.0);
+
+    let _ = app_handle.emit("video-merge-progress", serde_json::json!({ "progress": 100.0 }));
+
+    Ok(MergeResult {
+        output_path: output_path.to_string_lossy().to_string(),
+        output_size,
+        duration,
+        file_count,
+    })
 }

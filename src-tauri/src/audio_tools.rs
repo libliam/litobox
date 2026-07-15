@@ -302,6 +302,7 @@ fn guess_format(path: &str) -> String {
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 fn ffmpeg_available() -> bool {
+    crate::video_tools::ensure_ffmpeg_in_path();
     std::process::Command::new("ffmpeg")
         .arg("-version")
         .stdout(std::process::Stdio::null())
@@ -313,6 +314,7 @@ fn ffmpeg_available() -> bool {
 }
 
 fn ffprobe_available() -> bool {
+    crate::video_tools::ensure_ffmpeg_in_path();
     std::process::Command::new("ffprobe")
         .arg("-version")
         .stdout(std::process::Stdio::null())
