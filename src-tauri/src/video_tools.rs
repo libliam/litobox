@@ -5,6 +5,15 @@ use tauri::Emitter;
 
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+// ponytail: debug 模式输出日志到 stderr，release 模式编译时移除（零开销）
+macro_rules! debug_log {
+    ($($arg:tt)*) => {
+        if cfg!(debug_assertions) {
+            eprintln!($($arg)*)
+        }
+    };
+}
+
 // ============ 数据结构 ============
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -241,6 +250,188 @@ fn extract_thumbnails_ffmpeg(path: &str, count: u32, max_width: u32) -> Result<T
 }
 
 // ============ 纯 Rust 关键帧裁剪 ============
+// ponytail: 使用 Mp4Writer 重建 MP4 容器，让 crate 自动构建正确的 moov/stts/stsz/stco 等表
+// 之前的"头部复制 + mdat 裁剪"策略不重写 moov 元数据，导致播放器无法正确解析
+
+/// 获取 sample 在文件中的字节偏移（sample_id 从 1 开始）
+fn get_sample_offset(track: &mp4::Mp4Track, sample_id: u32) -> Result<u64, String> {
+    let stsc = &track.trak.mdia.minf.stbl.stsc;
+    let stco = track.trak.mdia.minf.stbl.stco.as_ref()
+        .ok_or("未找到 stco box")?;
+
+    // 找到 sample_id 所在的 stsc entry
+    let mut stsc_idx = 0usize;
+    for (i, entry) in stsc.entries.iter().enumerate() {
+        if sample_id >= entry.first_sample {
+            stsc_idx = i;
+        }
+    }
+    let stsc_entry = &stsc.entries[stsc_idx];
+    let samples_per_chunk = stsc_entry.samples_per_chunk;
+    let first_sample = stsc_entry.first_sample;
+    let first_chunk = stsc_entry.first_chunk;
+
+    let chunk_id = first_chunk + (sample_id - first_sample) / samples_per_chunk;
+    let chunk_offset = stco.entries.get(chunk_id as usize - 1).copied()
+        .ok_or("chunk offset 超出范围")? as u64;
+
+    let first_sample_in_chunk = sample_id - (sample_id - first_sample) % samples_per_chunk;
+    let mut offset_in_chunk: u64 = 0;
+    let stsz = &track.trak.mdia.minf.stbl.stsz;
+    for i in first_sample_in_chunk..sample_id {
+        let size = if stsz.sample_size > 0 {
+            stsz.sample_size
+        } else {
+            *stsz.sample_sizes.get(i as usize - 1).ok_or("sample size 超出范围")?
+        };
+        offset_in_chunk += size as u64;
+    }
+
+    Ok(chunk_offset + offset_in_chunk)
+}
+
+/// 获取 sample 大小（sample_id 从 1 开始）
+fn get_sample_size(track: &mp4::Mp4Track, sample_id: u32) -> Result<u32, String> {
+    let stsz = &track.trak.mdia.minf.stbl.stsz;
+    if stsz.sample_size > 0 {
+        Ok(stsz.sample_size)
+    } else {
+        Ok(*stsz.sample_sizes.get(sample_id as usize - 1).ok_or("sample size 超出范围")?)
+    }
+}
+
+/// 获取 sample 时长（stts 表，sample_id 从 1 开始）
+fn get_sample_duration(track: &mp4::Mp4Track, sample_id: u32) -> u32 {
+    let stts = &track.trak.mdia.minf.stbl.stts;
+    let mut count: u32 = 1;
+    for entry in &stts.entries {
+        if sample_id < count + entry.sample_count {
+            return entry.sample_delta;
+        }
+        count += entry.sample_count;
+    }
+    // fallback
+    track.default_sample_duration
+}
+
+/// 判断 sample 是否为关键帧（sample_id 从 1 开始）
+fn is_sync_sample(track: &mp4::Mp4Track, sample_id: u32) -> bool {
+    if let Some(ref stss) = track.trak.mdia.minf.stbl.stss {
+        stss.entries.binary_search(&sample_id).is_ok()
+    } else {
+        true // 没有 stss 表，所有 sample 都是关键帧
+    }
+}
+
+/// 根据时间戳计算 sample 范围（返回 start_sample 和 end_sample，sample_id 从 1 开始）
+fn get_sample_range_by_time(track: &mp4::Mp4Track, start_time_secs: f64, end_time_secs: f64) -> (u32, u32) {
+    let stts = &track.trak.mdia.minf.stbl.stts;
+    let timescale = track.timescale() as f64;
+    let sample_count = track.sample_count();
+    
+    let start_time_ticks = (start_time_secs * timescale) as u64;
+    let end_time_ticks = (end_time_secs * timescale) as u64;
+    
+    let mut current_time: u64 = 0;
+    let mut sample_id: u32 = 1;
+    let mut start_sample: u32 = 1;
+    let mut end_sample: u32 = sample_count;
+    
+    for entry in &stts.entries {
+        let entry_duration = entry.sample_delta as u64;
+        let entry_samples = entry.sample_count;
+        
+        for _ in 0..entry_samples {
+            let sample_start_time = current_time;
+            let sample_end_time = current_time + entry_duration;
+            
+            if sample_start_time <= start_time_ticks && start_time_ticks < sample_end_time {
+                start_sample = sample_id;
+            }
+            
+            if sample_start_time <= end_time_ticks && end_time_ticks <= sample_end_time {
+                end_sample = sample_id;
+                return (start_sample, end_sample);
+            }
+            
+            current_time = sample_end_time;
+            sample_id += 1;
+        }
+    }
+    
+    (start_sample, end_sample)
+}
+
+/// 调整所有包含指定位置的父盒的 size 字段
+/// 从 pos 位置向前搜索，找到所有包含该位置的父盒（mp4a, stsd, stbl, minf, mdia, trak, moov），
+/// 并调整它们的 size 字段增加 size_diff
+fn adjust_parent_box_sizes(data: &mut Vec<u8>, pos: usize, size_diff: i64) {
+    // 需要调整的父盒签名（按嵌套顺序，从内到外）
+    // mp4a 必须包含在内，因为它直接包含 ESDS
+    let parent_signatures: &[&[u8; 4]] = &[
+        b"mp4a", b"stsd", b"stbl", b"minf", b"mdia", b"trak", b"moov"
+    ];
+    
+    let mut current_pos = pos;
+    
+    // 从内向外逐层调整父盒
+    for sig in parent_signatures {
+        // 从 current_pos 向前搜索该签名
+        if let Some(sig_pos) = data[..current_pos].windows(4).rposition(|w| w == *sig) {
+            // 验证这是有效的盒（size 字段在 sig_pos - 4）
+            if sig_pos >= 4 {
+                let box_size_offset = sig_pos - 4;
+                let old_size = u32::from_be_bytes([
+                    data[box_size_offset],
+                    data[box_size_offset + 1],
+                    data[box_size_offset + 2],
+                    data[box_size_offset + 3],
+                ]);
+                
+                let new_size = (old_size as i64 + size_diff) as u32;
+                let new_size_bytes = new_size.to_be_bytes();
+                
+                data[box_size_offset] = new_size_bytes[0];
+                data[box_size_offset + 1] = new_size_bytes[1];
+                data[box_size_offset + 2] = new_size_bytes[2];
+                data[box_size_offset + 3] = new_size_bytes[3];
+                
+                debug_log!("调整父盒 {} size: {} → {} (offset={})", 
+                    String::from_utf8_lossy(*sig), old_size, new_size, box_size_offset);
+                
+                // 更新 current_pos 为该父盒的开头，继续向上找
+                current_pos = box_size_offset;
+            }
+        } else {
+            debug_log!("未找到父盒 {}", String::from_utf8_lossy(*sig));
+            break; // 找不到该父盒，停止向上搜索
+        }
+    }
+}
+
+/// 在 ESDS 盒内精准修复 SLConfigDescriptor: size=0x00→0x01, data=0x00→0x02
+/// 只搜索 ESDS 盒内部（data 数组从 esds_pos 开始，长度为 out_box_size），避免误匹配 mdat 数据
+fn fix_esds_slconfig(data: &mut [u8], esds_pos: usize, out_box_size: usize) {
+    let esds_start = esds_pos + 8; // 跳过 8 字节 box header（4 size + 4 type）
+    let esds_end = (esds_pos + out_box_size).min(data.len());
+    let esds_data = &data[esds_start..esds_end];
+
+    debug_log!("ESDS 修复: esds_start={}, esds_end={}, esds_data.len()={}", esds_start, esds_end, esds_data.len());
+    debug_log!("ESDS 修复前字节: {:02X?}", esds_data);
+
+    // 在 ESDS 盒数据内搜索 SLConfigDescriptor: tag=0x06, size=0x00, data=0x00
+    // 字节序列: 06 00 00 → 06 01 02
+    if let Some(rel_pos) = esds_data.windows(3).position(|w| w == [0x06, 0x00, 0x00]) {
+        let abs_pos = esds_start + rel_pos;
+        data[abs_pos] = 0x06;
+        data[abs_pos + 1] = 0x01;
+        data[abs_pos + 2] = 0x02;
+        debug_log!("SLConfigDescriptor 修复成功: rel_pos={}, abs_pos={}", rel_pos, abs_pos);
+        debug_log!("ESDS 修复后字节: {:02X?}", &data[esds_start..esds_end]);
+    } else {
+        debug_log!("SLConfigDescriptor 未找到 06 00 00 序列");
+    }
+}
 
 fn do_video_crop_keyframe(
     app_handle: &tauri::AppHandle,
@@ -257,13 +448,10 @@ fn do_video_crop_keyframe(
 
     let _ = app_handle.emit("video-crop-progress", serde_json::json!({ "progress": 5.0 }));
 
-    let metadata = std::fs::metadata(path)
-        .map_err(|e| format!("无法读取文件: {}", e))?;
-    let file_size = metadata.len();
-    let f = std::fs::File::open(path)
-        .map_err(|e| format!("无法打开文件: {}", e))?;
+    // 读取源文件并解析
+    let file_size = std::fs::metadata(path).map(|m| m.len()).map_err(|e| format!("无法读取文件: {}", e))?;
+    let f = std::fs::File::open(path).map_err(|e| format!("无法打开文件: {}", e))?;
     let buf_reader = std::io::BufReader::new(f);
-
     let mp4 = mp4::Mp4Reader::read_header(buf_reader, file_size)
         .map_err(|e| format!("MP4 解析失败: {}", e))?;
 
@@ -271,7 +459,7 @@ fn do_video_crop_keyframe(
         .find(|t| t.track_type().ok() == Some(mp4::TrackType::Video))
         .ok_or("未找到视频轨道")?;
 
-    let timescale = video_track.timescale() as f64;
+    let timescale = video_track.timescale();
     let total_duration = mp4.duration().as_secs_f64();
 
     // 获取关键帧索引（stss）
@@ -293,14 +481,14 @@ fn do_video_crop_keyframe(
     // 将时间转为 sample 编号
     let sample_count = video_track.sample_count();
     let default_sample_dur = video_track.default_sample_duration as f64;
-    let sample_duration = if default_sample_dur > 0.0 {
-        default_sample_dur / timescale
+    let sample_duration_secs = if default_sample_dur > 0.0 {
+        default_sample_dur / timescale as f64
     } else {
         total_duration / sample_count.max(1) as f64
     };
 
-    let start_sample = ((options.start_time / sample_duration) as u32).min(sample_count);
-    let end_sample = ((options.end_time / sample_duration) as u32).min(sample_count);
+    let start_sample = ((options.start_time / sample_duration_secs) as u32).min(sample_count);
+    let end_sample = ((options.end_time / sample_duration_secs) as u32).min(sample_count);
 
     // 找到起止时间对应的最近关键帧（sample 编号从 1 开始）
     let actual_start_sample = keyframes.iter()
@@ -319,8 +507,8 @@ fn do_video_crop_keyframe(
         return Err("裁剪区间内无关键帧，请扩大区间或使用 ffmpeg".to_string());
     }
 
-    let actual_start = actual_start_sample as f64 * sample_duration;
-    let actual_end = actual_end_sample as f64 * sample_duration;
+    let actual_start_secs = actual_start_sample as f64 * sample_duration_secs;
+    let actual_end_secs = actual_end_sample as f64 * sample_duration_secs;
 
     let _ = app_handle.emit("video-crop-progress", serde_json::json!({ "progress": 30.0 }));
 
@@ -338,71 +526,270 @@ fn do_video_crop_keyframe(
             .join(format!("{}_cropped.mp4", input_stem))
     };
 
-    // 读取源文件数据
-    let src_data = std::fs::read(path)
-        .map_err(|e| format!("读取源文件失败: {}", e))?;
+    // ponytail: 用 Cursor<Vec<u8>> 缓冲输出，写入完成后用源文件的原始 ESDS 盒替换
+    // mp4 crate 的 Mp4Writer 重建 ESDS 盒时使用了硬编码默认值（SLConfigDescriptor size=0、
+    // object_type_indication=0x40 等），与源文件不完全一致，导致 Windows Media Player 无法识别 AAC 音频
+    let mut buf = std::io::Cursor::new(Vec::new());
+
+    // 读取源文件的原始 ESDS 盒字节，用于后续替换
+    let src_esds_bytes = {
+        let mut src = std::fs::File::open(path)
+            .map_err(|e| format!("打开源文件失败: {}", e))?;
+        let mut file_data = Vec::new();
+        std::io::Read::read_to_end(&mut src, &mut file_data)
+            .map_err(|e| format!("读取源文件失败: {}", e))?;
+        // 搜索 "esds" 签名 (0x65 0x73 0x64 0x73)
+        file_data.windows(4).position(|w| w == [0x65, 0x73, 0x64, 0x73])
+            .and_then(|pos| {
+                if pos < 4 { return None; }
+                let box_size = u32::from_be_bytes([file_data[pos-4], file_data[pos-3], file_data[pos-2], file_data[pos-1]]);
+                if box_size < 8 || pos + box_size as usize > file_data.len() { return None; }
+                Some(file_data[pos-4..pos-4 + box_size as usize].to_vec())
+            })
+    };
+
+    let _ = app_handle.emit("video-crop-progress", serde_json::json!({ "progress": 10.0 }));
+
+    let config = mp4::Mp4Config {
+        major_brand: mp4.ftyp.major_brand,
+        minor_version: mp4.ftyp.minor_version,
+        compatible_brands: mp4.ftyp.compatible_brands.clone(),
+        timescale,
+    };
+
+    let mut writer = mp4::Mp4Writer::write_start(&mut buf, &config)
+        .map_err(|e| format!("创建写入器失败: {}", e))?;
 
     let _ = app_handle.emit("video-crop-progress", serde_json::json!({ "progress": 50.0 }));
 
-    // 重新解析以获取 sample 偏移信息
-    let cursor = std::io::Cursor::new(&src_data);
-    let buf_reader = std::io::BufReader::new(cursor);
-    let mp4 = mp4::Mp4Reader::read_header(buf_reader, src_data.len() as u64)
-        .map_err(|e| format!("二次解析 MP4 失败: {}", e))?;
+    // 打开源文件用于读取 sample 数据（复用同一个文件句柄）
+    let mut src_file = std::fs::File::open(path)
+        .map_err(|e| format!("打开源文件失败: {}", e))?;
 
-    let track = mp4.tracks().values()
-        .find(|t| t.track_type().ok() == Some(mp4::TrackType::Video))
-        .ok_or("未找到视频轨道")?;
+    // ponytail: writer.add_track() 按 push 顺序分配 track_id 1, 2, 3...
+    // 源 mp4.tracks() 是 HashMap，遍历顺序不确定，必须用 writer 实际分配的 track_id
+    // 否则音频轨道可能先被遍历（源 track_id=2），writer 分配 audio=1，
+    // 但代码用 track_id=2 写 sample → 数据写进 writer 分配给 video 的轨道 → 杂音+时长错误
+    let mut writer_track_id: u32 = 1;
 
-    // 获取 sample 大小表
-    let stsz = &track.trak.mdia.minf.stbl.stsz;
-    let sample_sizes: Vec<u32> = if stsz.sample_size > 0 {
-        vec![stsz.sample_size; stsz.sample_count as usize]
+    // 处理每个轨道（视频 + 音频）
+    for track in mp4.tracks().values() {
+        let track_type = track.track_type().map_err(|e| format!("获取轨道类型失败: {}", e))?;
+
+        // 构建 TrackConfig
+        let media_conf = match track.media_type().map_err(|e| format!("获取媒体类型失败: {}", e))? {
+            mp4::MediaType::H264 => {
+                let avc1 = track.trak.mdia.minf.stbl.stsd.avc1.as_ref()
+                    .ok_or("未找到 avc1 box")?;
+                let sps = avc1.avcc.sequence_parameter_sets.get(0)
+                    .ok_or("未找到 SPS")?;
+                let pps = avc1.avcc.picture_parameter_sets.get(0)
+                    .ok_or("未找到 PPS")?;
+                mp4::MediaConfig::AvcConfig(mp4::AvcConfig {
+                    width: track.width(),
+                    height: track.height(),
+                    seq_param_set: sps.bytes.to_vec(),
+                    pic_param_set: pps.bytes.to_vec(),
+                })
+            }
+            mp4::MediaType::H265 => {
+                mp4::MediaConfig::HevcConfig(mp4::HevcConfig {
+                    width: track.width(),
+                    height: track.height(),
+                })
+            }
+            mp4::MediaType::AAC => {
+                let mp4a = track.trak.mdia.minf.stbl.stsd.mp4a.as_ref()
+                    .ok_or("未找到 mp4a box")?;
+                let esds = mp4a.esds.as_ref()
+                    .ok_or("未找到 esds box")?;
+                let dec_config = &esds.es_desc.dec_config;
+                let profile = mp4::AudioObjectType::try_from(dec_config.dec_specific.profile)
+                    .map_err(|e| format!("音频 profile 转换失败: {}", e))?;
+                let freq_index = mp4::SampleFreqIndex::try_from(dec_config.dec_specific.freq_index)
+                    .map_err(|e| format!("频率索引转换失败: {}", e))?;
+                let chan_conf = mp4::ChannelConfig::try_from(dec_config.dec_specific.chan_conf)
+                    .map_err(|e| format!("声道配置转换失败: {}", e))?;
+                mp4::MediaConfig::AacConfig(mp4::AacConfig {
+                    bitrate: dec_config.avg_bitrate,
+                    profile,
+                    freq_index,
+                    chan_conf,
+                })
+            }
+            _ => continue,
+        };
+
+        let track_config = mp4::TrackConfig {
+            track_type,
+            timescale: track.timescale(),
+            language: track.language().to_string(),
+            media_conf,
+        };
+
+        writer.add_track(&track_config)
+            .map_err(|e| format!("添加轨道失败: {}", e))?;
+
+        // 使用 writer 实际分配的 track_id，而不是源文件的 track_id
+        let track_id = writer_track_id;
+        writer_track_id += 1;
+
+        // 计算该轨道的裁剪 sample 范围
+        let (clip_start, clip_end) = if track_type == mp4::TrackType::Video {
+            (actual_start_sample, actual_end_sample)
+        } else {
+            // 音频轨道：根据实际裁剪时间计算 sample 范围
+            let audio_ts = track.timescale() as f64;
+            let audio_count = track.sample_count();
+            let audio_dur = if track.default_sample_duration > 0 {
+                track.default_sample_duration as f64 / audio_ts
+            } else {
+                total_duration / audio_count.max(1) as f64
+            };
+            let s = ((actual_start_secs / audio_dur) as u32).min(audio_count).max(1);
+            let e = ((actual_end_secs / audio_dur) as u32).min(audio_count);
+            (s, e)
+        };
+
+        // 逐个读取并写入 sample
+        let mut total_samples_written = 0u32;
+        let mut total_duration_ticks = 0u64;
+        for sample_id in clip_start..=clip_end {
+            let offset = get_sample_offset(track, sample_id)?;
+            let size = get_sample_size(track, sample_id)?;
+            let dur = get_sample_duration(track, sample_id);
+            let is_sync = is_sync_sample(track, sample_id);
+
+            use std::io::{Read, Seek, SeekFrom};
+            src_file.seek(SeekFrom::Start(offset))
+                .map_err(|e| format!("seek 失败: {}", e))?;
+            let mut buf = vec![0u8; size as usize];
+            src_file.read_exact(&mut buf)
+                .map_err(|e| format!("读取 sample {} 数据失败: {}", sample_id, e))?;
+
+            let sample = mp4::Mp4Sample {
+                start_time: 0, // Mp4Writer 会自动计算
+                duration: dur,
+                rendering_offset: 0,
+                is_sync,
+                bytes: mp4::Bytes::from(buf),
+            };
+
+            writer.write_sample(track_id, &sample)
+                .map_err(|e| format!("写入 sample {} 失败: {}", sample_id, e))?;
+            
+            total_samples_written += 1;
+            total_duration_ticks += dur as u64;
+        }
+        
+        let track_type_str = if track_type == mp4::TrackType::Video { "video" } else { "audio" };
+        let track_timescale = track.timescale() as f64;
+        let track_duration_secs = total_duration_ticks as f64 / track_timescale;
+        debug_log!("轨道 {} ({}): 写入 sample {}-{}, 共 {} 个, 总时长 {} ticks = {:.3}s, timescale={}",
+            track.track_id(), track_type_str, clip_start, clip_end, total_samples_written,
+            total_duration_ticks, track_duration_secs, track.timescale());
+        
+        // 音频轨道额外调试信息
+        if track_type == mp4::TrackType::Audio {
+            debug_log!("音频轨道详情: sample_count={}, timescale={}, default_sample_duration={}",
+                track.sample_count(), track.timescale(), track.default_sample_duration);
+            // 检查前 5 个 sample 的详细信息
+            let check_count = 5.min(clip_end - clip_start + 1);
+            for i in 0..check_count {
+                let sample_id = clip_start + i;
+                let offset = get_sample_offset(track, sample_id).unwrap_or(0);
+                let size = get_sample_size(track, sample_id).unwrap_or(0);
+                let dur = get_sample_duration(track, sample_id);
+                let is_sync = is_sync_sample(track, sample_id);
+                debug_log!("音频 sample[{}]: id={}, offset={}, size={}, dur={}, sync={}",
+                    i, sample_id, offset, size, dur, is_sync);
+            }
+        }
+    }
+
+    writer.write_end()
+        .map_err(|e| format!("完成写入失败: {}", e))?;
+
+    let mut data = buf.into_inner();
+
+    // ponytail: 用源文件的完整 ESDS 盒替换 mp4 crate 重建的 ESDS 盒
+    // mp4 crate 的 ESDS 盒使用紧凑编码，丢失了源文件的 DecoderSpecificInfo 扩展数据，
+    // 导致 AAC 解码器无法正确初始化。必须用源文件原始字节整体替换。
+    //
+    // 策略：替换 ESDS 盒内容，同时调整所有父盒（stsd/stbl/minf/mdia/trak/moov）的 size 字段，
+    // 并在 data 中插入差量字节以保持文件结构完整。
+    if let Some(esds_pos) = data.windows(4).position(|w| w == [0x65, 0x73, 0x64, 0x73]) {
+        debug_log!("ESDS 盒位置: esds_pos={}", esds_pos);
+        if esds_pos >= 4 {
+            let out_box_size = u32::from_be_bytes([data[esds_pos-4], data[esds_pos-3], data[esds_pos-2], data[esds_pos-1]]) as usize;
+
+            if let Some(ref esds_bytes) = src_esds_bytes {
+                let src_box_size = esds_bytes.len();
+                debug_log!("ESDS 盒大小: out_box_size={}, src_box_size={}", out_box_size, src_box_size);
+                
+                if src_box_size == out_box_size {
+                    // 大小一致，直接替换
+                    data[esds_pos-4..esds_pos-4 + out_box_size].copy_from_slice(esds_bytes);
+                } else {
+                    // 大小不一致，用源文件完整 ESDS 盒（含 size 字段）整体替换
+                    let size_diff = src_box_size as i64 - out_box_size as i64;
+                    debug_log!("ESDS 大小差异: size_diff={}", size_diff);
+                    
+                    // 替换整个 ESDS 盒（size + type + data），保持盒结构完整
+                    data.splice(esds_pos - 4..esds_pos - 4 + out_box_size, esds_bytes.iter().copied());
+                    
+                    // 调整所有父盒的 size 字段（mp4a, stsd, stbl, minf, mdia, trak, moov）
+                    adjust_parent_box_sizes(&mut data, esds_pos - 4, size_diff);
+                }
+            } else {
+                debug_log!("ESDS 替换: 无源文件 ESDS 数据，执行精准修复");
+                fix_esds_slconfig(&mut data, esds_pos, out_box_size);
+            }
+        }
     } else {
-        stsz.sample_sizes.clone()
-    };
+        debug_log!("ESDS 盒未找到");
+    }
 
-    // 构建 sample → byte offset 映射
-    let sample_offsets = build_sample_offsets(track, &sample_sizes)?;
+    // 修复 mp4a 盒的 samplesize 字段：设为 1 使 Windows 计算 nBlockAlign=1
+    // 从 esds_pos 向前搜索最近的 mp4a 签名，根据 size 字段验证后计算 samplesize 精确位置
+    // mp4a 盒结构: 4字节size + 4字节type + 28字节AudioSampleEntry，samplesize 在偏移 26 处
+    if let Some(esds_pos) = data.windows(4).position(|w| w == [0x65, 0x73, 0x64, 0x73]) {
+        // 从 esds_pos 向前搜索最近的 mp4a 签名
+        if let Some(mp4a_pos) = data[..esds_pos].windows(4).rposition(|w| w == [0x6D, 0x70, 0x34, 0x61]) {
+            // 验证 mp4a 盒 size 字段（4 字节大端）
+            let mp4a_size = u32::from_be_bytes([data[mp4a_pos-4], data[mp4a_pos-3], data[mp4a_pos-2], data[mp4a_pos-1]]);
+            debug_log!("mp4a 盒位置: mp4a_pos={}, mp4a_size={}", mp4a_pos, mp4a_size);
+            
+            // 合理的 mp4a 盒大小：至少 36 字节（8+28），不超过 1000 字节
+            if mp4a_size >= 36 && mp4a_size <= 1000 {
+                let samplesize_offset = mp4a_pos + 26;
+                if samplesize_offset + 2 <= data.len() {
+                    let old_samplesize = u16::from_be_bytes([data[samplesize_offset], data[samplesize_offset + 1]]);
+                    data[samplesize_offset] = 0;
+                    data[samplesize_offset + 1] = 1;
+                    debug_log!("mp4a samplesize 修改: {} → 1", old_samplesize);
+                }
+            } else {
+                debug_log!("mp4a 盒大小异常，跳过 samplesize 修改");
+            }
+        } else {
+            debug_log!("未找到 mp4a 签名");
+        }
+    }
 
-    let _ = app_handle.emit("video-crop-progress", serde_json::json!({ "progress": 70.0 }));
-
-    // 收集裁剪范围内所有 sample 的数据
-    // sample 编号从 1 开始，数组索引从 0 开始
-    let start_idx = (actual_start_sample as usize).saturating_sub(1);
-    let end_idx = (actual_end_sample as usize).saturating_sub(1).min(sample_offsets.len().saturating_sub(1));
-
-    let start_offset = sample_offsets.get(start_idx).copied().unwrap_or(0);
-    let end_offset = if end_idx + 1 < sample_offsets.len() {
-        sample_offsets[end_idx + 1]
-    } else {
-        src_data.len() as u64
-    };
-
-    // 复制 mdat 前的内容（ftyp + moov 等头部）+ 裁剪后的 mdat 数据
-    let mdat_start = sample_offsets.first().copied().unwrap_or(0);
-    let head_data = &src_data[..mdat_start as usize];
-    let clip_data = &src_data[start_offset as usize..end_offset as usize];
-
-    let mut output_data = Vec::with_capacity(head_data.len() + clip_data.len());
-    output_data.extend_from_slice(head_data);
-    output_data.extend_from_slice(clip_data);
-
-    let _ = app_handle.emit("video-crop-progress", serde_json::json!({ "progress": 90.0 }));
-
-    std::fs::write(&output_path, &output_data)
-        .map_err(|e| format!("写入文件失败: {}", e))?;
-
-    let output_size = output_data.len() as u64;
+    std::fs::write(&output_path, &data)
+        .map_err(|e| format!("写入输出文件失败: {}", e))?;
 
     let _ = app_handle.emit("video-crop-progress", serde_json::json!({ "progress": 100.0 }));
+
+    let output_size = data.len() as u64;
 
     Ok(CropResult {
         output_path: output_path.to_string_lossy().to_string(),
         output_size,
-        duration: actual_end - actual_start,
-        actual_start: Some(actual_start),
-        actual_end: Some(actual_end),
+        duration: actual_end_secs - actual_start_secs,
+        actual_start: Some(actual_start_secs),
+        actual_end: Some(actual_end_secs),
     })
 }
 

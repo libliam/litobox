@@ -1,5 +1,26 @@
 # SDD Progress Ledger
 
+Plan: docs/superpowers/plans/2026-07-15-video-tool.md
+Spec: docs/superpowers/specs/2026-07-15-video-tool-design.md
+Base commit: b9cfba0
+
+## Task Progress
+
+| Task | Status | Commit(s) | Notes |
+|------|--------|-----------|-------|
+| 1: 添加 mp4 依赖 | ✅ | 709fe3f | review clean; 1 line added |
+| 2: 创建 video_tools.rs | ✅ | 6110dc0 | 559 行，mp4 0.14 API 适配（9 处差异），关键帧裁剪简化策略 |
+| 3: 注册 Tauri commands | ✅ | 5c69f27 | 3 commands 注册; cargo check 通过 |
+| 4: 创建 VideoTool.vue | ✅ | 8986d70 | 693 行; npm run build 通过; vue-tsc 0 错误 |
+| 5: 注册到 App.vue 和 TOOL_LIST | ✅ | be2c08c | 3 insertions; npm run build 通过 |
+| 6: 版本号 + README | ✅ | a5fc9cc | 5.1.0→5.2.0; README 功能表 + 版本历史更新 |
+| 7: 端到端验证 | ⏳ | — | 需手动运行 npm run tauri dev 测试 |
+
+## Minor Notes
+- Task 2: 关键帧裁剪采用"头部复制 + mdat 裁剪"简化策略，不重写 moov 元数据，播放器容错播放可用。如需精确裁剪建议使用 ffmpeg 路径。
+
+---
+
 Plan: docs/superpowers/plans/2026-07-09-background-collect.md
 Spec: docs/superpowers/specs/2026-07-09-background-collect-design.md
 Base commit: b7d4a4e
@@ -31,4 +52,4 @@ Base commit: 988cdc5
 
 | Task | Status | Commit(s) | Notes |
 |------|--------|-----------|-------|
-| 1: ���� Rust ���� | ? | 12c5a84 | review clean; mp3lame-encoder 0.5��0.2.4 (API ������֪��Task 3 ����) |
+| 1: ���� Rust ���� | ? | 12c5a84 | review clean; mp3lame-encoder 0.5��0.2.4 (API ������֪��Task 3 ����) |
