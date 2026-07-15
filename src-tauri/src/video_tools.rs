@@ -116,10 +116,22 @@ pub(crate) fn ensure_ffmpeg_in_path() {
         }
         debug_log!("[ffmpeg] PATH 中未找到，开始搜索常见安装路径...");
 
-        let mut search_dirs: Vec<String> = vec![
-            r"C:\ffmpeg\bin".to_string(),
-            r"C:\Program Files\ffmpeg\bin".to_string(),
-        ];
+        let mut search_dirs: Vec<String> = Vec::new();
+
+        // 优先检查当前 exe 所在目录（用户可将 ffmpeg 放在 litobox 同目录）
+        if let Ok(exe_path) = std::env::current_exe() {
+            if let Some(exe_dir) = exe_path.parent() {
+                let ffmpeg_exe = exe_dir.join("ffmpeg.exe");
+                debug_log!("[ffmpeg] 检查当前目录: {}", ffmpeg_exe.display());
+                if ffmpeg_exe.exists() {
+                    search_dirs.push(exe_dir.to_string_lossy().to_string());
+                    debug_log!("[ffmpeg] 当前目录找到 ffmpeg");
+                }
+            }
+        }
+
+        search_dirs.push(r"C:\ffmpeg\bin".to_string());
+        search_dirs.push(r"C:\Program Files\ffmpeg\bin".to_string());
 
         // winget 安装路径: %LOCALAPPDATA%\Microsoft\WinGet\Packages\*
         if let Ok(local) = std::env::var("LOCALAPPDATA") {

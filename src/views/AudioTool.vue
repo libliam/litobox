@@ -20,6 +20,10 @@
     <div class="tool-card sticky-card">
       <el-tabs v-model="activeTab" class="audio-tool-tabs">
         <el-tab-pane label="音频裁剪" name="crop" />
+        <el-tab-pane label="格式转换" name="convert" />
+        <el-tab-pane label="音频压缩" name="compress" />
+        <el-tab-pane label="音频合并" name="merge" />
+        <el-tab-pane label="变速变调" name="speed" />
       </el-tabs>
     </div>
 
@@ -164,13 +168,417 @@
       </div>
     </template>
 
+    <!-- ====== Tab: 格式转换 ====== -->
+    <template v-if="activeTab === 'convert'">
+      <!-- 文件选择 -->
+      <div class="tool-card">
+        <div class="card-header">
+          <span class="card-title">选择音频文件</span>
+        </div>
+        <div class="card-body">
+          <div class="action-grid">
+            <div class="action-group">
+              <el-button type="primary" size="small" @click="openConvertFile" :loading="convertState.isLoadingInfo">
+                打开文件
+              </el-button>
+            </div>
+          </div>
+          <div v-if="convertState.filePath" class="audio-file-info">
+            <span class="file-name">{{ convertState.fileName }}</span>
+            <span class="file-detail" v-if="convertState.audioInfo">
+              {{ formatDuration(convertState.audioInfo.duration) }} | {{ convertState.audioInfo.format.toUpperCase() }} |
+              {{ convertState.audioInfo.sample_rate }}Hz | {{ convertState.audioInfo.channels === 2 ? '立体声' : '单声道' }} |
+              {{ convertState.audioInfo.bitrate }}kbps
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 转换设置 -->
+      <div v-if="convertState.filePath" class="tool-card">
+        <div class="card-header">
+          <span class="card-title">转换设置</span>
+        </div>
+        <div class="card-body">
+          <div class="action-grid">
+            <div class="action-group">
+              <div class="group-label">输出格式</div>
+              <el-select v-model="convertState.outputFormat" size="small" style="width: 120px">
+                <el-option label="MP3" value="mp3" />
+                <el-option label="WAV" value="wav" />
+                <el-option label="M4A/AAC" value="m4a" />
+                <el-option label="FLAC" value="flac" />
+                <el-option label="OGG" value="ogg" />
+              </el-select>
+            </div>
+            <div class="action-group" v-if="['mp3', 'm4a', 'ogg'].includes(convertState.outputFormat)">
+              <div class="group-label">比特率</div>
+              <el-select v-model="convertState.bitrate" size="small" style="width: 120px">
+                <el-option label="128 kbps" :value="128" />
+                <el-option label="192 kbps" :value="192" />
+                <el-option label="256 kbps" :value="256" />
+                <el-option label="320 kbps" :value="320" />
+              </el-select>
+            </div>
+            <div class="action-group">
+              <div class="group-label">采样率</div>
+              <el-select v-model="convertState.sampleRate" size="small" style="width: 120px">
+                <el-option label="原始" :value="null" />
+                <el-option label="44100 Hz" :value="44100" />
+                <el-option label="48000 Hz" :value="48000" />
+                <el-option label="96000 Hz" :value="96000" />
+              </el-select>
+            </div>
+            <div class="action-group">
+              <div class="group-label">声道</div>
+              <el-select v-model="convertState.channels" size="small" style="width: 120px">
+                <el-option label="原始" :value="null" />
+                <el-option label="单声道" :value="1" />
+                <el-option label="立体声" :value="2" />
+              </el-select>
+            </div>
+          </div>
+          <div class="action-grid" style="margin-top: 8px">
+            <div class="action-group">
+              <el-checkbox v-model="convertState.saveToSamePath" size="small">
+                与源文件相同路径
+              </el-checkbox>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 操作 -->
+      <div v-if="convertState.filePath" class="tool-card">
+        <div class="card-header">
+          <span class="card-title">操作</span>
+        </div>
+        <div class="card-body">
+          <div class="action-grid">
+            <div class="action-group">
+              <el-button type="primary" size="small" @click="convertAudio" :loading="convertState.isProcessing">
+                转换并导出
+              </el-button>
+              <el-button size="small" @click="resetConvertForm">重置</el-button>
+            </div>
+          </div>
+          <el-progress v-if="convertState.isProcessing" :percentage="convertState.progress" :stroke-width="6" style="margin-top: 12px" />
+        </div>
+      </div>
+    </template>
+
+    <!-- ====== Tab: 音频压缩 ====== -->
+    <template v-if="activeTab === 'compress'">
+      <!-- 文件选择 -->
+      <div class="tool-card">
+        <div class="card-header">
+          <span class="card-title">选择音频文件</span>
+        </div>
+        <div class="card-body">
+          <div class="action-grid">
+            <div class="action-group">
+              <el-button type="primary" size="small" @click="openCompressFile" :loading="compressState.isLoadingInfo">
+                打开文件
+              </el-button>
+            </div>
+          </div>
+          <div v-if="compressState.filePath" class="audio-file-info">
+            <span class="file-name">{{ compressState.fileName }}</span>
+            <span class="file-detail" v-if="compressState.audioInfo">
+              {{ formatDuration(compressState.audioInfo.duration) }} | {{ compressState.audioInfo.format.toUpperCase() }} |
+              {{ (compressState.audioInfo.file_size / 1024 / 1024).toFixed(2) }} MB |
+              {{ compressState.audioInfo.bitrate }}kbps
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 压缩设置 -->
+      <div v-if="compressState.filePath" class="tool-card">
+        <div class="card-header">
+          <span class="card-title">压缩设置</span>
+        </div>
+        <div class="card-body">
+          <div class="action-grid">
+            <div class="action-group">
+              <div class="group-label">压缩模式</div>
+              <el-select v-model="compressState.mode" size="small" style="width: 140px">
+                <el-option label="目标比特率" value="bitrate" />
+                <el-option label="质量等级" value="quality" />
+              </el-select>
+            </div>
+            <div class="action-group" v-if="compressState.mode === 'bitrate'">
+              <div class="group-label">目标比特率</div>
+              <el-select v-model="compressState.bitrate" size="small" style="width: 120px">
+                <el-option label="64 kbps" :value="64" />
+                <el-option label="96 kbps" :value="96" />
+                <el-option label="128 kbps" :value="128" />
+                <el-option label="192 kbps" :value="192" />
+              </el-select>
+            </div>
+            <div class="action-group" v-if="compressState.mode === 'quality'">
+              <div class="group-label">质量等级</div>
+              <el-select v-model="compressState.quality" size="small" style="width: 120px">
+                <el-option label="低 (64kbps)" value="low" />
+                <el-option label="中 (128kbps)" value="medium" />
+                <el-option label="高 (192kbps)" value="high" />
+              </el-select>
+            </div>
+            <div class="action-group">
+              <div class="group-label">采样率</div>
+              <el-select v-model="compressState.sampleRate" size="small" style="width: 120px">
+                <el-option label="原始" :value="null" />
+                <el-option label="44100 Hz" :value="44100" />
+                <el-option label="22050 Hz" :value="22050" />
+              </el-select>
+            </div>
+          </div>
+          <div class="action-grid" style="margin-top: 8px">
+            <div class="action-group">
+              <el-checkbox v-model="compressState.saveToSamePath" size="small">
+                与源文件相同路径
+              </el-checkbox>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 操作 -->
+      <div v-if="compressState.filePath" class="tool-card">
+        <div class="card-header">
+          <span class="card-title">操作</span>
+        </div>
+        <div class="card-body">
+          <div class="action-grid">
+            <div class="action-group">
+              <el-button type="primary" size="small" @click="compressAudio" :loading="compressState.isProcessing">
+                压缩并导出
+              </el-button>
+              <el-button size="small" @click="resetCompressForm">重置</el-button>
+            </div>
+          </div>
+          <el-progress v-if="compressState.isProcessing" :percentage="compressState.progress" :stroke-width="6" style="margin-top: 12px" />
+        </div>
+      </div>
+    </template>
+
+    <!-- ====== Tab: 音频合并 ====== -->
+    <template v-if="activeTab === 'merge'">
+      <!-- 文件列表 -->
+      <div class="tool-card">
+        <div class="card-header">
+          <span class="card-title">添加音频文件</span>
+          <div class="card-actions">
+            <el-button size="small" @click="addMergeFiles">添加文件</el-button>
+            <el-button size="small" @click="clearMergeFiles" :disabled="mergeState.files.length === 0">清空列表</el-button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div v-if="mergeState.files.length === 0" class="merge-empty">
+            点击"添加文件"选择多个音频文件
+          </div>
+          <div v-else class="merge-file-list">
+            <div
+              v-for="(file, index) in mergeState.files"
+              :key="file.path"
+              class="merge-file-item"
+              draggable="true"
+              @dragstart="onDragStart($event, index)"
+              @dragover.prevent="onDragOver($event, index)"
+              @drop="onDrop($event, index)"
+              :class="{ 'dragging': mergeState.dragIndex === index }"
+            >
+              <span class="merge-file-index">{{ index + 1 }}</span>
+              <span class="merge-file-name">{{ file.name }}</span>
+              <span class="merge-file-duration" v-if="file.duration">{{ formatDuration(file.duration) }}</span>
+              <el-button size="small" type="danger" text @click="removeMergeFile(index)">删除</el-button>
+            </div>
+          </div>
+          <div v-if="mergeState.files.length > 0" class="merge-total-info">
+            共 {{ mergeState.files.length }} 个文件，总时长: {{ formatDuration(mergeTotalDuration) }}
+          </div>
+        </div>
+      </div>
+
+      <!-- 合并设置 -->
+      <div v-if="mergeState.files.length >= 2" class="tool-card">
+        <div class="card-header">
+          <span class="card-title">合并设置</span>
+        </div>
+        <div class="card-body">
+          <div class="action-grid">
+            <div class="action-group">
+              <div class="group-label">输出格式</div>
+              <el-select v-model="mergeState.outputFormat" size="small" style="width: 120px">
+                <el-option label="MP3" value="mp3" />
+                <el-option label="WAV" value="wav" />
+                <el-option label="M4A/AAC" value="m4a" />
+              </el-select>
+            </div>
+            <div class="action-group" v-if="['mp3', 'm4a'].includes(mergeState.outputFormat)">
+              <div class="group-label">比特率</div>
+              <el-select v-model="mergeState.bitrate" size="small" style="width: 120px">
+                <el-option label="128 kbps" :value="128" />
+                <el-option label="192 kbps" :value="192" />
+                <el-option label="256 kbps" :value="256" />
+                <el-option label="320 kbps" :value="320" />
+              </el-select>
+            </div>
+            <div class="action-group">
+              <div class="group-label">合并模式</div>
+              <el-select v-model="mergeState.mode" size="small" style="width: 140px">
+                <el-option label="自动 (推荐)" value="auto" />
+                <el-option label="强制转码" value="force_transcode" />
+              </el-select>
+            </div>
+          </div>
+          <div class="action-grid" style="margin-top: 8px">
+            <div class="action-group">
+              <el-checkbox v-model="mergeState.saveToSamePath" size="small">
+                与第一个文件相同路径
+              </el-checkbox>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 操作 -->
+      <div v-if="mergeState.files.length >= 2" class="tool-card">
+        <div class="card-header">
+          <span class="card-title">操作</span>
+        </div>
+        <div class="card-body">
+          <div class="action-grid">
+            <div class="action-group">
+              <el-button type="primary" size="small" @click="mergeAudio" :loading="mergeState.isProcessing">
+                合并并导出
+              </el-button>
+              <el-button size="small" @click="resetMergeForm">重置</el-button>
+            </div>
+          </div>
+          <el-progress v-if="mergeState.isProcessing" :percentage="mergeState.progress" :stroke-width="6" style="margin-top: 12px" />
+        </div>
+      </div>
+    </template>
+
+    <!-- ====== Tab: 变速变调 ====== -->
+    <template v-if="activeTab === 'speed'">
+      <!-- 文件选择 -->
+      <div class="tool-card">
+        <div class="card-header">
+          <span class="card-title">选择音频文件</span>
+        </div>
+        <div class="card-body">
+          <div class="action-grid">
+            <div class="action-group">
+              <el-button type="primary" size="small" @click="openSpeedFile" :loading="speedState.isLoadingInfo">
+                打开文件
+              </el-button>
+            </div>
+          </div>
+          <div v-if="speedState.filePath" class="audio-file-info">
+            <span class="file-name">{{ speedState.fileName }}</span>
+            <span class="file-detail" v-if="speedState.audioInfo">
+              {{ formatDuration(speedState.audioInfo.duration) }} | {{ speedState.audioInfo.format.toUpperCase() }} |
+              {{ speedState.audioInfo.sample_rate }}Hz | {{ speedState.audioInfo.channels === 2 ? '立体声' : '单声道' }} |
+              {{ speedState.audioInfo.bitrate }}kbps
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 变速设置 -->
+      <div v-if="speedState.filePath" class="tool-card">
+        <div class="card-header">
+          <span class="card-title">变速设置</span>
+        </div>
+        <div class="card-body">
+          <div class="action-grid">
+            <div class="action-group">
+              <div class="group-label">播放速度</div>
+              <el-slider
+                v-model="speedState.speed"
+                :min="0.5"
+                :max="4.0"
+                :step="0.1"
+                :format-tooltip="(val: number) => val.toFixed(1) + 'x'"
+                style="width: 200px"
+              />
+              <el-input-number
+                v-model="speedState.speed"
+                :min="0.5"
+                :max="4.0"
+                :step="0.1"
+                :precision="1"
+                size="small"
+                style="width: 120px; margin-left: 12px"
+              />
+              <span class="unit-text">x</span>
+            </div>
+            <div class="action-group">
+              <el-checkbox v-model="speedState.keepPitch" size="small">
+                保持音调 (推荐)
+              </el-checkbox>
+            </div>
+          </div>
+          <div class="speed-info" v-if="speedState.audioInfo">
+            输出时长: {{ formatDuration(speedState.audioInfo.duration) }} → {{ formatDuration(speedState.audioInfo.duration / speedState.speed) }}
+          </div>
+          <div class="action-grid" style="margin-top: 8px">
+            <div class="action-group">
+              <div class="group-label">输出格式</div>
+              <el-select v-model="speedState.outputFormat" size="small" style="width: 120px">
+                <el-option label="MP3" value="mp3" />
+                <el-option label="WAV" value="wav" />
+                <el-option label="M4A/AAC" value="m4a" />
+              </el-select>
+            </div>
+            <div class="action-group" v-if="['mp3', 'm4a'].includes(speedState.outputFormat)">
+              <div class="group-label">比特率</div>
+              <el-select v-model="speedState.bitrate" size="small" style="width: 120px">
+                <el-option label="128 kbps" :value="128" />
+                <el-option label="192 kbps" :value="192" />
+                <el-option label="256 kbps" :value="256" />
+                <el-option label="320 kbps" :value="320" />
+              </el-select>
+            </div>
+          </div>
+          <div class="action-grid" style="margin-top: 8px">
+            <div class="action-group">
+              <el-checkbox v-model="speedState.saveToSamePath" size="small">
+                与源文件相同路径
+              </el-checkbox>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 操作 -->
+      <div v-if="speedState.filePath" class="tool-card">
+        <div class="card-header">
+          <span class="card-title">操作</span>
+        </div>
+        <div class="card-body">
+          <div class="action-grid">
+            <div class="action-group">
+              <el-button type="primary" size="small" @click="changeSpeed" :loading="speedState.isProcessing">
+                导出并保存
+              </el-button>
+              <el-button size="small" @click="resetSpeedForm">重置</el-button>
+            </div>
+          </div>
+          <el-progress v-if="speedState.isProcessing" :percentage="speedState.progress" :stroke-width="6" style="margin-top: 12px" />
+        </div>
+      </div>
+    </template>
+
     <!-- 错误提示 -->
     <div v-if="error" class="error-message">{{ error }}</div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick, reactive } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { open, save } from '@tauri-apps/plugin-dialog'
 import { listen } from '@tauri-apps/api/event'
@@ -198,8 +606,98 @@ interface CropResult {
   duration: number
 }
 
+interface ConvertResult {
+  output_path: string
+  output_size: number
+}
+
+interface CompressResult {
+  output_path: string
+  output_size: number
+  original_size: number
+}
+
+interface MergeResult {
+  output_path: string
+  output_size: number
+  duration: number
+}
+
+interface SpeedChangeResult {
+  output_path: string
+  output_size: number
+  duration: number
+}
+
+interface MergeFile {
+  path: string
+  name: string
+  duration: number
+}
+
 // ============ Tab 状态 ============
 const activeTab = ref('crop')
+
+// ============ 格式转换状态 ============
+const convertState = reactive({
+  filePath: '',
+  fileName: '',
+  audioInfo: null as AudioInfo | null,
+  outputFormat: 'mp3',
+  bitrate: 192,
+  sampleRate: null as number | null,
+  channels: null as number | null,
+  saveToSamePath: true,
+  isProcessing: false,
+  isLoadingInfo: false,
+  progress: 0,
+})
+
+// ============ 音频压缩状态 ============
+const compressState = reactive({
+  filePath: '',
+  fileName: '',
+  audioInfo: null as AudioInfo | null,
+  mode: 'bitrate',
+  bitrate: 128,
+  quality: 'medium',
+  sampleRate: null as number | null,
+  saveToSamePath: true,
+  isProcessing: false,
+  isLoadingInfo: false,
+  progress: 0,
+})
+
+// ============ 音频合并状态 ============
+const mergeState = reactive({
+  files: [] as MergeFile[],
+  outputFormat: 'mp3',
+  bitrate: 192,
+  mode: 'auto',
+  saveToSamePath: true,
+  isProcessing: false,
+  progress: 0,
+  dragIndex: -1,
+})
+
+const mergeTotalDuration = computed(() => {
+  return mergeState.files.reduce((sum, f) => sum + f.duration, 0)
+})
+
+// ============ 变速变调状态 ============
+const speedState = reactive({
+  filePath: '',
+  fileName: '',
+  audioInfo: null as AudioInfo | null,
+  speed: 1.0,
+  keepPitch: true,
+  outputFormat: 'mp3',
+  bitrate: 192,
+  saveToSamePath: true,
+  isProcessing: false,
+  isLoadingInfo: false,
+  progress: 0,
+})
 
 // ============ 状态 ============
 const filePath = ref('')
@@ -509,6 +1007,391 @@ function resetForm() {
   stopPreview()
 }
 
+// ============ 格式转换操作 ============
+async function openConvertFile() {
+  try {
+    error.value = ''
+    const selected = await open({
+      filters: [{ name: '音频文件', extensions: ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg'] }],
+      multiple: false,
+    })
+    if (!selected) return
+
+    convertState.filePath = selected as string
+    convertState.fileName = (selected as string).split(/[/\\]/).pop() || ''
+
+    convertState.isLoadingInfo = true
+    const info: AudioInfo = await invoke('get_audio_info', { path: convertState.filePath, useFfmpeg: useFfmpeg.value })
+    convertState.audioInfo = info
+  } catch (e: any) {
+    error.value = typeof e === 'string' ? e : e.message || '加载失败'
+    resetConvertForm()
+  } finally {
+    convertState.isLoadingInfo = false
+  }
+}
+
+async function convertAudio() {
+  if (!convertState.filePath) {
+    ElMessage.warning('请先选择音频文件')
+    return
+  }
+
+  try {
+    error.value = ''
+    convertState.isProcessing = true
+    convertState.progress = 0
+
+    const unlisten = await listen<{ progress: number }>('audio-convert-progress', (event) => {
+      convertState.progress = Math.round(event.payload.progress)
+    })
+
+    let outputPath: string | null = null
+    if (!convertState.saveToSamePath) {
+      const defaultName = convertState.fileName.replace(/\.[^.]+$/, '') + '_converted.' + convertState.outputFormat
+      outputPath = await save({
+        defaultPath: defaultName,
+        filters: [{ name: '音频文件', extensions: [convertState.outputFormat] }],
+      })
+      if (!outputPath) {
+        unlisten()
+        convertState.isProcessing = false
+        return
+      }
+    }
+
+    const result: ConvertResult = await invoke('audio_convert', {
+      path: convertState.filePath,
+      options: {
+        output_format: convertState.outputFormat,
+        bitrate: convertState.bitrate,
+        sample_rate: convertState.sampleRate,
+        channels: convertState.channels,
+        output_path: outputPath,
+      },
+    })
+
+    unlisten()
+    convertState.progress = 100
+    ElMessage.success(`转换完成，已保存到: ${result.output_path}`)
+  } catch (e: any) {
+    error.value = typeof e === 'string' ? e : e.message || '转换失败'
+  } finally {
+    convertState.isProcessing = false
+  }
+}
+
+function resetConvertForm() {
+  convertState.filePath = ''
+  convertState.fileName = ''
+  convertState.audioInfo = null
+  convertState.outputFormat = 'mp3'
+  convertState.bitrate = 192
+  convertState.sampleRate = null
+  convertState.channels = null
+  convertState.saveToSamePath = true
+  convertState.progress = 0
+  error.value = ''
+}
+
+// ============ 音频压缩操作 ============
+async function openCompressFile() {
+  try {
+    error.value = ''
+    const selected = await open({
+      filters: [{ name: '音频文件', extensions: ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg'] }],
+      multiple: false,
+    })
+    if (!selected) return
+
+    compressState.filePath = selected as string
+    compressState.fileName = (selected as string).split(/[/\\]/).pop() || ''
+
+    compressState.isLoadingInfo = true
+    const info: AudioInfo = await invoke('get_audio_info', { path: compressState.filePath, useFfmpeg: useFfmpeg.value })
+    compressState.audioInfo = info
+  } catch (e: any) {
+    error.value = typeof e === 'string' ? e : e.message || '加载失败'
+    resetCompressForm()
+  } finally {
+    compressState.isLoadingInfo = false
+  }
+}
+
+async function compressAudio() {
+  if (!compressState.filePath) {
+    ElMessage.warning('请先选择音频文件')
+    return
+  }
+
+  try {
+    error.value = ''
+    compressState.isProcessing = true
+    compressState.progress = 0
+
+    const unlisten = await listen<{ progress: number }>('audio-compress-progress', (event) => {
+      compressState.progress = Math.round(event.payload.progress)
+    })
+
+    let outputPath: string | null = null
+    if (!compressState.saveToSamePath) {
+      const ext = compressState.audioInfo?.format || 'mp3'
+      const defaultName = compressState.fileName.replace(/\.[^.]+$/, '') + '_compressed.' + ext
+      outputPath = await save({
+        defaultPath: defaultName,
+        filters: [{ name: '音频文件', extensions: [ext] }],
+      })
+      if (!outputPath) {
+        unlisten()
+        compressState.isProcessing = false
+        return
+      }
+    }
+
+    const result: CompressResult = await invoke('audio_compress', {
+      path: compressState.filePath,
+      options: {
+        mode: compressState.mode,
+        bitrate: compressState.mode === 'bitrate' ? compressState.bitrate : null,
+        quality: compressState.mode === 'quality' ? compressState.quality : null,
+        sample_rate: compressState.sampleRate,
+        output_path: outputPath,
+      },
+    })
+
+    unlisten()
+    compressState.progress = 100
+    const saved = result.original_size - result.output_size
+    ElMessage.success(`压缩完成，节省 ${(saved / 1024 / 1024).toFixed(2)} MB，已保存到: ${result.output_path}`)
+  } catch (e: any) {
+    error.value = typeof e === 'string' ? e : e.message || '压缩失败'
+  } finally {
+    compressState.isProcessing = false
+  }
+}
+
+function resetCompressForm() {
+  compressState.filePath = ''
+  compressState.fileName = ''
+  compressState.audioInfo = null
+  compressState.mode = 'bitrate'
+  compressState.bitrate = 128
+  compressState.quality = 'medium'
+  compressState.sampleRate = null
+  compressState.saveToSamePath = true
+  compressState.progress = 0
+  error.value = ''
+}
+
+// ============ 音频合并操作 ============
+async function addMergeFiles() {
+  try {
+    error.value = ''
+    const selected = await open({
+      filters: [{ name: '音频文件', extensions: ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg'] }],
+      multiple: true,
+    })
+    if (!selected || !Array.isArray(selected)) return
+
+    for (const path of selected) {
+      const name = path.split(/[/\\]/).pop() || ''
+      // 获取音频时长
+      let duration = 0
+      try {
+        const info: AudioInfo = await invoke('get_audio_info', { path, useFfmpeg: useFfmpeg.value })
+        duration = info.duration
+      } catch {
+        // 忽略获取时长失败
+      }
+      mergeState.files.push({ path, name, duration })
+    }
+  } catch (e: any) {
+    error.value = typeof e === 'string' ? e : e.message || '添加文件失败'
+  }
+}
+
+function clearMergeFiles() {
+  mergeState.files = []
+  mergeState.progress = 0
+  error.value = ''
+}
+
+function removeMergeFile(index: number) {
+  mergeState.files.splice(index, 1)
+}
+
+function onDragStart(e: DragEvent, index: number) {
+  mergeState.dragIndex = index
+  e.dataTransfer!.effectAllowed = 'move'
+}
+
+function onDragOver(e: DragEvent, _index: number) {
+  e.dataTransfer!.dropEffect = 'move'
+}
+
+function onDrop(e: DragEvent, index: number) {
+  e.preventDefault()
+  const dragIndex = mergeState.dragIndex
+  if (dragIndex === index || dragIndex === -1) return
+
+  const item = mergeState.files.splice(dragIndex, 1)[0]
+  mergeState.files.splice(index, 0, item)
+  mergeState.dragIndex = -1
+}
+
+async function mergeAudio() {
+  if (mergeState.files.length < 2) {
+    ElMessage.warning('至少需要两个音频文件')
+    return
+  }
+
+  try {
+    error.value = ''
+    mergeState.isProcessing = true
+    mergeState.progress = 0
+
+    const unlisten = await listen<{ progress: number }>('audio-merge-progress', (event) => {
+      mergeState.progress = Math.round(event.payload.progress)
+    })
+
+    let outputPath: string | null = null
+    if (!mergeState.saveToSamePath) {
+      const firstName = mergeState.files[0].name.replace(/\.[^.]+$/, '')
+      const defaultName = firstName + '_merged.' + mergeState.outputFormat
+      outputPath = await save({
+        defaultPath: defaultName,
+        filters: [{ name: '音频文件', extensions: [mergeState.outputFormat] }],
+      })
+      if (!outputPath) {
+        unlisten()
+        mergeState.isProcessing = false
+        return
+      }
+    }
+
+    const result: MergeResult = await invoke('audio_merge', {
+      options: {
+        input_paths: mergeState.files.map(f => f.path),
+        output_format: mergeState.outputFormat,
+        bitrate: mergeState.bitrate,
+        mode: mergeState.mode,
+        output_path: outputPath,
+      },
+    })
+
+    unlisten()
+    mergeState.progress = 100
+    ElMessage.success(`合并完成，总时长 ${formatDuration(result.duration)}，已保存到: ${result.output_path}`)
+  } catch (e: any) {
+    error.value = typeof e === 'string' ? e : e.message || '合并失败'
+  } finally {
+    mergeState.isProcessing = false
+  }
+}
+
+function resetMergeForm() {
+  mergeState.files = []
+  mergeState.outputFormat = 'mp3'
+  mergeState.bitrate = 192
+  mergeState.mode = 'auto'
+  mergeState.saveToSamePath = true
+  mergeState.progress = 0
+  mergeState.dragIndex = -1
+  error.value = ''
+}
+
+// ============ 变速变调操作 ============
+async function openSpeedFile() {
+  try {
+    error.value = ''
+    const selected = await open({
+      filters: [{ name: '音频文件', extensions: ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg'] }],
+      multiple: false,
+    })
+    if (!selected) return
+
+    speedState.filePath = selected as string
+    speedState.fileName = (selected as string).split(/[/\\]/).pop() || ''
+
+    speedState.isLoadingInfo = true
+    const info: AudioInfo = await invoke('get_audio_info', { path: speedState.filePath, useFfmpeg: useFfmpeg.value })
+    speedState.audioInfo = info
+  } catch (e: any) {
+    error.value = typeof e === 'string' ? e : e.message || '加载失败'
+    resetSpeedForm()
+  } finally {
+    speedState.isLoadingInfo = false
+  }
+}
+
+async function changeSpeed() {
+  if (!speedState.filePath) {
+    ElMessage.warning('请先选择音频文件')
+    return
+  }
+
+  if (speedState.speed < 0.5 || speedState.speed > 4.0) {
+    ElMessage.warning('速度必须在 0.5x 到 4.0x 之间')
+    return
+  }
+
+  try {
+    error.value = ''
+    speedState.isProcessing = true
+    speedState.progress = 0
+
+    const unlisten = await listen<{ progress: number }>('audio-speed-progress', (event) => {
+      speedState.progress = Math.round(event.payload.progress)
+    })
+
+    let outputPath: string | null = null
+    if (!speedState.saveToSamePath) {
+      const defaultName = speedState.fileName.replace(/\.[^.]+$/, '') + `_${speedState.speed}x.` + speedState.outputFormat
+      outputPath = await save({
+        defaultPath: defaultName,
+        filters: [{ name: '音频文件', extensions: [speedState.outputFormat] }],
+      })
+      if (!outputPath) {
+        unlisten()
+        speedState.isProcessing = false
+        return
+      }
+    }
+
+    const result: SpeedChangeResult = await invoke('audio_speed_change', {
+      path: speedState.filePath,
+      options: {
+        speed: speedState.speed,
+        keep_pitch: speedState.keepPitch,
+        output_format: speedState.outputFormat,
+        bitrate: speedState.bitrate,
+        output_path: outputPath,
+      },
+    })
+
+    unlisten()
+    speedState.progress = 100
+    ElMessage.success(`变速完成，新时长 ${formatDuration(result.duration)}，已保存到: ${result.output_path}`)
+  } catch (e: any) {
+    error.value = typeof e === 'string' ? e : e.message || '变速失败'
+  } finally {
+    speedState.isProcessing = false
+  }
+}
+
+function resetSpeedForm() {
+  speedState.filePath = ''
+  speedState.fileName = ''
+  speedState.audioInfo = null
+  speedState.speed = 1.0
+  speedState.keepPitch = true
+  speedState.outputFormat = 'mp3'
+  speedState.bitrate = 192
+  speedState.saveToSamePath = true
+  speedState.progress = 0
+  error.value = ''
+}
+
 // ============ 格式化 ============
 function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60)
@@ -711,5 +1594,72 @@ html.light .audio-tool-tabs :deep(.el-tabs__header) {
   font-size: 12px;
   color: var(--accent-orange);
   user-select: all;
+}
+
+/* ===== 音频合并样式 ===== */
+.merge-empty {
+  color: var(--text-secondary);
+  font-size: 13px;
+  text-align: center;
+  padding: 20px;
+}
+
+.merge-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.merge-file-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  cursor: move;
+  transition: all 0.2s;
+}
+
+.merge-file-item:hover {
+  border-color: var(--accent-cyan);
+}
+
+.merge-file-item.dragging {
+  opacity: 0.5;
+}
+
+.merge-file-index {
+  color: var(--accent-cyan);
+  font-weight: 600;
+  min-width: 20px;
+}
+
+.merge-file-name {
+  flex: 1;
+  color: var(--text-primary);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.merge-file-duration {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.merge-total-info {
+  margin-top: 12px;
+  color: var(--accent-cyan);
+  font-size: 13px;
+}
+
+/* ===== 变速变调样式 ===== */
+.speed-info {
+  margin-top: 8px;
+  color: var(--accent-cyan);
+  font-size: 13px;
 }
 </style>
