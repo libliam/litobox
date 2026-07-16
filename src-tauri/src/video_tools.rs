@@ -1531,3 +1531,321 @@ fn do_video_merge(
         file_count,
     })
 }
+
+// ============ 视频截图/帧提取 (F24) ============
+
+/// 获取视频指定时间点的预览帧（base64），用于前端预览
+#[tauri::command]
+pub async fn video_preview_frame(path: String, time_point: f64, max_width: u32) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if !ffmpeg_available() {
+            return Err("视频预览需要 ffmpeg".to_string());
+        }
+        do_video_preview_frame(&path, time_point, max_width)
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
+}
+
+// 从 ffmpeg stderr 中提取有意义的错误行，过滤掉版本 banner / 配置 / libav 信息等噪音。
+// ponytail: 启发式过滤——优先选 Error/Could not/Invalid 等行，兜底取末尾几行；
+// 升级路径：若未来出现更结构化的报错（如 JSON 输出），可改为解析 -progress pipe。
+fn ffmpeg_error_summary(stderr: &str) -> String {
+    let banner_prefixes = [
+        "ffmpeg version", "configuration:", "libav", "built with",
+    ];
+    // 优先收集明显是错误的行
+    let mut errors: Vec<&str> = Vec::new();
+    let mut tail: Vec<&str> = Vec::new();
+    for line in stderr.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() { continue; }
+        if banner_prefixes.iter().any(|p| trimmed.starts_with(p)) { continue; }
+        if trimmed.starts_with("--") { continue; }
+        let lower = trimmed.to_ascii_lowercase();
+        let is_err = lower.contains("error") || lower.contains("could not")
+            || lower.contains("invalid") || lower.contains("no such")
+            || lower.contains("not found") || lower.contains("cannot")
+            || lower.contains("failed") || trimmed.starts_with('[');
+        if is_err { errors.push(line); }
+        if tail.len() < 3 { tail.push(line); }
+    }
+    let picked = if !errors.is_empty() { &errors } else { &tail };
+    if picked.is_empty() {
+        return "未知错误".to_string();
+    }
+    picked.iter().take(3).cloned().collect::<Vec<_>>().join(" | ")
+}
+
+fn do_video_preview_frame(path: &str, time_point: f64, max_width: u32) -> Result<String, String> {
+    debug_log!("video_preview_frame: path={}, time={}, max_w={}", path, time_point, max_width);
+    let output = std::process::Command::new("ffmpeg")
+        .args(&[
+            "-y",
+            "-i", path,
+            "-ss", &format!("{:.3}", time_point),
+            "-vframes", "1",
+            "-vf", &format!("scale={}:-1", max_width),
+            "-f", "image2pipe",
+            "-vcodec", "mjpeg",
+            "pipe:1",
+        ])
+        .creation_flags(CREATE_NO_WINDOW)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .map_err(|e| format!("ffmpeg 预览帧提取失败: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = encoding_rs::GBK.decode(&output.stderr).0.to_string();
+        debug_log!("video_preview_frame ffmpeg stderr: {}", stderr);
+        return Err(format!("ffmpeg 预览帧提取失败: {}", ffmpeg_error_summary(&stderr)));
+    }
+
+    debug_log!("video_preview_frame: stdout bytes={}", output.stdout.len());
+    Ok(BASE64.encode(&output.stdout))
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FrameExtractOptions {
+    pub time_point: f64,
+    pub output_format: String, // "jpg" or "png"
+    pub quality: Option<u32>, // 2-31 for jpg (lower = better), ignored for png
+    pub output_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FrameExtractResult {
+    pub output_path: String,
+    pub output_size: u64,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[tauri::command]
+pub async fn video_extract_frame(
+    app_handle: tauri::AppHandle,
+    path: String,
+    options: FrameExtractOptions,
+) -> Result<FrameExtractResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if !ffmpeg_available() {
+            return Err("视频截图需要 ffmpeg，请先安装 ffmpeg".to_string());
+        }
+        do_video_extract_frame(&app_handle, &path, &options)
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
+}
+
+fn do_video_extract_frame(
+    app_handle: &tauri::AppHandle,
+    path: &str,
+    options: &FrameExtractOptions,
+) -> Result<FrameExtractResult, String> {
+    let info = get_video_info_ffprobe(path)?;
+    if options.time_point < 0.0 || options.time_point > info.duration {
+        return Err(format!("时间点超出视频范围 (0 - {:.1}s)", info.duration));
+    }
+
+    let input_stem = std::path::Path::new(path)
+        .file_stem().and_then(|s| s.to_str()).unwrap_or("frame");
+    let ext = &options.output_format;
+    let output_path = if let Some(ref custom_path) = options.output_path {
+        std::path::PathBuf::from(custom_path)
+    } else {
+        std::path::Path::new(path)
+            .parent().unwrap_or(std::path::Path::new("."))
+            .join(format!("{}_frame_{:.1}s.{}", input_stem, options.time_point, ext))
+    };
+
+    let _ = app_handle.emit("video-extract-frame-progress", serde_json::json!({ "progress": 10.0 }));
+
+    let mut args: Vec<String> = vec![
+        "-y".to_string(),
+        "-ss".to_string(), format!("{:.3}", options.time_point),
+        "-i".to_string(), path.to_string(),
+        "-vframes".to_string(), "1".to_string(),
+    ];
+
+    // 质量设置（仅对 JPG 有效）
+    if options.output_format == "jpg" {
+        let q = options.quality.unwrap_or(2);
+        args.push("-q:v".to_string());
+        args.push(q.to_string());
+    }
+
+    args.push(output_path.to_string_lossy().to_string());
+
+    let _ = app_handle.emit("video-extract-frame-progress", serde_json::json!({ "progress": 30.0 }));
+
+    debug_log!("ffmpeg 截图提取: {:?}", args);
+
+    let output = std::process::Command::new("ffmpeg")
+        .args(&args)
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map_err(|e| format!("ffmpeg 执行失败: {}", e))?;
+
+    let _ = app_handle.emit("video-extract-frame-progress", serde_json::json!({ "progress": 90.0 }));
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let preview: String = stderr.chars().take(300).collect();
+        return Err(format!("ffmpeg 截图失败: {}", preview));
+    }
+
+    let output_size = std::fs::metadata(&output_path).map(|m| m.len()).unwrap_or(0);
+
+    // 获取截图尺寸
+    let frame_info = get_video_info_ffprobe(&output_path.to_string_lossy())
+        .unwrap_or(VideoInfo { duration: 0.0, width: 0, height: 0, codec: String::new(), fps: 0.0, bitrate: 0, file_size: 0, format: String::new() });
+
+    let _ = app_handle.emit("video-extract-frame-progress", serde_json::json!({ "progress": 100.0 }));
+
+    Ok(FrameExtractResult {
+        output_path: output_path.to_string_lossy().to_string(),
+        output_size,
+        width: frame_info.width,
+        height: frame_info.height,
+    })
+}
+
+// ============ 视频画面裁剪/区域 (F25) ============
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VideoCropRegionOptions {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+    pub output_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CropRegionResult {
+    pub output_path: String,
+    pub output_size: u64,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CropPresetResult {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// 预设比例：根据原视频尺寸计算裁剪区域（居中裁剪）
+#[tauri::command]
+pub fn calc_crop_preset(orig_w: u32, orig_h: u32, preset: String) -> Result<CropPresetResult, String> {
+    let (target_w, target_h) = match preset.as_str() {
+        "16:9" => (orig_w, orig_w * 9 / 16),
+        "4:3" => (orig_w, orig_w * 3 / 4),
+        "1:1" => {
+            let s = orig_w.min(orig_h);
+            (s, s)
+        }
+        "9:16" => (orig_h * 9 / 16, orig_h),
+        "3:2" => (orig_w, orig_w * 2 / 3),
+        "21:9" => (orig_w, orig_w * 9 / 21),
+        _ => return Err(format!("未知预设比例: {}", preset)),
+    };
+
+    let target_h = target_h.min(orig_h);
+    let target_w = target_w.min(orig_w);
+
+    let x = (orig_w - target_w) / 2;
+    let y = (orig_h - target_h) / 2;
+
+    // 确保宽高为偶数（ffmpeg 要求）
+    let w = target_w - (target_w % 2);
+    let h = target_h - (target_h % 2);
+
+    Ok(CropPresetResult { x, y, width: w, height: h })
+}
+
+#[tauri::command]
+pub async fn video_crop_region(
+    app_handle: tauri::AppHandle,
+    path: String,
+    options: VideoCropRegionOptions,
+) -> Result<CropRegionResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if !ffmpeg_available() {
+            return Err("视频画面裁剪需要 ffmpeg，请先安装 ffmpeg".to_string());
+        }
+        do_video_crop_region(&app_handle, &path, &options)
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
+}
+
+fn do_video_crop_region(
+    app_handle: &tauri::AppHandle,
+    path: &str,
+    options: &VideoCropRegionOptions,
+) -> Result<CropRegionResult, String> {
+    let info = get_video_info_ffprobe(path)?;
+
+    if options.x >= info.width || options.y >= info.height {
+        return Err("裁剪起始坐标超出视频范围".to_string());
+    }
+    if options.width == 0 || options.height == 0 {
+        return Err("裁剪宽高不能为 0".to_string());
+    }
+    if options.x + options.width > info.width || options.y + options.height > info.height {
+        return Err("裁剪区域超出视频范围".to_string());
+    }
+
+    let input_stem = std::path::Path::new(path)
+        .file_stem().and_then(|s| s.to_str()).unwrap_or("video");
+    let output_path = if let Some(ref custom_path) = options.output_path {
+        std::path::PathBuf::from(custom_path)
+    } else {
+        std::path::Path::new(path)
+            .parent().unwrap_or(std::path::Path::new("."))
+            .join(format!("{}_cropped_{}x{}.mp4", input_stem, options.width, options.height))
+    };
+
+    let _ = app_handle.emit("video-crop-region-progress", serde_json::json!({ "progress": 5.0 }));
+
+    let crop_filter = format!("crop={}:{}:{}:{}", options.width, options.height, options.x, options.y);
+
+    let _ = app_handle.emit("video-crop-region-progress", serde_json::json!({ "progress": 10.0 }));
+
+    debug_log!("ffmpeg 画面裁剪: path={}, filter={}", path, crop_filter);
+
+    let output = std::process::Command::new("ffmpeg")
+        .args(&[
+            "-y",
+            "-i", path,
+            "-vf", &crop_filter,
+            "-c:a", "copy",
+            &output_path.to_string_lossy(),
+        ])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map_err(|e| format!("ffmpeg 执行失败: {}", e))?;
+
+    let _ = app_handle.emit("video-crop-region-progress", serde_json::json!({ "progress": 90.0 }));
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let preview: String = stderr.chars().take(300).collect();
+        return Err(format!("ffmpeg 画面裁剪失败: {}", preview));
+    }
+
+    let output_size = std::fs::metadata(&output_path).map(|m| m.len()).unwrap_or(0);
+
+    let _ = app_handle.emit("video-crop-region-progress", serde_json::json!({ "progress": 100.0 }));
+
+    Ok(CropRegionResult {
+        output_path: output_path.to_string_lossy().to_string(),
+        output_size,
+        width: options.width,
+        height: options.height,
+    })
+}

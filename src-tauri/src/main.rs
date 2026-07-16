@@ -136,6 +136,7 @@ fn main() {
             // 图标生成命令
             icon_generator::generate_icon,
             icon_generator::read_file_base64,
+            icon_generator::copy_file,
             // 图片工具增强命令
             image_tools::get_file_info,
             image_tools::get_thumbnail,
@@ -153,6 +154,10 @@ fn main() {
             video_tools::audio_extract,
             video_tools::video_compress,
             video_tools::video_merge,
+            video_tools::video_extract_frame,
+            video_tools::video_preview_frame,
+            video_tools::calc_crop_preset,
+            video_tools::video_crop_region,
             audio_tools::generate_waveform,
             audio_tools::audio_crop,
             audio_tools::get_audio_preview,

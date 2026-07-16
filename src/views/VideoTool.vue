@@ -23,6 +23,8 @@
         <el-tab-pane label="音频提取" name="audioExtract" />
         <el-tab-pane label="视频压缩" name="compress" />
         <el-tab-pane label="视频合并" name="merge" />
+        <el-tab-pane label="截图提取" name="frameExtract" />
+        <el-tab-pane label="画面裁剪" name="cropRegion" />
       </el-tabs>
     </div>
 
@@ -613,6 +615,290 @@
       </template>
     </template>
 
+    <!-- ==================== Tab: 截图提取 (F24) ==================== -->
+    <template v-if="activeTab === 'frameExtract'">
+      <div v-if="!useFfmpeg" class="tool-card">
+        <div class="card-body">
+          <div class="ffmpeg-required">
+            视频截图需要 ffmpeg，请先安装 ffmpeg 后重启应用
+          </div>
+        </div>
+      </div>
+
+      <template v-else>
+        <div class="tool-card">
+          <div class="card-header">
+            <span class="card-title">选择视频文件</span>
+          </div>
+          <div class="card-body">
+            <div class="action-grid">
+              <div class="action-group">
+                <el-button type="primary" size="small" @click="openFrameExtractFile" :loading="isLoadingInfo">
+                  打开文件
+                </el-button>
+              </div>
+            </div>
+            <div v-if="frameExtractFilePath" class="video-file-info">
+              <span class="file-name">{{ frameExtractFileName }}</span>
+              <span class="file-detail" v-if="frameExtractVideoInfo">
+                {{ formatDuration(frameExtractVideoInfo.duration) }} | {{ frameExtractVideoInfo.width }}x{{ frameExtractVideoInfo.height }} |
+                {{ formatFileSize(frameExtractVideoInfo.file_size) }}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="frameExtractVideoInfo" class="tool-card">
+          <div class="card-header">
+            <span class="card-title">时间点与预览</span>
+          </div>
+          <div class="card-body">
+            <div class="action-grid">
+              <div class="action-group">
+                <div class="group-label">时间点</div>
+                <el-input-number
+                  v-model="frameExtractTime"
+                  :min="0"
+                  :max="frameExtractVideoInfo.duration"
+                  :step="0.1"
+                  :precision="1"
+                  size="small"
+                  style="width: 140px"
+                  @change="onFrameExtractTimeChange"
+                />
+                <span class="unit-text">秒（视频总长 {{ formatDuration(frameExtractVideoInfo.duration) }}）</span>
+              </div>
+            </div>
+            <!-- 预览区域 -->
+            <div class="frame-preview-container" v-if="frameExtractVideoInfo">
+              <div class="frame-preview-label">预览</div>
+              <div class="frame-preview-box" :class="{ 'is-loading': framePreviewLoading }">
+                <img v-if="framePreviewSrc" :src="framePreviewSrc" class="frame-preview-img" />
+                <span v-else-if="framePreviewLoading" class="frame-preview-hint">加载中...</span>
+                <span v-else class="frame-preview-hint">拖动时间点以预览</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="frameExtractVideoInfo" class="tool-card">
+          <div class="card-header">
+            <span class="card-title">导出设置</span>
+          </div>
+          <div class="card-body">
+            <div class="action-grid">
+              <div class="action-group">
+                <div class="group-label">输出格式</div>
+                <el-select v-model="frameExtractFormat" size="small" style="width: 100px">
+                  <el-option label="JPG" value="jpg" />
+                  <el-option label="PNG" value="png" />
+                </el-select>
+              </div>
+              <div class="action-group" v-if="frameExtractFormat === 'jpg'">
+                <div class="group-label">质量</div>
+                <el-slider v-model="frameExtractQuality" :min="2" :max="31" :step="1" show-input size="small" style="width: 200px" />
+                <span class="unit-text">越低质量越好</span>
+              </div>
+              <div class="action-group">
+                <el-checkbox v-model="frameExtractSaveToSamePath" size="small">保存到源文件目录</el-checkbox>
+              </div>
+            </div>
+            <div class="action-grid" style="margin-top: 12px">
+              <div class="action-group">
+                <el-button type="primary" size="small" @click="doFrameExtract" :loading="frameExtractProcessing">
+                  提取截图
+                </el-button>
+                <el-button size="small" @click="resetFrameExtract">重置</el-button>
+              </div>
+            </div>
+            <el-progress v-if="frameExtractProcessing" :percentage="frameExtractProgress" :stroke-width="6" style="margin-top: 12px" />
+            <!-- 提取结果预览 -->
+            <div v-if="frameExtractResult" class="frame-result-container">
+              <div class="frame-preview-label">
+                截图结果 ({{ frameExtractResult.width }}x{{ frameExtractResult.height }}, {{ formatFileSize(frameExtractResult.output_size) }})
+              </div>
+              <div class="frame-preview-box">
+                <img :src="frameExtractResultSrc" class="frame-preview-img" />
+              </div>
+              <div class="action-grid" style="margin-top: 12px">
+                <div class="action-group">
+                  <el-button type="success" size="small" @click="saveFrameExtractResult">
+                    保存到文件
+                  </el-button>
+                  <el-button size="small" @click="copyFrameExtractResult">
+                    复制到剪贴板
+                  </el-button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+    </template>
+
+    <!-- ==================== Tab: 画面裁剪 (F25) ==================== -->
+    <template v-if="activeTab === 'cropRegion'">
+      <div v-if="!useFfmpeg" class="tool-card">
+        <div class="card-body">
+          <div class="ffmpeg-required">
+            视频画面裁剪需要 ffmpeg，请先安装 ffmpeg 后重启应用
+          </div>
+        </div>
+      </div>
+
+      <template v-else>
+        <div class="tool-card">
+          <div class="card-header">
+            <span class="card-title">选择视频文件</span>
+          </div>
+          <div class="card-body">
+            <div class="action-grid">
+              <div class="action-group">
+                <el-button type="primary" size="small" @click="openCropRegionFile" :loading="isLoadingInfo">
+                  打开文件
+                </el-button>
+              </div>
+            </div>
+            <div v-if="cropRegionFilePath" class="video-file-info">
+              <span class="file-name">{{ cropRegionFileName }}</span>
+              <span class="file-detail" v-if="cropRegionVideoInfo">
+                {{ formatDuration(cropRegionVideoInfo.duration) }} | {{ cropRegionVideoInfo.width }}x{{ cropRegionVideoInfo.height }} |
+                {{ formatFileSize(cropRegionVideoInfo.file_size) }}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="cropRegionVideoInfo" class="tool-card">
+          <div class="card-header">
+            <span class="card-title">裁剪预览</span>
+            <span class="card-actions">
+              <span class="crop-dim-hint">
+                裁剪区域: {{ cropRegionW }}x{{ cropRegionH }} (原视频: {{ cropRegionVideoInfo.width }}x{{ cropRegionVideoInfo.height }})
+              </span>
+            </span>
+          </div>
+          <div class="card-body">
+            <div class="action-grid">
+              <div class="action-group">
+                <div class="group-label">预览时间点</div>
+                <el-input-number
+                  v-model="cropRegionPreviewTime"
+                  :min="0"
+                  :max="cropRegionVideoInfo.duration"
+                  :step="0.1"
+                  :precision="1"
+                  size="small"
+                  style="width: 140px"
+                  @change="onCropPreviewTimeChange"
+                />
+                <span class="unit-text">秒（视频总长 {{ formatDuration(cropRegionVideoInfo.duration) }}）</span>
+              </div>
+            </div>
+            <div class="crop-preview-wrapper" ref="cropPreviewEl"
+              :class="{ 'is-loading': cropPreviewLoading }"
+              @mousedown="onCropMouseDown"
+              @mousemove="onCropMouseMove"
+              @mouseup="onCropMouseUp"
+              @mouseleave="onCropMouseUp"
+            >
+              <img
+                v-if="cropPreviewSrc"
+                :src="cropPreviewSrc"
+                class="crop-preview-img"
+                ref="cropImgEl"
+                @load="onCropImgLoad"
+              />
+              <div v-else class="crop-preview-placeholder">
+                <span v-if="cropPreviewLoading">加载预览中...</span>
+                <span v-else>打开视频文件以预览</span>
+              </div>
+              <!-- ponytail: 遮罩 loading 仅在已有图像时叠加，避免与 placeholder 文案重复 -->
+              <div v-if="cropPreviewLoading && cropPreviewSrc" class="crop-preview-mask">
+                <span class="crop-preview-mask-text">加载预览中...</span>
+              </div>
+              <!-- 裁剪框叠加层 -->
+              <div
+                v-if="cropPreviewSrc && cropOverlayStyle"
+                class="crop-overlay-box"
+                :style="cropOverlayStyle"
+              >
+                <!-- 裁剪框边框 -->
+                <div class="crop-border" />
+                <!-- 拖拽手柄 -->
+                <div class="crop-handle crop-handle-tl" @mousedown.stop="onCropHandleMouseDown($event, 'tl')" />
+                <div class="crop-handle crop-handle-tr" @mousedown.stop="onCropHandleMouseDown($event, 'tr')" />
+                <div class="crop-handle crop-handle-bl" @mousedown.stop="onCropHandleMouseDown($event, 'bl')" />
+                <div class="crop-handle crop-handle-br" @mousedown.stop="onCropHandleMouseDown($event, 'br')" />
+              </div>
+            </div>
+            <!-- 快捷操作 -->
+            <div class="action-grid" style="margin-top: 12px">
+              <div class="action-group">
+                <div class="group-label">预设比例</div>
+                <el-select v-model="cropRegionPreset" size="small" style="width: 100px" @change="onCropPresetChange" clearable placeholder="手动">
+                  <el-option label="16:9" value="16:9" />
+                  <el-option label="4:3" value="4:3" />
+                  <el-option label="1:1" value="1:1" />
+                  <el-option label="9:16" value="9:16" />
+                  <el-option label="3:2" value="3:2" />
+                  <el-option label="21:9" value="21:9" />
+                </el-select>
+              </div>
+              <div class="action-group">
+                <el-button size="small" @click="resetCropToFull">重置为全画面</el-button>
+              </div>
+            </div>
+            <div class="crop-region-grid" v-if="cropRegionVideoInfo">
+              <div class="crop-region-input">
+                <div class="group-label">X 偏移</div>
+                <el-input-number v-model="cropRegionX" :min="0" :max="cropRegionVideoInfo.width - 2" :step="2" size="small" style="width: 100px" />
+              </div>
+              <div class="crop-region-input">
+                <div class="group-label">Y 偏移</div>
+                <el-input-number v-model="cropRegionY" :min="0" :max="cropRegionVideoInfo.height - 2" :step="2" size="small" style="width: 100px" />
+              </div>
+              <div class="crop-region-input">
+                <div class="group-label">宽度</div>
+                <el-input-number v-model="cropRegionW" :min="2" :max="cropRegionVideoInfo.width" :step="2" size="small" style="width: 100px" />
+              </div>
+              <div class="crop-region-input">
+                <div class="group-label">高度</div>
+                <el-input-number v-model="cropRegionH" :min="2" :max="cropRegionVideoInfo.height" :step="2" size="small" style="width: 100px" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="cropRegionVideoInfo" class="tool-card">
+          <div class="card-header">
+            <span class="card-title">操作</span>
+          </div>
+          <div class="card-body">
+            <div class="action-grid">
+              <div class="action-group">
+                <el-checkbox v-model="cropRegionSaveToSamePath" size="small">保存到源文件目录</el-checkbox>
+              </div>
+            </div>
+            <div class="action-grid" style="margin-top: 12px">
+              <div class="action-group">
+                <el-button type="primary" size="small" @click="doCropRegion" :loading="cropRegionProcessing">
+                  裁剪并导出
+                </el-button>
+                <el-button size="small" @click="resetCropRegion">重置</el-button>
+              </div>
+            </div>
+            <el-progress v-if="cropRegionProcessing" :percentage="cropRegionProgress" :stroke-width="6" style="margin-top: 12px" />
+            <div v-if="cropRegionResult" class="result-info">
+              <span>输出大小: {{ formatFileSize(cropRegionResult.output_size) }}</span>
+              <span class="result-sep">|</span>
+              <span>尺寸: {{ cropRegionResult.width }}x{{ cropRegionResult.height }}</span>
+            </div>
+          </div>
+        </div>
+      </template>
+    </template>
+
     <!-- 错误提示 -->
     <div v-if="error" class="error-message">{{ error }}</div>
   </div>
@@ -682,6 +968,27 @@ interface MergeFileItem {
   path: string
   name: string
   size: number
+}
+
+interface FrameExtractResult {
+  output_path: string
+  output_size: number
+  width: number
+  height: number
+}
+
+interface CropPresetResult {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+interface CropRegionResult {
+  output_path: string
+  output_size: number
+  width: number
+  height: number
 }
 
 // ============ Tab 状态 ============
@@ -756,6 +1063,61 @@ const mergeSaveToSamePath = ref(true)
 const mergeProcessing = ref(false)
 const mergeProgress = ref(0)
 const mergeResult = ref<MergeResult | null>(null)
+
+// ============ 截图提取状态 (F24) ============
+const frameExtractFilePath = ref('')
+const frameExtractFileName = ref('')
+const frameExtractVideoInfo = ref<VideoInfo | null>(null)
+const frameExtractTime = ref(0)
+const frameExtractFormat = ref('jpg')
+const frameExtractQuality = ref(2)
+const frameExtractSaveToSamePath = ref(true)
+const frameExtractProcessing = ref(false)
+const frameExtractProgress = ref(0)
+const frameExtractResult = ref<FrameExtractResult | null>(null)
+const frameExtractResultSrc = ref('')
+const framePreviewSrc = ref('')
+const framePreviewLoading = ref(false)
+let framePreviewTimer: ReturnType<typeof setTimeout> | null = null
+
+// ============ 画面裁剪状态 (F25) ============
+const cropRegionFilePath = ref('')
+const cropRegionFileName = ref('')
+const cropRegionVideoInfo = ref<VideoInfo | null>(null)
+const cropRegionPreset = ref('')
+const cropRegionX = ref(0)
+const cropRegionY = ref(0)
+const cropRegionW = ref(0)
+const cropRegionH = ref(0)
+const cropRegionSaveToSamePath = ref(true)
+const cropRegionPreviewTime = ref(0)
+const cropRegionProcessing = ref(false)
+const cropRegionProgress = ref(0)
+const cropRegionResult = ref<CropRegionResult | null>(null)
+const cropPreviewSrc = ref('')
+const cropPreviewLoading = ref(false)
+const cropPreviewEl = ref<HTMLElement | null>(null)
+const cropImgEl = ref<HTMLImageElement | null>(null)
+// 拖拽状态
+const cropDragging = ref(false)
+const cropDragType = ref<'move' | 'tl' | 'tr' | 'bl' | 'br' | null>(null)
+const cropDragStartX = ref(0)
+const cropDragStartY = ref(0)
+const cropDragStartRegion = ref({ x: 0, y: 0, w: 0, h: 0 })
+// 图片显示比例（显示宽度 / 实际视频宽度）
+const cropDisplayRatio = ref(1)
+
+// 裁剪框叠加层样式（基于显示坐标）
+const cropOverlayStyle = computed(() => {
+  if (!cropRegionVideoInfo.value) return null
+  const r = cropDisplayRatio.value
+  return {
+    left: Math.round(cropRegionX.value * r) + 'px',
+    top: Math.round(cropRegionY.value * r) + 'px',
+    width: Math.round(cropRegionW.value * r) + 'px',
+    height: Math.round(cropRegionH.value * r) + 'px',
+  }
+})
 
 // ============ 裁剪计算属性 ============
 const segmentDuration = computed(() => endTime.value - startTime.value)
@@ -1306,6 +1668,355 @@ function resetMerge() {
   mergeFiles.value = []; mergeResult.value = null; error.value = ''
 }
 
+// ============ 截图提取方法 (F24) ============
+async function openFrameExtractFile() {
+  try {
+    error.value = ''
+    const selected = await open({
+      filters: [{ name: '视频文件', extensions: ['mp4', 'mkv', 'avi', 'mov', 'webm', 'm4v'] }],
+      multiple: false,
+    })
+    if (!selected) return
+    frameExtractFilePath.value = selected as string
+    frameExtractFileName.value = (selected as string).split(/[/\\]/).pop() || ''
+    isLoadingInfo.value = true
+    frameExtractResult.value = null
+    frameExtractResultSrc.value = ''
+    framePreviewSrc.value = ''
+    const info: VideoInfo = await invoke('get_video_info', { path: frameExtractFilePath.value, useFfmpeg: true })
+    frameExtractVideoInfo.value = info
+    frameExtractTime.value = 0
+    // 加载初始帧预览
+    loadFramePreview()
+  } catch (e: any) {
+    error.value = typeof e === 'string' ? e : e.message || '加载失败'
+  } finally { isLoadingInfo.value = false }
+}
+
+function onFrameExtractTimeChange() {
+  // 300ms 防抖
+  if (framePreviewTimer) clearTimeout(framePreviewTimer)
+  framePreviewTimer = setTimeout(() => loadFramePreview(), 300)
+}
+
+async function loadFramePreview() {
+  if (!frameExtractFilePath.value) return
+  framePreviewLoading.value = true
+  try {
+    const base64: string = await invoke('video_preview_frame', {
+      path: frameExtractFilePath.value,
+      timePoint: frameExtractTime.value,
+      maxWidth: 480,
+    })
+    framePreviewSrc.value = `data:image/jpeg;base64,${base64}`
+  } catch (e: any) {
+    // 预览失败显示错误，方便调试
+    const msg = typeof e === 'string' ? e : e.message || '预览失败'
+    console.error('loadFramePreview error:', msg)
+    framePreviewSrc.value = ''
+  } finally { framePreviewLoading.value = false }
+}
+
+async function doFrameExtract() {
+  try {
+    error.value = ''
+    frameExtractProcessing.value = true
+    frameExtractProgress.value = 0
+    frameExtractResult.value = null
+    frameExtractResultSrc.value = ''
+    const unlisten = await listen<{ progress: number }>('video-extract-frame-progress', (event) => {
+      frameExtractProgress.value = Math.round(event.payload.progress)
+    })
+    let outputPath: string | null = null
+    if (!frameExtractSaveToSamePath.value) {
+      const ext = frameExtractFormat.value
+      outputPath = await save({
+        defaultPath: frameExtractFileName.value.replace(/\.[^.]+$/, '') + `_frame_${frameExtractTime.value.toFixed(1)}s.` + ext,
+        filters: [{ name: ext.toUpperCase() + ' 图片', extensions: [ext] }],
+      })
+      if (!outputPath) { unlisten(); frameExtractProcessing.value = false; return }
+    }
+    const result: FrameExtractResult = await invoke('video_extract_frame', {
+      path: frameExtractFilePath.value,
+      options: {
+        time_point: frameExtractTime.value,
+        output_format: frameExtractFormat.value,
+        quality: frameExtractFormat.value === 'jpg' ? frameExtractQuality.value : null,
+        output_path: outputPath,
+      },
+    })
+    unlisten()
+    frameExtractProgress.value = 100
+    frameExtractResult.value = result
+    frameExtractResultSrc.value = await invoke('read_file_base64', { path: result.output_path })
+    frameExtractResultSrc.value = `data:image/${frameExtractFormat.value};base64,${frameExtractResultSrc.value.replace(/^data:.*?;base64,/, '')}`
+    ElMessage.success(`截图提取完成，已保存到: ${result.output_path}`)
+  } catch (e: any) {
+    error.value = typeof e === 'string' ? e : e.message || '截图失败'
+  } finally { frameExtractProcessing.value = false }
+}
+
+async function saveFrameExtractResult() {
+  if (!frameExtractResult.value) return
+  try {
+    const ext = frameExtractFormat.value
+    const savePath = await save({
+      defaultPath: frameExtractFileName.value.replace(/\.[^.]+$/, '') + `_frame_${frameExtractTime.value.toFixed(1)}s.` + ext,
+      filters: [{ name: ext.toUpperCase() + ' 图片', extensions: [ext] }],
+    })
+    if (!savePath) return
+    await invoke('copy_file', { from: frameExtractResult.value.output_path, to: savePath })
+    ElMessage.success(`已保存到: ${savePath}`)
+  } catch (e: any) {
+    ElMessage.error('保存失败: ' + (typeof e === 'string' ? e : e.message))
+  }
+}
+
+async function copyFrameExtractResult() {
+  if (!frameExtractResult.value || !frameExtractResultSrc.value) return
+  try {
+    // 从 base64 提取纯数据部分
+    const base64Data = frameExtractResultSrc.value.replace(/^data:image\/\w+;base64,/, '')
+    const mime = frameExtractFormat.value === 'png' ? 'image/png' : 'image/jpeg'
+    await invoke('write_clipboard_image', { base64Data, mime })
+    ElMessage.success('已复制到剪贴板')
+  } catch (e: any) {
+    error.value = typeof e === 'string' ? e : e.message || '复制失败'
+  }
+}
+
+function resetFrameExtract() {
+  frameExtractFilePath.value = ''; frameExtractFileName.value = ''; frameExtractVideoInfo.value = null
+  frameExtractResult.value = null; frameExtractResultSrc.value = ''; framePreviewSrc.value = ''
+  error.value = ''
+  if (framePreviewTimer) { clearTimeout(framePreviewTimer); framePreviewTimer = null }
+}
+
+// ============ 画面裁剪方法 (F25) ============
+async function openCropRegionFile() {
+  try {
+    error.value = ''
+    const selected = await open({
+      filters: [{ name: '视频文件', extensions: ['mp4', 'mkv', 'avi', 'mov', 'webm', 'm4v'] }],
+      multiple: false,
+    })
+    if (!selected) return
+    cropRegionFilePath.value = selected as string
+    cropRegionFileName.value = (selected as string).split(/[/\\]/).pop() || ''
+    isLoadingInfo.value = true
+    cropRegionResult.value = null
+    cropPreviewSrc.value = ''
+    const info: VideoInfo = await invoke('get_video_info', { path: cropRegionFilePath.value, useFfmpeg: true })
+    cropRegionVideoInfo.value = info
+    resetCropToFull()
+    // 加载预览帧
+    await loadCropPreview()
+  } catch (e: any) {
+    error.value = typeof e === 'string' ? e : e.message || '加载失败'
+  } finally { isLoadingInfo.value = false }
+}
+
+async function loadCropPreview() {
+  if (!cropRegionFilePath.value) return
+  // 超出时长自动钳制到末尾，不弹提示，直接预览最后一帧
+  const dur = cropRegionVideoInfo.value?.duration ?? 0
+  if (cropRegionPreviewTime.value > dur) {
+    cropRegionPreviewTime.value = Number(dur.toFixed(1))
+  }
+  cropPreviewLoading.value = true
+  try {
+    const base64: string = await invoke('video_preview_frame', {
+      path: cropRegionFilePath.value,
+      timePoint: cropRegionPreviewTime.value,
+      maxWidth: 480,
+    })
+    cropPreviewSrc.value = `data:image/jpeg;base64,${base64}`
+  } catch {
+    cropPreviewSrc.value = ''
+    ElMessage.error('预览加载失败，请检查时间点或视频文件')
+  } finally { cropPreviewLoading.value = false }
+}
+
+function onCropPreviewTimeChange() {
+  loadCropPreview()
+}
+
+function onCropImgLoad() {
+  if (!cropImgEl.value || !cropRegionVideoInfo.value) return
+  cropDisplayRatio.value = cropImgEl.value.clientWidth / cropRegionVideoInfo.value.width
+}
+
+function resetCropToFull() {
+  if (!cropRegionVideoInfo.value) return
+  cropRegionX.value = 0
+  cropRegionY.value = 0
+  cropRegionW.value = cropRegionVideoInfo.value.width - (cropRegionVideoInfo.value.width % 2)
+  cropRegionH.value = cropRegionVideoInfo.value.height - (cropRegionVideoInfo.value.height % 2)
+  cropRegionPreset.value = ''
+}
+
+async function onCropPresetChange(preset: string) {
+  if (!preset || !cropRegionVideoInfo.value) return
+  try {
+    const result: CropPresetResult = await invoke('calc_crop_preset', {
+      origW: cropRegionVideoInfo.value.width,
+      origH: cropRegionVideoInfo.value.height,
+      preset,
+    })
+    cropRegionX.value = result.x
+    cropRegionY.value = result.y
+    cropRegionW.value = result.width
+    cropRegionH.value = result.height
+  } catch (e: any) {
+    error.value = typeof e === 'string' ? e : e.message || '预设计算失败'
+  }
+}
+
+// 裁剪框拖拽逻辑
+function screenToVideo(screenX: number, screenY: number): { vx: number; vy: number } {
+  if (!cropImgEl.value) return { vx: 0, vy: 0 }
+  const rect = cropImgEl.value.getBoundingClientRect()
+  const r = cropDisplayRatio.value
+  return {
+    vx: Math.round((screenX - rect.left) / r),
+    vy: Math.round((screenY - rect.top) / r),
+  }
+}
+
+function clampRegion(info: VideoInfo) {
+  cropRegionX.value = Math.max(0, Math.min(cropRegionX.value, info.width - 2))
+  cropRegionY.value = Math.max(0, Math.min(cropRegionY.value, info.height - 2))
+  cropRegionW.value = Math.max(2, Math.min(cropRegionW.value, info.width - cropRegionX.value))
+  cropRegionH.value = Math.max(2, Math.min(cropRegionH.value, info.height - cropRegionY.value))
+  // 对齐到偶数
+  cropRegionW.value = cropRegionW.value - (cropRegionW.value % 2)
+  cropRegionH.value = cropRegionH.value - (cropRegionH.value % 2)
+}
+
+function onCropMouseDown(e: MouseEvent) {
+  if (!cropRegionVideoInfo.value) return
+  const { vx, vy } = screenToVideo(e.clientX, e.clientY)
+  // 检查是否在裁剪区域内（用于移动）
+  if (vx >= cropRegionX.value && vx <= cropRegionX.value + cropRegionW.value &&
+      vy >= cropRegionY.value && vy <= cropRegionY.value + cropRegionH.value) {
+    cropDragging.value = true
+    cropDragType.value = 'move'
+    cropDragStartX.value = vx
+    cropDragStartY.value = vy
+    cropDragStartRegion.value = {
+      x: cropRegionX.value, y: cropRegionY.value,
+      w: cropRegionW.value, h: cropRegionH.value,
+    }
+    e.preventDefault()
+  }
+}
+
+function onCropMouseMove(e: MouseEvent) {
+  if (!cropDragging.value || !cropRegionVideoInfo.value) return
+  const { vx, vy } = screenToVideo(e.clientX, e.clientY)
+  const info = cropRegionVideoInfo.value
+  const dx = vx - cropDragStartX.value
+  const dy = vy - cropDragStartY.value
+
+  if (cropDragType.value === 'move') {
+    cropRegionX.value = Math.max(0, Math.min(cropDragStartRegion.value.x + dx, info.width - cropDragStartRegion.value.w))
+    cropRegionY.value = Math.max(0, Math.min(cropDragStartRegion.value.y + dy, info.height - cropDragStartRegion.value.h))
+    clampRegion(info)
+  } else {
+    // 手柄拖拽
+    const r = cropDragStartRegion.value
+    switch (cropDragType.value) {
+      case 'tl':
+        cropRegionX.value = Math.max(0, Math.min(r.x + dx, r.x + r.w - 2))
+        cropRegionY.value = Math.max(0, Math.min(r.y + dy, r.y + r.h - 2))
+        cropRegionW.value = r.w - (cropRegionX.value - r.x)
+        cropRegionH.value = r.h - (cropRegionY.value - r.y)
+        break
+      case 'tr':
+        cropRegionY.value = Math.max(0, Math.min(r.y + dy, r.y + r.h - 2))
+        cropRegionW.value = Math.max(2, Math.min(r.w + dx, info.width - r.x))
+        cropRegionH.value = r.h - (cropRegionY.value - r.y)
+        break
+      case 'bl':
+        cropRegionX.value = Math.max(0, Math.min(r.x + dx, r.x + r.w - 2))
+        cropRegionW.value = r.w - (cropRegionX.value - r.x)
+        cropRegionH.value = Math.max(2, Math.min(r.h + dy, info.height - r.y))
+        break
+      case 'br':
+        cropRegionW.value = Math.max(2, Math.min(r.w + dx, info.width - r.x))
+        cropRegionH.value = Math.max(2, Math.min(r.h + dy, info.height - r.y))
+        break
+    }
+    clampRegion(info)
+  }
+}
+
+function onCropMouseUp() {
+  cropDragging.value = false
+  cropDragType.value = null
+}
+
+function onCropHandleMouseDown(e: MouseEvent, handle: 'tl' | 'tr' | 'bl' | 'br') {
+  if (!cropRegionVideoInfo.value) return
+  const { vx, vy } = screenToVideo(e.clientX, e.clientY)
+  cropDragging.value = true
+  cropDragType.value = handle
+  cropDragStartX.value = vx
+  cropDragStartY.value = vy
+  cropDragStartRegion.value = {
+    x: cropRegionX.value, y: cropRegionY.value,
+    w: cropRegionW.value, h: cropRegionH.value,
+  }
+  e.preventDefault()
+  e.stopPropagation()
+}
+
+async function doCropRegion() {
+  if (cropRegionW.value < 2 || cropRegionH.value < 2) {
+    ElMessage.warning('裁剪宽高至少为 2')
+    return
+  }
+  try {
+    error.value = ''
+    cropRegionProcessing.value = true
+    cropRegionProgress.value = 0
+    cropRegionResult.value = null
+    const unlisten = await listen<{ progress: number }>('video-crop-region-progress', (event) => {
+      cropRegionProgress.value = Math.round(event.payload.progress)
+    })
+    let outputPath: string | null = null
+    if (!cropRegionSaveToSamePath.value) {
+      outputPath = await save({
+        defaultPath: cropRegionFileName.value.replace(/\.[^.]+$/, '') + '_cropped.mp4',
+        filters: [{ name: 'MP4 视频', extensions: ['mp4'] }],
+      })
+      if (!outputPath) { unlisten(); cropRegionProcessing.value = false; return }
+    }
+    const result: CropRegionResult = await invoke('video_crop_region', {
+      path: cropRegionFilePath.value,
+      options: {
+        x: cropRegionX.value,
+        y: cropRegionY.value,
+        width: cropRegionW.value,
+        height: cropRegionH.value,
+        output_path: outputPath,
+      },
+    })
+    unlisten()
+    cropRegionProgress.value = 100
+    cropRegionResult.value = result
+    ElMessage.success(`画面裁剪完成，已保存到: ${result.output_path}`)
+  } catch (e: any) {
+    error.value = typeof e === 'string' ? e : e.message || '画面裁剪失败'
+  } finally { cropRegionProcessing.value = false }
+}
+
+function resetCropRegion() {
+  cropRegionFilePath.value = ''; cropRegionFileName.value = ''; cropRegionVideoInfo.value = null
+  cropRegionResult.value = null; cropPreviewSrc.value = ''; error.value = ''
+  cropRegionPreset.value = ''
+}
+
 // ============ 格式化 ============
 function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60)
@@ -1616,5 +2327,179 @@ html.light .video-tool-tabs :deep(.el-tabs__header) {
 .crf-slider {
   display: flex;
   align-items: center;
+}
+
+/* 画面裁剪区域 */
+.crop-region-grid {
+  display: flex;
+  gap: 16px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.crop-region-input {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.crop-region-info {
+  margin-top: 12px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+/* 裁剪预览 */
+.crop-preview-wrapper {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #000;
+  cursor: crosshair;
+}
+
+.crop-preview-img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.crop-preview-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 480px;
+  height: 270px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  background: var(--bg-input);
+}
+
+/* 加载时整体压暗，复用 F24 的 is-loading 模式 */
+.crop-preview-wrapper.is-loading .crop-preview-img {
+  opacity: 0.5;
+}
+
+.crop-preview-mask {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  z-index: 5;
+}
+
+.crop-preview-mask-text {
+  padding: 6px 14px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 13px;
+  letter-spacing: 1px;
+}
+
+.crop-overlay-box {
+  position: absolute;
+  pointer-events: none;
+}
+
+.crop-mask {
+  position: absolute;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.crop-mask-top {
+  top: 0;
+  left: 0;
+  right: 0;
+}
+
+.crop-mask-bottom {
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.crop-mask-left { }
+.crop-mask-right { right: 0; }
+
+.crop-border {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border: 2px dashed var(--accent-cyan);
+  box-sizing: border-box;
+}
+
+.crop-handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: var(--accent-cyan);
+  border: 2px solid #000;
+  border-radius: 2px;
+  pointer-events: auto;
+  z-index: 10;
+}
+
+.crop-handle-tl { top: -6px; left: -6px; cursor: nw-resize; }
+.crop-handle-tr { top: -6px; right: -6px; cursor: ne-resize; }
+.crop-handle-bl { bottom: -6px; left: -6px; cursor: sw-resize; }
+.crop-handle-br { bottom: -6px; right: -6px; cursor: se-resize; }
+
+.crop-dim-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* 截图预览 */
+.frame-preview-container {
+  margin-top: 16px;
+}
+
+.frame-preview-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.frame-preview-box {
+  border-radius: 6px;
+  overflow: hidden;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  width: 100%;
+  max-width: 480px;
+}
+
+.frame-preview-box.is-loading {
+  opacity: 0.6;
+}
+
+.frame-preview-img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.frame-preview-hint {
+  color: var(--text-secondary);
+  font-size: 13px;
+  padding: 20px;
+}
+
+.frame-result-container {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-color);
 }
 </style>
