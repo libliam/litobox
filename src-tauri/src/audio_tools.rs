@@ -1,8 +1,8 @@
+use encoding_rs;
 use serde::{Deserialize, Serialize};
 use std::io::Cursor;
 use std::os::windows::process::CommandExt;
 use tauri::Emitter;
-
 // ============ 数据结构 ============
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1181,6 +1181,319 @@ pub async fn audio_speed_change(
     tauri::async_runtime::spawn_blocking(move || {
         crate::video_tools::ensure_ffmpeg_in_path();
         speed_change_via_ffmpeg(&app_handle, &path, &options)
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
+}
+
+// ========== TTS 文字转语音 ==========
+
+// ponytail: debug 模式输出日志到 stderr，release 模式编译时移除（零开销）
+macro_rules! debug_log {
+    ($($arg:tt)*) => {
+        if cfg!(debug_assertions) {
+            eprintln!($($arg)*)
+        }
+    };
+}
+
+fn run_powershell(script: &str) -> Result<String, String> {
+    let mut cmd = std::process::Command::new("powershell");
+    cmd.args(["-NoProfile", "-NonInteractive", "-Command", script]);
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    let output = cmd
+        .output()
+        .map_err(|e| format!("PowerShell 执行失败: {}", e))?;
+    if !output.status.success() {
+        let (stderr, _, _) = encoding_rs::GBK.decode(&output.stderr);
+        let (stdout, _, _) = encoding_rs::GBK.decode(&output.stdout);
+        debug_log!("[run_powershell] FAILED - exit code: {:?}", output.status);
+        debug_log!("[run_powershell] stderr: {}", stderr);
+        debug_log!("[run_powershell] stdout: {}", stdout);
+        return Err(format!("PowerShell 错误: {}", stderr));
+    }
+    let (text, _, _) = encoding_rs::GBK.decode(&output.stdout);
+    Ok(text.into_owned())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TtsVoice {
+    pub name: String,
+    pub language: String,
+    pub engine: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TtsOptions {
+    pub text: String,
+    pub voice_name: Option<String>,
+    pub rate: i32,
+    pub volume: i32,
+    pub engine: String,
+    pub output_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TtsResult {
+    pub output_path: String,
+    pub output_size: u64,
+}
+
+fn escape_ps_string(s: &str) -> String {
+    s.replace('\'', "''")
+}
+
+fn tts_sapi_generate(text: &str, voice_name: Option<&str>, rate: i32, volume: i32, output_path: &str) -> Result<(), String> {
+    if text.contains('\0') {
+        return Err("文本中包含非法字符".to_string());
+    }
+    let escaped_text = escape_ps_string(text);
+    let escaped_path = escape_ps_string(output_path);
+
+    let voice_script = if let Some(vn) = voice_name {
+        let escaped_vn = escape_ps_string(vn);
+        format!(
+            "$synth.SelectVoice('{}')\nWrite-Output \"SAPI_VOICE: $($synth.Voice.Name)\"",
+            escaped_vn
+        )
+    } else {
+        String::from("Write-Output \"SAPI_VOICE: $($synth.Voice.Name) (default)\"")
+    };
+
+    let script = format!(r#"
+Add-Type -AssemblyName System.Speech
+$synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
+$synth.Rate = {rate}
+$synth.Volume = {volume}
+{voice_script}
+$synth.SetOutputToWaveFile('{escaped_path}')
+$synth.Speak('{escaped_text}')
+$synth.Dispose()
+"#, rate = rate, volume = volume, voice_script = voice_script, escaped_path = escaped_path, escaped_text = escaped_text);
+
+    let output = run_powershell(&script)?;
+    debug_log!("[tts_sapi] 输出: {}", output.trim());
+    Ok(())
+}
+
+fn tts_winrt_generate(text: &str, voice_name: Option<&str>, rate: i32, volume: i32, output_path: &str) -> Result<(), String> {
+    debug_log!("[tts_winrt] 开始生成, text_len={}, voice={:?}, rate={}, output={}",
+        text.len(), voice_name, rate, output_path);
+
+    if text.contains('\0') {
+        return Err("文本中包含非法字符".to_string());
+    }
+    let escaped_text = escape_ps_string(text);
+    let escaped_path = escape_ps_string(output_path);
+
+    let rate_norm = (rate as f64) / 10.0;
+
+    let voice_filter = if let Some(vn) = voice_name {
+        let escaped_vn = escape_ps_string(vn);
+        format!(
+            "$voice = $null; foreach ($v in [Windows.Media.SpeechSynthesis.SpeechSynthesizer]::AllVoices) {{ if ($v.DisplayName -eq '{}') {{ $voice = $v; break }} }}",
+            escaped_vn
+        )
+    } else {
+        String::from("$voice = $null")
+    };
+
+    let script = format!(r#"
+Add-Type -AssemblyName System.Runtime.WindowsRuntime
+$null = [Windows.Media.SpeechSynthesis.SpeechSynthesizer, Windows.Media.SpeechSynthesis, ContentType=WindowsRuntime]
+Write-Output 'STEP: assemblies loaded'
+
+$synth = New-Object Windows.Media.SpeechSynthesis.SpeechSynthesizer
+Write-Output 'STEP: synth created'
+
+# 选择语音
+{voice_filter}
+if ($voice) {{
+    $synth.Voice = $voice
+    Write-Output \"STEP: voice selected: $($voice.DisplayName)\"
+}} else {{
+    Write-Output 'STEP: using default voice'
+}}
+
+# 设置语速（WinRT 的 Rate 是相对值 0.5~2.0，1.0 为正常）
+$synth.Options.Rate = {rate_norm}
+Write-Output \"STEP: rate set to $($synth.Options.Rate)\"
+
+# 合成
+$asyncOp = $synth.SynthesizeTextToStreamAsync('{escaped_text}')
+Write-Output 'STEP: starting synthesis...'
+
+# 反射调用 AsTask<IAsyncOperation<SpeechSynthesisStream>>
+$asTaskGeneric = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {{ $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' }} | Select-Object -First 1)
+Write-Output \"STEP: AsTask methods found: $($asTaskGeneric.Count)\"
+$closedType = $asTaskGeneric.MakeGenericMethod([Windows.Media.SpeechSynthesis.SpeechSynthesisStream])
+$taskResult = $closedType.Invoke($null, @($asyncOp))
+Write-Output \"STEP: task type: $($taskResult.GetType().FullName)\"
+$stream = $taskResult.Result
+Write-Output \"STEP: stream obtained, size: $($stream.Size)\"
+
+# 写入文件：将 WinRT 流转换为 .NET 流后复制
+# 注意：扩展方法在 PowerShell 中需显式调用静态类
+$netStream = [System.IO.WindowsRuntimeStreamExtensions]::AsStream($stream)
+Write-Output \"STEP: netStream created, canRead: $($netStream.CanRead)\"
+$fileStream = [System.IO.File]::Create('{escaped_path}')
+$netStream.CopyTo($fileStream)
+$fileStream.Flush()
+$fileStream.Close()
+$netStream.Dispose()
+$stream.Dispose()
+$synth.Dispose()
+Write-Output 'STEP: done, file written'
+"#, rate_norm = rate_norm, voice_filter = voice_filter, escaped_path = escaped_path, escaped_text = escaped_text);
+
+    debug_log!("[tts_winrt] 执行 PowerShell 脚本");
+    let output = run_powershell(&script)?;
+    debug_log!("[tts_winrt] 脚本输出: {}", output.trim());
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn list_tts_voices() -> Result<Vec<TtsVoice>, String> {
+    let mut all_voices = Vec::new();
+
+    // SAPI 语音
+    match list_sapi_voices() {
+        Ok(mut v) => all_voices.append(&mut v),
+        Err(e) => debug_log!("[list_tts_voices] SAPI 失败: {}", e),
+    }
+
+    // WinRT 语音
+    match list_winrt_voices() {
+        Ok(mut v) => all_voices.append(&mut v),
+        Err(e) => debug_log!("[list_tts_voices] WinRT 失败: {}", e),
+    }
+
+    Ok(all_voices)
+}
+
+fn list_sapi_voices() -> Result<Vec<TtsVoice>, String> {
+    let script = r#"
+Add-Type -AssemblyName System.Speech
+$synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
+$synth.GetInstalledVoices() | ForEach-Object {
+    @{
+        name = $_.VoiceInfo.Name
+        language = $_.VoiceInfo.Culture.DisplayName
+        engine = 'sapi'
+    }
+} | ConvertTo-Json -Compress
+"#;
+    let output = run_powershell(script)?;
+    let trimmed = output.trim();
+    if trimmed.is_empty() {
+        return Ok(vec![]);
+    }
+    let voices: Vec<TtsVoice> = serde_json::from_str(trimmed)
+        .map_err(|e| format!("解析 SAPI 语音列表失败: {}", e))?;
+    Ok(voices)
+}
+
+fn list_winrt_voices() -> Result<Vec<TtsVoice>, String> {
+    let script = r#"
+Add-Type -AssemblyName System.Runtime.WindowsRuntime
+$null = [Windows.Media.SpeechSynthesis.SpeechSynthesizer, Windows.Media.SpeechSynthesis, ContentType=WindowsRuntime]
+$voices = [Windows.Media.SpeechSynthesis.SpeechSynthesizer]::AllVoices
+$voices | ForEach-Object {
+    @{
+        name = $_.DisplayName
+        language = $_.Language
+        engine = 'winrt'
+    }
+} | ConvertTo-Json -Compress
+"#;
+    let output = run_powershell(script)?;
+    let trimmed = output.trim();
+    if trimmed.is_empty() {
+        return Ok(vec![]);
+    }
+    let voices: Vec<TtsVoice> = serde_json::from_str(trimmed)
+        .map_err(|e| format!("解析 WinRT 语音列表失败: {}", e))?;
+    Ok(voices)
+}
+
+#[tauri::command]
+pub async fn get_downloads_dir() -> Result<String, String> {
+    let script = r#"
+$downloads = [Environment]::GetFolderPath('UserProfile') + '\Downloads'
+if (Test-Path $downloads) {
+    $downloads
+} else {
+    [Environment]::GetFolderPath('MyDocuments')
+}
+"#;
+    let output = run_powershell(script)?;
+    let trimmed = output.trim().to_string();
+    if trimmed.is_empty() {
+        return Err("无法获取下载目录".to_string());
+    }
+    Ok(trimmed)
+}
+
+#[tauri::command]
+pub async fn tts_generate(
+    options: TtsOptions,
+) -> Result<TtsResult, String> {
+    if options.text.trim().is_empty() {
+        return Err("请输入要转换的文字".to_string());
+    }
+    if options.rate < -10 || options.rate > 10 {
+        return Err("语速范围 -10 到 10".to_string());
+    }
+    if options.volume < 0 || options.volume > 100 {
+        return Err("音量范围 0 到 100".to_string());
+    }
+
+    let output_path = if let Some(ref custom_path) = options.output_path {
+        std::path::PathBuf::from(custom_path)
+    } else {
+        let downloads_dir = get_downloads_dir().await.unwrap_or_else(|_| {
+            std::env::temp_dir().to_string_lossy().to_string()
+        });
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        std::path::PathBuf::from(&downloads_dir).join(format!("tts_{}.wav", timestamp))
+    };
+
+    let output_path_str = output_path.to_string_lossy().to_string();
+    let voice_name: Option<String> = options.voice_name.clone();
+    let text = options.text.clone();
+    let rate = options.rate;
+    let volume = options.volume;
+    let engine = options.engine.clone();
+    let path_clone = output_path_str.clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        match engine.as_str() {
+            "winrt" => {
+                match tts_winrt_generate(&text, voice_name.as_deref(), rate, volume, &path_clone) {
+                    Ok(_) => {
+                        debug_log!("[tts_generate] WinRT 引擎生成成功");
+                    }
+                    Err(e) => {
+                        debug_log!("[tts_generate] WinRT 失败({})，回退到 SAPI 引擎", e);
+                        tts_sapi_generate(&text, None, rate, volume, &path_clone)?;
+                    }
+                }
+            }
+            _ => {
+                tts_sapi_generate(&text, voice_name.as_deref(), rate, volume, &path_clone)?;
+            }
+        }
+        let output_size = std::fs::metadata(&path_clone)
+            .map(|m| m.len())
+            .map_err(|e| format!("无法读取输出文件: {}", e))?;
+        Ok(TtsResult {
+            output_path: path_clone,
+            output_size,
+        })
     })
     .await
     .map_err(|e| format!("任务执行失败: {}", e))?

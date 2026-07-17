@@ -24,6 +24,7 @@
         <el-tab-pane label="音频压缩" name="compress" />
         <el-tab-pane label="音频合并" name="merge" />
         <el-tab-pane label="变速变调" name="speed" />
+        <el-tab-pane label="文字转语音" name="tts" />
       </el-tabs>
     </div>
 
@@ -572,6 +573,167 @@
       </div>
     </template>
 
+    <!-- ====== Tab: 文字转语音 ====== -->
+    <template v-if="activeTab === 'tts'">
+      <div class="tool-card">
+        <div class="card-header">
+          <span class="card-title">输入文字</span>
+          <div class="card-actions">
+            <el-button size="small" @click="tsState.text = ''" :disabled="!tsState.text">清空</el-button>
+            <el-button size="small" @click="pasteTtsText" :disabled="tsState.isProcessing">粘贴</el-button>
+          </div>
+        </div>
+        <div class="card-body">
+          <el-input
+            v-model="tsState.text"
+            type="textarea"
+            :rows="6"
+            placeholder="输入要转换为语音的文字..."
+            resize="vertical"
+            :disabled="tsState.isProcessing"
+          />
+          <div class="ts-char-count" v-if="tsState.text.length">
+            {{ tsState.text.length }} 字 · 预计 {{ Math.max(1, Math.ceil(tsState.text.length / 4)) }} 秒
+          </div>
+        </div>
+      </div>
+
+      <div class="tool-card">
+        <div class="card-header">
+          <span class="card-title">语音设置</span>
+        </div>
+        <div class="card-body">
+          <div class="action-grid">
+            <div class="action-group">
+              <div class="group-label">引擎</div>
+              <el-select
+                v-model="tsState.engine"
+                size="small"
+                style="width: 140px"
+                :disabled="tsState.isProcessing"
+                @change="onEngineChange"
+              >
+                <el-option label="SAPI 经典" value="sapi" />
+                <el-option label="WinRT 神经语音" value="winrt" />
+              </el-select>
+            </div>
+            <div class="action-group">
+              <div class="group-label">语音</div>
+              <el-select
+                v-model="tsState.voiceName"
+                size="small"
+                style="width: 220px"
+                placeholder="默认语音"
+                clearable
+                :disabled="tsState.isProcessing"
+              >
+                <el-option
+                  v-for="v in filteredVoices"
+                  :key="v.name + v.engine"
+                  :label="`${v.name} (${v.language})`"
+                  :value="v.name"
+                />
+              </el-select>
+            </div>
+            <div class="action-group">
+              <div class="group-label">语速: {{ tsState.rate > 0 ? '+' : '' }}{{ tsState.rate }}</div>
+              <el-slider
+                v-model="tsState.rate"
+                :min="-10"
+                :max="10"
+                :step="1"
+                :disabled="tsState.isProcessing"
+                :format-tooltip="(val: number) => (val > 0 ? '+' : '') + val"
+                style="width: 160px"
+              />
+            </div>
+            <div class="action-group">
+              <div class="group-label">音量: {{ tsState.volume }}</div>
+              <el-slider
+                v-model="tsState.volume"
+                :min="0"
+                :max="100"
+                :step="5"
+                :disabled="tsState.isProcessing"
+                style="width: 160px"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tool-card">
+        <div class="card-header">
+          <span class="card-title">操作</span>
+        </div>
+        <div class="card-body">
+          <div class="action-grid">
+            <div class="action-group">
+              <el-button
+                type="primary"
+                size="small"
+                @click="generateTts"
+                :loading="tsState.isProcessing"
+                :disabled="!tsState.text.trim()"
+              >
+                生成语音
+              </el-button>
+              <el-button
+                size="small"
+                @click="previewTts"
+                :disabled="!tsState.resultPath || tsState.isProcessing"
+              >
+                试听
+              </el-button>
+              <el-button
+                size="small"
+                @click="locateTtsFile"
+                :disabled="!tsState.resultPath || tsState.isProcessing"
+              >
+                在文件夹中打开
+              </el-button>
+            </div>
+          </div>
+          <el-progress
+            v-if="tsState.isProcessing"
+            :percentage="tsState.progress"
+            :stroke-width="6"
+            style="margin-top: 12px"
+          />
+        </div>
+      </div>
+
+      <div v-if="tsState.resultPath" class="tool-card">
+        <div class="card-header">
+          <span class="card-title">生成结果</span>
+        </div>
+        <div class="card-body">
+          <div class="ts-result-info">
+            <span class="ts-result-label">文件路径:</span>
+            <span class="ts-result-path">{{ tsState.resultPath }}</span>
+          </div>
+          <div class="ts-result-info">
+            <span class="ts-result-label">文件大小:</span>
+            <span class="ts-result-path">{{ formatBytes(tsState.resultSize) }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 试听弹窗 -->
+      <el-dialog v-model="tsState.showPreview" title="试听" width="400px" :close-on-click-modal="true" @close="stopTtsPreview">
+        <div class="ts-preview-container">
+          <audio
+            ref="ttsAudioRef"
+            v-if="tsState.audioBase64"
+            :src="'data:audio/wav;base64,' + tsState.audioBase64"
+            controls
+            autoplay
+            class="ts-audio-player"
+          />
+        </div>
+      </el-dialog>
+    </template>
+
     <!-- 错误提示 -->
     <div v-if="error" class="error-message">{{ error }}</div>
   </div>
@@ -633,6 +795,17 @@ interface MergeFile {
   path: string
   name: string
   duration: number
+}
+
+interface TtsVoice {
+  name: string
+  language: string
+  engine: string
+}
+
+interface TtsResult {
+  output_path: string
+  output_size: number
 }
 
 // ============ Tab 状态 ============
@@ -697,6 +870,26 @@ const speedState = reactive({
   isProcessing: false,
   isLoadingInfo: false,
   progress: 0,
+})
+
+// ============ TTS 状态 ============
+const tsState = reactive({
+  text: '',
+  voiceName: '',
+  voices: [] as TtsVoice[],
+  engine: 'sapi' as 'sapi' | 'winrt',
+  rate: 0,
+  volume: 100,
+  isProcessing: false,
+  progress: 0,
+  resultPath: '',
+  resultSize: 0,
+  audioBase64: '',
+  showPreview: false,
+})
+
+const filteredVoices = computed(() => {
+  return tsState.voices.filter(v => v.engine === tsState.engine)
 })
 
 // ============ 状态 ============
@@ -1429,6 +1622,111 @@ onUnmounted(() => {
 })
 
 watch([startTime, endTime], () => drawWaveform())
+
+// ============ TTS 操作 ============
+
+async function loadTtsVoices() {
+  try {
+    const voices: TtsVoice[] = await invoke('list_tts_voices')
+    tsState.voices = voices
+  } catch (e: any) {
+    // 静默失败，语音列表为空时使用默认语音
+    console.warn('加载语音列表失败:', e)
+  }
+}
+
+function onEngineChange() {
+  tsState.voiceName = ''
+}
+
+async function pasteTtsText() {
+  try {
+    const text = await navigator.clipboard.readText()
+    if (text) {
+      tsState.text = text
+    }
+  } catch {
+    ElMessage.warning('无法读取剪贴板')
+  }
+}
+
+async function generateTts() {
+  if (!tsState.text.trim()) {
+    ElMessage.warning('请输入要转换的文字')
+    return
+  }
+
+  try {
+    error.value = ''
+    tsState.isProcessing = true
+    tsState.progress = 0
+    tsState.resultPath = ''
+    tsState.resultSize = 0
+    tsState.audioBase64 = ''
+
+    const result: TtsResult = await invoke('tts_generate', {
+      options: {
+        text: tsState.text,
+        voice_name: tsState.voiceName || null,
+        rate: tsState.rate,
+        volume: tsState.volume,
+        output_path: null,
+        engine: tsState.engine,
+      },
+    })
+
+    tsState.progress = 100
+    tsState.resultPath = result.output_path
+    tsState.resultSize = result.output_size
+
+    ElMessage.success('语音生成完成')
+  } catch (e: any) {
+    error.value = typeof e === 'string' ? e : e.message || '生成失败'
+  } finally {
+    tsState.isProcessing = false
+  }
+}
+
+async function previewTts() {
+  if (!tsState.resultPath) return
+  try {
+    const base64: string = await invoke('read_file_base64', { filePath: tsState.resultPath })
+    tsState.audioBase64 = base64
+    tsState.showPreview = true
+  } catch (e: any) {
+    ElMessage.error('无法加载音频文件')
+  }
+}
+
+const ttsAudioRef = ref<HTMLAudioElement | null>(null)
+
+function stopTtsPreview() {
+  if (ttsAudioRef.value) {
+    ttsAudioRef.value.pause()
+    ttsAudioRef.value.currentTime = 0
+  }
+}
+
+async function locateTtsFile() {
+  if (!tsState.resultPath) return
+  try {
+    await invoke('disk_locate_in_explorer', { path: tsState.resultPath })
+  } catch (e: any) {
+    ElMessage.error('无法打开文件所在位置')
+  }
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(1024))
+  return (bytes / Math.pow(1024, i)).toFixed(1) + ' ' + units[i]
+}
+
+// 页面加载时获取语音列表
+onMounted(() => {
+  loadTtsVoices()
+})
 </script>
 
 <style scoped>
@@ -1661,5 +1959,43 @@ html.light .audio-tool-tabs :deep(.el-tabs__header) {
   margin-top: 8px;
   color: var(--accent-cyan);
   font-size: 13px;
+}
+
+/* ===== TTS 文字转语音样式 ===== */
+.ts-char-count {
+  margin-top: 8px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.ts-result-info {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  align-items: flex-start;
+}
+
+.ts-result-label {
+  color: var(--text-secondary);
+  white-space: nowrap;
+  min-width: 60px;
+}
+
+.ts-result-path {
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+.ts-preview-container {
+  display: flex;
+  justify-content: center;
+  padding: 16px 0;
+}
+
+.ts-audio-player {
+  width: 100%;
+  max-width: 320px;
+  outline: none;
 }
 </style>
