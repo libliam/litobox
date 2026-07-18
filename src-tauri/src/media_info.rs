@@ -1,4 +1,4 @@
-﻿use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use std::process::Command;
 use std::os::windows::process::CommandExt;
 use serde_json::Value;
@@ -414,4 +414,45 @@ fn value_to_string(value: &Value) -> String {
         Value::Null => "".to_string(),
         _ => value.to_string(),
     }
+}
+
+/// 提取封面图到临时文件，返回文件路径
+#[tauri::command]
+pub fn extract_cover_art(file_path: String) -> Result<String, String> {
+    let temp_dir = std::env::temp_dir();
+    let output_path = temp_dir.join(format!("litobox_cover_{}.jpg", std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()));
+    let output_str = output_path.to_str().ok_or("临时路径无效")?.to_string();
+
+    // 先尝试提取第一个视频流（内嵌封面通常是 attached_pic）
+    let output = Command::new("ffmpeg")
+        .args(&[
+            "-i", &file_path,
+            "-map", "0:v:0",
+            "-c:v", "mjpeg",
+            "-frames:v", "1",
+            "-y",
+            &output_str,
+        ])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map_err(|e| format!("ffmpeg 执行失败: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        eprintln!("[media_info] extract_cover_art ffmpeg stderr: {}", stderr);
+        return Err(format!("提取封面失败: {}", stderr));
+    }
+
+    if !output_path.exists() {
+        eprintln!("[media_info] extract_cover_art: output file not created at {}", output_str);
+        return Err("封面图文件未生成".to_string());
+    }
+
+    let size = std::fs::metadata(&output_path).map(|m| m.len()).unwrap_or(0);
+    eprintln!("[media_info] extract_cover_art: success, size={} bytes, path={}", size, output_str);
+
+    Ok(output_str)
 }

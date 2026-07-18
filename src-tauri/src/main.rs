@@ -1,4 +1,4 @@
-﻿#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod clipboard;
 mod db;
@@ -174,6 +174,7 @@ fn main() {
             pdf_tools::compress_pdf,
             pdf_tools::save_temp_file,
             media_info::get_media_info,
+            media_info::extract_cover_art,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
