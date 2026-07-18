@@ -910,6 +910,9 @@ import { invoke } from '@tauri-apps/api/core'
 import { open, save } from '@tauri-apps/plugin-dialog'
 import { listen } from '@tauri-apps/api/event'
 import { ElMessage } from 'element-plus'
+import { useToolboxStore } from '@/store'
+
+const store = useToolboxStore()
 
 // ============ 类型定义 ============
 interface VideoInfo {
@@ -1389,6 +1392,20 @@ async function cropVideo() {
       actualRange.value = { start: result.actual_start, end: result.actual_end }
     }
     ElMessage.success(`裁剪完成，已保存到: ${result.output_path}`)
+    
+    // 添加历史记录
+    store.addHistory({
+      tool: 'videoTool',
+      action: '裁剪',
+      inputPreview: `${fileName.value} [${formatDuration(startTime.value)} - ${formatDuration(endTime.value)}]`,
+      outputPreview: result.output_path.split(/[/\\]/).pop() || '',
+      inputFull: filePath.value,
+      outputFull: result.output_path,
+      options: {
+        start_time: startTime.value,
+        end_time: endTime.value,
+      },
+    })
   } catch (e: any) {
     error.value = typeof e === 'string' ? e : e.message || '裁剪失败'
   } finally { isProcessing.value = false }
@@ -1458,6 +1475,21 @@ async function doTranscode() {
     transcodeProgress.value = 100
     transcodeResult.value = result
     ElMessage.success(`转码完成，已保存到: ${result.output_path}`)
+    
+    // 添加历史记录
+    store.addHistory({
+      tool: 'videoTool',
+      action: '转码',
+      inputPreview: `${transcodeFileName.value} → ${transcodeFormat.value.toUpperCase()}`,
+      outputPreview: result.output_path.split(/[/\\]/).pop() || '',
+      inputFull: transcodeFilePath.value,
+      outputFull: result.output_path,
+      options: {
+        output_format: transcodeFormat.value,
+        video_codec: transcodeVideoCodec.value,
+        audio_codec: transcodeAudioCodec.value,
+      },
+    })
   } catch (e: any) {
     error.value = typeof e === 'string' ? e : e.message || '转码失败'
   } finally { transcodeProcessing.value = false }
@@ -1524,6 +1556,21 @@ async function doAudioExtract() {
     audioExtractProgress.value = 100
     audioExtractResult.value = result
     ElMessage.success(`音频提取完成，已保存到: ${result.output_path}`)
+    
+    // 添加历史记录
+    store.addHistory({
+      tool: 'videoTool',
+      action: '音频提取',
+      inputPreview: `${audioExtractFileName.value} → ${audioExtractFormat.value.toUpperCase()}`,
+      outputPreview: result.output_path.split(/[/\\]/).pop() || '',
+      inputFull: audioExtractFilePath.value,
+      outputFull: result.output_path,
+      options: {
+        output_format: audioExtractFormat.value,
+        audio_codec: audioExtractCodec.value,
+        bitrate: audioExtractBitrate.value,
+      },
+    })
   } catch (e: any) {
     error.value = typeof e === 'string' ? e : e.message || '音频提取失败'
   } finally { audioExtractProcessing.value = false }
@@ -1588,6 +1635,21 @@ async function doCompress() {
     compressProgress.value = 100
     compressResult.value = result
     ElMessage.success(`压缩完成，已保存到: ${result.output_path}（压缩率 ${result.compression_ratio}%）`)
+    
+    // 添加历史记录
+    store.addHistory({
+      tool: 'videoTool',
+      action: '压缩',
+      inputPreview: `${compressFileName.value} (${formatFileSize(result.input_size)})`,
+      outputPreview: `${formatFileSize(result.output_size)} (压缩率 ${result.compression_ratio}%)`,
+      inputFull: compressFilePath.value,
+      outputFull: result.output_path,
+      options: {
+        crf: compressCrf.value,
+        preset: compressPreset.value,
+        video_codec: compressVideoCodec.value,
+      },
+    })
   } catch (e: any) {
     error.value = typeof e === 'string' ? e : e.message || '压缩失败'
   } finally { compressProcessing.value = false }
@@ -1659,6 +1721,21 @@ async function doMerge() {
     mergeProgress.value = 100
     mergeResult.value = result
     ElMessage.success(`合并完成，已保存到: ${result.output_path}`)
+    
+    // 添加历史记录
+    store.addHistory({
+      tool: 'videoTool',
+      action: '合并',
+      inputPreview: `${mergeFiles.value.length} 个文件 → ${mergeFormat.value.toUpperCase()}`,
+      outputPreview: result.output_path.split(/[/\\]/).pop() || '',
+      inputFull: mergeFiles.value.map(f => f.path).join('\n'),
+      outputFull: result.output_path,
+      options: {
+        file_count: mergeFiles.value.length,
+        output_format: mergeFormat.value,
+        video_codec: mergeVideoCodec.value,
+      },
+    })
   } catch (e: any) {
     error.value = typeof e === 'string' ? e : e.message || '合并失败'
   } finally { mergeProcessing.value = false }
@@ -1751,6 +1828,20 @@ async function doFrameExtract() {
     frameExtractResultSrc.value = await invoke('read_file_base64', { path: result.output_path })
     frameExtractResultSrc.value = `data:image/${frameExtractFormat.value};base64,${frameExtractResultSrc.value.replace(/^data:.*?;base64,/, '')}`
     ElMessage.success(`截图提取完成，已保存到: ${result.output_path}`)
+    
+    // 添加历史记录
+    store.addHistory({
+      tool: 'videoTool',
+      action: '截图提取',
+      inputPreview: `${frameExtractFileName.value} @ ${frameExtractTime.value.toFixed(1)}s`,
+      outputPreview: result.output_path.split(/[/\\]/).pop() || '',
+      inputFull: frameExtractFilePath.value,
+      outputFull: result.output_path,
+      options: {
+        time_point: frameExtractTime.value,
+        output_format: frameExtractFormat.value,
+      },
+    })
   } catch (e: any) {
     error.value = typeof e === 'string' ? e : e.message || '截图失败'
   } finally { frameExtractProcessing.value = false }
@@ -2006,6 +2097,22 @@ async function doCropRegion() {
     cropRegionProgress.value = 100
     cropRegionResult.value = result
     ElMessage.success(`画面裁剪完成，已保存到: ${result.output_path}`)
+    
+    // 添加历史记录
+    store.addHistory({
+      tool: 'videoTool',
+      action: '画面裁剪',
+      inputPreview: `${cropRegionFileName.value} [${cropRegionX},${cropRegionY} ${cropRegionW}x${cropRegionH}]`,
+      outputPreview: result.output_path.split(/[/\\]/).pop() || '',
+      inputFull: cropRegionFilePath.value,
+      outputFull: result.output_path,
+      options: {
+        x: cropRegionX.value,
+        y: cropRegionY.value,
+        width: cropRegionW.value,
+        height: cropRegionH.value,
+      },
+    })
   } catch (e: any) {
     error.value = typeof e === 'string' ? e : e.message || '画面裁剪失败'
   } finally { cropRegionProcessing.value = false }
@@ -2060,6 +2167,32 @@ onUnmounted(() => {
   resizeObserver?.disconnect()
   document.removeEventListener('mousemove', onMouseMove)
   document.removeEventListener('mouseup', onMouseUp)
+})
+
+onActivated(() => {
+  // 从历史记录恢复（视频工具均为文件操作，文件路径可能已失效，不还原文件，仅切换 Tab）
+  const restore = store.pendingHistoryRestore
+  if (!restore) return
+  if (restore.tool === 'videoTool') {
+    // 根据 action 切换到对应 Tab
+    const actionTabMap: Record<string, string> = {
+      '裁剪': 'crop',
+      '转码': 'transcode',
+      '音频提取': 'audioExtract',
+      '压缩': 'compress',
+      '合并': 'merge',
+      '截图提取': 'frameExtract',
+      '画面裁剪': 'cropRegion',
+    }
+    if (restore.action) {
+      const tab = actionTabMap[restore.action]
+      if (tab) {
+        activeTab.value = tab
+        ElMessage.success(`已跳转到${restore.action}，请重新选择文件`)
+      }
+    }
+  }
+  store.clearHistoryRestore()
 })
 
 // ponytail: 拖拽时只重绘选中区域，不重绘缩略图，避免闪烁

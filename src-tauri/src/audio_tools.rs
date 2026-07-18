@@ -1452,14 +1452,13 @@ pub async fn tts_generate(
     let output_path = if let Some(ref custom_path) = options.output_path {
         std::path::PathBuf::from(custom_path)
     } else {
-        let downloads_dir = get_downloads_dir().await.unwrap_or_else(|_| {
-            std::env::temp_dir().to_string_lossy().to_string()
-        });
+        // 默认保存到临时目录
+        let temp_dir = std::env::temp_dir();
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        std::path::PathBuf::from(&downloads_dir).join(format!("tts_{}.wav", timestamp))
+        temp_dir.join(format!("tts_{}.wav", timestamp))
     };
 
     let output_path_str = output_path.to_string_lossy().to_string();

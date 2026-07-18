@@ -692,6 +692,14 @@
               >
                 在文件夹中打开
               </el-button>
+              <el-button
+                size="small"
+                type="primary"
+                @click="saveAsTtsFile"
+                :disabled="!tsState.resultPath || tsState.isProcessing"
+              >
+                另存为
+              </el-button>
             </div>
           </div>
           <el-progress
@@ -740,11 +748,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, nextTick, reactive } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, onActivated, nextTick, reactive } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { open, save } from '@tauri-apps/plugin-dialog'
 import { listen } from '@tauri-apps/api/event'
 import { ElMessage } from 'element-plus'
+import { useToolboxStore } from '@/store'
+
+const store = useToolboxStore()
 
 // ============ 类型定义 ============
 interface AudioInfo {
@@ -1182,6 +1193,21 @@ async function cropAudio() {
     unlisten()
     cropProgress.value = 100
     ElMessage.success(`裁剪完成，已保存到: ${result.output_path}`)
+    
+    // 添加历史记录
+    store.addHistory({
+      tool: 'audioTool',
+      action: '裁剪',
+      inputPreview: `${fileName.value} [${formatDuration(startTime.value)} - ${formatDuration(endTime.value)}]`,
+      outputPreview: result.output_path.split(/[/\\]/).pop() || '',
+      inputFull: filePath.value,
+      outputFull: result.output_path,
+      options: {
+        start_time: startTime.value,
+        end_time: endTime.value,
+        output_format: outputFormat.value,
+      },
+    })
   } catch (e: any) {
     error.value = typeof e === 'string' ? e : e.message || '裁剪失败'
   } finally {
@@ -1267,6 +1293,20 @@ async function convertAudio() {
     unlisten()
     convertState.progress = 100
     ElMessage.success(`转换完成，已保存到: ${result.output_path}`)
+    
+    // 添加历史记录
+    store.addHistory({
+      tool: 'audioTool',
+      action: '格式转换',
+      inputPreview: `${convertState.fileName} → ${convertState.outputFormat.toUpperCase()}`,
+      outputPreview: result.output_path.split(/[/\\]/).pop() || '',
+      inputFull: convertState.filePath,
+      outputFull: result.output_path,
+      options: {
+        output_format: convertState.outputFormat,
+        bitrate: convertState.bitrate,
+      },
+    })
   } catch (e: any) {
     error.value = typeof e === 'string' ? e : e.message || '转换失败'
   } finally {
@@ -1356,6 +1396,21 @@ async function compressAudio() {
     compressState.progress = 100
     const saved = result.original_size - result.output_size
     ElMessage.success(`压缩完成，节省 ${(saved / 1024 / 1024).toFixed(2)} MB，已保存到: ${result.output_path}`)
+    
+    // 添加历史记录
+    store.addHistory({
+      tool: 'audioTool',
+      action: '压缩',
+      inputPreview: `${compressState.fileName} (${formatBytes(result.original_size)})`,
+      outputPreview: `${formatBytes(result.output_size)} (节省 ${(saved / 1024 / 1024).toFixed(2)} MB)`,
+      inputFull: compressState.filePath,
+      outputFull: result.output_path,
+      options: {
+        mode: compressState.mode,
+        bitrate: compressState.bitrate,
+        quality: compressState.quality,
+      },
+    })
   } catch (e: any) {
     error.value = typeof e === 'string' ? e : e.message || '压缩失败'
   } finally {
@@ -1475,6 +1530,21 @@ async function mergeAudio() {
     unlisten()
     mergeState.progress = 100
     ElMessage.success(`合并完成，总时长 ${formatDuration(result.duration)}，已保存到: ${result.output_path}`)
+    
+    // 添加历史记录
+    store.addHistory({
+      tool: 'audioTool',
+      action: '合并',
+      inputPreview: `${mergeState.files.length} 个文件 → ${mergeState.outputFormat.toUpperCase()}`,
+      outputPreview: `${formatDuration(result.duration)} | ${result.output_path.split(/[/\\]/).pop() || ''}`,
+      inputFull: mergeState.files.map(f => f.path).join('\n'),
+      outputFull: result.output_path,
+      options: {
+        file_count: mergeState.files.length,
+        output_format: mergeState.outputFormat,
+        bitrate: mergeState.bitrate,
+      },
+    })
   } catch (e: any) {
     error.value = typeof e === 'string' ? e : e.message || '合并失败'
   } finally {
@@ -1565,6 +1635,21 @@ async function changeSpeed() {
     unlisten()
     speedState.progress = 100
     ElMessage.success(`变速完成，新时长 ${formatDuration(result.duration)}，已保存到: ${result.output_path}`)
+    
+    // 添加历史记录
+    store.addHistory({
+      tool: 'audio',
+      action: '变速变调',
+      inputPreview: `${speedState.fileName} @ ${speedState.speed}x`,
+      outputPreview: `${formatDuration(result.duration)} | ${result.output_path.split(/[/\\]/).pop() || ''}`,
+      inputFull: speedState.filePath,
+      outputFull: result.output_path,
+      options: {
+        speed: speedState.speed,
+        keep_pitch: speedState.keepPitch,
+        output_format: speedState.outputFormat,
+      },
+    })
   } catch (e: any) {
     error.value = typeof e === 'string' ? e : e.message || '变速失败'
   } finally {
@@ -1619,6 +1704,23 @@ onUnmounted(() => {
   stopPreview()
   document.removeEventListener('mousemove', onMouseMove)
   document.removeEventListener('mouseup', onMouseUp)
+})
+
+onActivated(() => {
+  // 从历史记录恢复（仅支持文字转语音的文字内容）
+  const restore = store.pendingHistoryRestore
+  if (!restore) return
+  if (restore.tool !== 'audioTool') return
+  if (restore.action === '文字转语音' && restore.input) {
+    tsState.text = restore.input
+    activeTab.value = 'tts'
+    if (restore.options?.voice_name) tsState.voiceName = restore.options.voice_name
+    if (restore.options?.engine) tsState.engine = restore.options.engine
+    if (restore.options?.rate !== undefined) tsState.rate = restore.options.rate
+    if (restore.options?.volume !== undefined) tsState.volume = restore.options.volume
+    ElMessage.success('已恢复文字转语音的历史记录')
+  }
+  store.clearHistoryRestore()
 })
 
 watch([startTime, endTime], () => drawWaveform())
@@ -1680,6 +1782,22 @@ async function generateTts() {
     tsState.resultSize = result.output_size
 
     ElMessage.success('语音生成完成')
+    
+    // 添加历史记录
+    store.addHistory({
+      tool: 'audioTool',
+      action: '文字转语音',
+      inputPreview: `${tsState.text.slice(0, 30)}${tsState.text.length > 30 ? '...' : ''}`,
+      outputPreview: `${tsState.voiceName || '默认'} | ${formatBytes(result.output_size)}`,
+      inputFull: tsState.text,
+      outputFull: result.output_path,
+      options: {
+        voice_name: tsState.voiceName,
+        engine: tsState.engine,
+        rate: tsState.rate,
+        volume: tsState.volume,
+      },
+    })
   } catch (e: any) {
     error.value = typeof e === 'string' ? e : e.message || '生成失败'
   } finally {
@@ -1713,6 +1831,24 @@ async function locateTtsFile() {
     await invoke('disk_locate_in_explorer', { path: tsState.resultPath })
   } catch (e: any) {
     ElMessage.error('无法打开文件所在位置')
+  }
+}
+
+async function saveAsTtsFile() {
+  if (!tsState.resultPath) return
+  try {
+    const filePath: string | null = await save({
+      title: '另存为',
+      defaultPath: 'tts_output.wav',
+      filters: [{ name: 'WAV 音频', extensions: ['wav'] }],
+    })
+    if (!filePath) return
+
+    // 通过后端复制文件到目标路径
+    await invoke('copy_file', { from: tsState.resultPath, to: filePath })
+    ElMessage.success('已保存到: ' + filePath)
+  } catch (e: any) {
+    ElMessage.error('保存失败: ' + (e?.message || e))
   }
 }
 

@@ -25,6 +25,7 @@ export interface HistoryRecord {
 
 export interface HistoryRestoreState {
   tool: string
+  action?: string
   input: string
   output: string
   options: Record<string, any>
