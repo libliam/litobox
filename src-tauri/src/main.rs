@@ -1,4 +1,4 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+﻿#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod clipboard;
 mod db;
@@ -16,6 +16,7 @@ mod image_tools;
 mod audio_tools;
 mod video_tools;
 mod pdf_tools;
+mod media_info;
 
 use tauri::{Manager, Emitter};
 use tauri_plugin_dialog::{DialogExt, MessageDialogBuilder, MessageDialogButtons, MessageDialogKind};
@@ -172,6 +173,7 @@ fn main() {
             pdf_tools::get_pdf_page_count,
             pdf_tools::compress_pdf,
             pdf_tools::save_temp_file,
+            media_info::get_media_info,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

@@ -1,5 +1,6 @@
-use serde::{Deserialize, Serialize};
+﻿use serde::{Deserialize, Serialize};
 use std::process::Command;
+use std::os::windows::process::CommandExt;
 use serde_json::Value;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
