@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="tool-container">
     <!-- Tab切换 -->
     <el-tabs v-model="activeTab" class="workflow-tabs">
@@ -270,6 +270,7 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { QuestionFilled } from '@element-plus/icons-vue'
+import { invoke } from '@tauri-apps/api/core'
 import * as db from '@/utils/dbClient'
 // 复用已有工具函数
 import {
@@ -708,6 +709,10 @@ async function executeStep(tool: string, action: string, input: string): Promise
       return executeRegexAction(action, input)
     case 'sql':
       return executeSqlAction(action, input)
+    case 'mediaInfo': {
+      const result = await invoke<any>('get_media_info', { path: input })
+      return JSON.stringify(result.structured, null, 2)
+    }
     case 'calculator':
       return executeCalculatorAction(action, input)
     default:
