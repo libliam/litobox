@@ -108,6 +108,11 @@ fn main() {
             system_info::get_collect_status,
             system_info::kill_process,
             system_info::kill_process_by_name,
+            // 服务管理命令
+            system_info::get_services,
+            system_info::start_service,
+            system_info::stop_service,
+            system_info::restart_service,
             // SQLite 查看器命令
             sqlite_viewer::sqlite_list_tables,
             sqlite_viewer::sqlite_get_schema,

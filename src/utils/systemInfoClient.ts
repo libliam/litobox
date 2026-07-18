@@ -240,6 +240,39 @@ export function getCollectStatus(kind: CollectKind): Promise<TaskState | null> {
   return invoke<TaskState | null>('get_collect_status', { kind })
 }
 
+// ============ 服务管理类型 ============
+
+export interface ServiceItem {
+  name: string
+  display_name: string
+  status: string
+  start_type: string
+  description: string
+}
+
+export interface ServiceResult {
+  success: boolean
+  service_name: string
+  action: string
+  message: string
+}
+
+export function getServices(): Promise<ServiceItem[]> {
+  return invoke<ServiceItem[]>('get_services')
+}
+
+export function startService(name: string): Promise<ServiceResult> {
+  return invoke<ServiceResult>('start_service', { name })
+}
+
+export function stopService(name: string): Promise<ServiceResult> {
+  return invoke<ServiceResult>('stop_service', { name })
+}
+
+export function restartService(name: string): Promise<ServiceResult> {
+  return invoke<ServiceResult>('restart_service', { name })
+}
+
 // ============ 格式化工具函数 ============
 
 export function formatBytes(bytes: number): string {
