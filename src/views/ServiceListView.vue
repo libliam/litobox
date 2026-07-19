@@ -1,4 +1,4 @@
-﻿<template>
+﻿﻿<template>
   <div class="tool-container">
     <div class="admin-banner">
       <span class="admin-icon">🛡️</span>

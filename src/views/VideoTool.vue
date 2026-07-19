@@ -25,6 +25,7 @@
         <el-tab-pane label="视频合并" name="merge" />
         <el-tab-pane label="截图提取" name="frameExtract" />
         <el-tab-pane label="画面裁剪" name="cropRegion" />
+        <el-tab-pane label="视频调整" name="adjust" />
       </el-tabs>
     </div>
 
@@ -899,6 +900,264 @@
       </template>
     </template>
 
+    <!-- ==================== Tab: 视频调整 (F26+F27+F28) ==================== -->
+    <template v-if="activeTab === 'adjust'">
+      <div v-if="!useFfmpeg" class="tool-card">
+        <div class="card-body">
+          <div class="ffmpeg-required">
+            视频调整需要 ffmpeg，请先安装 ffmpeg 后重启应用
+          </div>
+        </div>
+      </div>
+
+      <template v-else>
+        <!-- 选择文件 -->
+        <div class="tool-card">
+          <div class="card-header">
+            <span class="card-title">选择视频文件</span>
+          </div>
+          <div class="card-body">
+            <div class="action-grid">
+              <div class="action-group">
+                <el-button type="primary" size="small" @click="openAdjustFile" :loading="adjustLoadingInfo">
+                  打开文件
+                </el-button>
+              </div>
+            </div>
+            <div v-if="adjustFilePath" class="video-file-info">
+              <span class="file-name">{{ adjustFileName }}</span>
+              <span class="file-detail" v-if="adjustVideoInfo">
+                {{ formatDuration(adjustVideoInfo.duration) }} | {{ adjustVideoInfo.width }}x{{ adjustVideoInfo.height }} |
+                {{ formatFileSize(adjustVideoInfo.file_size) }}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 调整功能选择 -->
+        <div v-if="adjustVideoInfo" class="tool-card">
+          <div class="card-header">
+            <span class="card-title">调整功能</span>
+          </div>
+          <div class="card-body">
+            <div class="adjust-func-tabs">
+              <div
+                class="adjust-func-tab"
+                :class="{ active: adjustFunc === 'speed' }"
+                @click="adjustFunc = 'speed'"
+              >
+                ⏩ 变速
+              </div>
+              <div
+                class="adjust-func-tab"
+                :class="{ active: adjustFunc === 'rotate' }"
+                @click="adjustFunc = 'rotate'"
+              >
+                🔄 旋转翻转
+              </div>
+              <div
+                class="adjust-func-tab"
+                :class="{ active: adjustFunc === 'volume' }"
+                @click="adjustFunc = 'volume'"
+              >
+                🔊 音量调整
+              </div>
+            </div>
+
+            <!-- 变速设置 -->
+            <div v-if="adjustFunc === 'speed'" class="adjust-section">
+              <div class="action-grid" style="margin-top: 12px">
+                <div class="action-group">
+                  <div class="group-label">播放速度: {{ adjustSpeed.toFixed(2) }}x</div>
+                  <div class="speed-slider">
+                    <el-slider v-model="adjustSpeed" :min="0.25" :max="4.0" :step="0.05" show-input size="small" style="width: 300px" />
+                  </div>
+                </div>
+              </div>
+              <div class="action-grid" style="margin-top: 8px">
+                <div class="action-group">
+                  <el-checkbox v-model="adjustKeepPitch" size="small">
+                    保持音调（音频变速不变调）
+                  </el-checkbox>
+                </div>
+              </div>
+              <div class="speed-info" v-if="adjustVideoInfo">
+                时长变化: {{ formatDuration(adjustVideoInfo.duration) }} → {{ formatDuration(adjustVideoInfo.duration / adjustSpeed) }}
+              </div>
+              <div class="action-grid" style="margin-top: 12px">
+                <div class="action-group">
+                  <div class="group-label">输出格式</div>
+                  <el-select v-model="adjustSpeedFormat" size="small" style="width: 100px">
+                    <el-option label="MP4" value="mp4" />
+                    <el-option label="MKV" value="mkv" />
+                    <el-option label="MOV" value="mov" />
+                    <el-option label="WebM" value="webm" />
+                  </el-select>
+                </div>
+                <div class="action-group">
+                  <el-checkbox v-model="adjustSaveToSamePath" size="small">
+                    与源文件相同路径
+                  </el-checkbox>
+                </div>
+              </div>
+              <div class="action-grid" style="margin-top: 12px">
+                <div class="action-group">
+                  <el-button type="primary" size="small" @click="doSpeedChange" :loading="adjustSpeedProcessing">
+                    变速并导出
+                  </el-button>
+                </div>
+              </div>
+              <el-progress v-if="adjustSpeedProcessing" :percentage="adjustSpeedProgress" :stroke-width="6" style="margin-top: 12px" />
+              <div v-if="adjustSpeedResult" class="result-info">
+                <span>输出大小: {{ formatFileSize(adjustSpeedResult.output_size) }}</span>
+                <span class="result-sep">|</span>
+                <span>新时长: {{ formatDuration(adjustSpeedResult.duration) }}</span>
+              </div>
+            </div>
+
+            <!-- 旋转翻转设置 -->
+            <div v-if="adjustFunc === 'rotate'" class="adjust-section">
+              <div class="action-grid" style="margin-top: 12px">
+                <div class="action-group">
+                  <div class="group-label">旋转方向</div>
+                  <div class="rotate-buttons">
+                    <el-button size="small" :type="adjustRotation === '90' ? 'primary' : ''" @click="adjustRotation = '90'">
+                      ↻ 顺时针90°
+                    </el-button>
+                    <el-button size="small" :type="adjustRotation === '180' ? 'primary' : ''" @click="adjustRotation = '180'">
+                      🔄 180°
+                    </el-button>
+                    <el-button size="small" :type="adjustRotation === '270' ? 'primary' : ''" @click="adjustRotation = '270'">
+                      ↺ 逆时针90°
+                    </el-button>
+                  </div>
+                </div>
+              </div>
+              <div class="action-grid" style="margin-top: 12px">
+                <div class="action-group">
+                  <div class="group-label">翻转</div>
+                  <div class="rotate-buttons">
+                    <el-button size="small" :type="adjustRotation === 'hflip' ? 'primary' : ''" @click="adjustRotation = 'hflip'">
+                      ↔ 水平翻转
+                    </el-button>
+                    <el-button size="small" :type="adjustRotation === 'vflip' ? 'primary' : ''" @click="adjustRotation = 'vflip'">
+                      ↕ 垂直翻转
+                    </el-button>
+                  </div>
+                </div>
+              </div>
+              <div class="rotate-info" v-if="adjustVideoInfo">
+                输出分辨率:
+                <template v-if="adjustRotation === '90' || adjustRotation === '270'">
+                  {{ adjustVideoInfo.height }}x{{ adjustVideoInfo.width }}
+                </template>
+                <template v-else>
+                  {{ adjustVideoInfo.width }}x{{ adjustVideoInfo.height }}
+                </template>
+                <span class="rotate-info-hint">（宽高互换）</span>
+              </div>
+              <div class="action-grid" style="margin-top: 12px">
+                <div class="action-group">
+                  <div class="group-label">输出格式</div>
+                  <el-select v-model="adjustRotateFormat" size="small" style="width: 100px">
+                    <el-option label="MP4" value="mp4" />
+                    <el-option label="MKV" value="mkv" />
+                    <el-option label="MOV" value="mov" />
+                    <el-option label="AVI" value="avi" />
+                  </el-select>
+                </div>
+                <div class="action-group">
+                  <el-checkbox v-model="adjustSaveToSamePath" size="small">
+                    与源文件相同路径
+                  </el-checkbox>
+                </div>
+              </div>
+              <div class="action-grid" style="margin-top: 12px">
+                <div class="action-group">
+                  <el-button type="primary" size="small" @click="doRotateFlip" :loading="adjustRotateProcessing">
+                    旋转并导出
+                  </el-button>
+                </div>
+              </div>
+              <el-progress v-if="adjustRotateProcessing" :percentage="adjustRotateProgress" :stroke-width="6" style="margin-top: 12px" />
+              <div v-if="adjustRotateResult" class="result-info">
+                <span>输出大小: {{ formatFileSize(adjustRotateResult.output_size) }}</span>
+                <span class="result-sep">|</span>
+                <span>尺寸: {{ adjustRotateResult.width }}x{{ adjustRotateResult.height }}</span>
+              </div>
+            </div>
+
+            <!-- 音量调整设置 -->
+            <div v-if="adjustFunc === 'volume'" class="adjust-section">
+              <div class="action-grid" style="margin-top: 12px">
+                <div class="action-group">
+                  <div class="group-label">音量调整: {{ adjustVolumeDb > -900 ? (adjustVolumeDb > 0 ? '+' : '') + adjustVolumeDb + ' dB' : '静音' }}</div>
+                  <div class="volume-slider">
+                    <el-slider
+                      v-model="adjustVolumeDb"
+                      :min="-30"
+                      :max="20"
+                      :step="1"
+                      show-input
+                      size="small"
+                      style="width: 300px"
+                      :disabled="adjustMute"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div class="action-grid" style="margin-top: 8px">
+                <div class="action-group">
+                  <el-checkbox v-model="adjustMute" size="small">
+                    静音（移除音频轨道）
+                  </el-checkbox>
+                </div>
+              </div>
+              <div class="action-grid" style="margin-top: 8px">
+                <div class="action-group">
+                  <div class="group-label">快捷调节</div>
+                  <el-button size="small" @click="adjustVolumeDb = -10" :disabled="adjustMute">-10dB</el-button>
+                  <el-button size="small" @click="adjustVolumeDb = -5" :disabled="adjustMute">-5dB</el-button>
+                  <el-button size="small" @click="adjustVolumeDb = 0" :disabled="adjustMute">原始</el-button>
+                  <el-button size="small" @click="adjustVolumeDb = 5" :disabled="adjustMute">+5dB</el-button>
+                  <el-button size="small" @click="adjustVolumeDb = 10" :disabled="adjustMute">+10dB</el-button>
+                </div>
+              </div>
+              <div class="action-grid" style="margin-top: 12px">
+                <div class="action-group">
+                  <div class="group-label">输出格式</div>
+                  <el-select v-model="adjustVolumeFormat" size="small" style="width: 100px">
+                    <el-option label="MP4" value="mp4" />
+                    <el-option label="MKV" value="mkv" />
+                    <el-option label="MOV" value="mov" />
+                    <el-option label="AVI" value="avi" />
+                  </el-select>
+                </div>
+                <div class="action-group">
+                  <el-checkbox v-model="adjustSaveToSamePath" size="small">
+                    与源文件相同路径
+                  </el-checkbox>
+                </div>
+              </div>
+              <div class="action-grid" style="margin-top: 12px">
+                <div class="action-group">
+                  <el-button type="primary" size="small" @click="doVolumeChange" :loading="adjustVolumeProcessing">
+                    调整并导出
+                  </el-button>
+                </div>
+              </div>
+              <el-progress v-if="adjustVolumeProcessing" :percentage="adjustVolumeProgress" :stroke-width="6" style="margin-top: 12px" />
+              <div v-if="adjustVolumeResult" class="result-info">
+                <span>输出大小: {{ formatFileSize(adjustVolumeResult.output_size) }}</span>
+                <span class="result-sep">|</span>
+                <span>时长: {{ formatDuration(adjustVolumeResult.duration) }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+    </template>
+
     <!-- 错误提示 -->
     <div v-if="error" class="error-message">{{ error }}</div>
   </div>
@@ -992,6 +1251,30 @@ interface CropRegionResult {
   output_size: number
   width: number
   height: number
+}
+
+interface VideoSpeedResult {
+  output_path: string
+  output_size: number
+  input_size: number
+  duration: number
+  input_duration: number
+}
+
+interface VideoRotateResult {
+  output_path: string
+  output_size: number
+  input_size: number
+  duration: number
+  width: number
+  height: number
+}
+
+interface VideoVolumeResult {
+  output_path: string
+  output_size: number
+  input_size: number
+  duration: number
 }
 
 // ============ Tab 状态 ============
@@ -1109,6 +1392,37 @@ const cropDragStartY = ref(0)
 const cropDragStartRegion = ref({ x: 0, y: 0, w: 0, h: 0 })
 // 图片显示比例（显示宽度 / 实际视频宽度）
 const cropDisplayRatio = ref(1)
+
+// ============ 视频调整状态 (F26+F27+F28) ============
+const adjustFunc = ref<'speed' | 'rotate' | 'volume'>('speed')
+const adjustFilePath = ref('')
+const adjustFileName = ref('')
+const adjustVideoInfo = ref<VideoInfo | null>(null)
+const adjustLoadingInfo = ref(false)
+const adjustSaveToSamePath = ref(true)
+
+// 变速状态
+const adjustSpeed = ref(1.0)
+const adjustKeepPitch = ref(true)
+const adjustSpeedFormat = ref('mp4')
+const adjustSpeedProcessing = ref(false)
+const adjustSpeedProgress = ref(0)
+const adjustSpeedResult = ref<VideoSpeedResult | null>(null)
+
+// 旋转翻转状态
+const adjustRotation = ref('90')
+const adjustRotateFormat = ref('mp4')
+const adjustRotateProcessing = ref(false)
+const adjustRotateProgress = ref(0)
+const adjustRotateResult = ref<VideoRotateResult | null>(null)
+
+// 音量调整状态
+const adjustVolumeDb = ref(0)
+const adjustMute = ref(false)
+const adjustVolumeFormat = ref('mp4')
+const adjustVolumeProcessing = ref(false)
+const adjustVolumeProgress = ref(0)
+const adjustVolumeResult = ref<VideoVolumeResult | null>(null)
 
 // 裁剪框叠加层样式（基于显示坐标）
 const cropOverlayStyle = computed(() => {
@@ -2124,6 +2438,210 @@ function resetCropRegion() {
   cropRegionPreset.value = ''
 }
 
+// ============ 视频调整操作 (F26+F27+F28) ============
+
+async function openAdjustFile() {
+  try {
+    const selected = await open({
+      multiple: false,
+      filters: [{ name: '视频文件', extensions: ['mp4', 'mkv', 'avi', 'mov', 'webm', 'm4v'] }]
+    })
+    if (!selected) return
+    adjustFilePath.value = selected as string
+    adjustFileName.value = (selected as string).split(/[/\\]/).pop() || ''
+    adjustVideoInfo.value = null
+    adjustSpeedResult.value = null
+    adjustRotateResult.value = null
+    adjustVolumeResult.value = null
+    adjustLoadingInfo.value = true
+    const info: VideoInfo = await invoke('get_video_info', { path: adjustFilePath.value, useFfmpeg: useFfmpeg.value })
+    adjustVideoInfo.value = info
+  } catch (e: any) {
+    error.value = typeof e === 'string' ? e : e.message || '读取视频信息失败'
+  } finally { adjustLoadingInfo.value = false }
+}
+
+// 视频变速
+async function doSpeedChange() {
+  if (!adjustFilePath.value) {
+    ElMessage.warning('请先选择视频文件')
+    return
+  }
+  if (adjustSpeed.value < 0.25 || adjustSpeed.value > 4.0) {
+    ElMessage.warning('变速范围必须在 0.25x ~ 4.0x 之间')
+    return
+  }
+  try {
+    adjustSpeedProcessing.value = true
+    adjustSpeedProgress.value = 0
+    error.value = ''
+
+    const unlisten = await listen<{ progress: number }>('video-speed-progress', (event) => {
+      adjustSpeedProgress.value = Math.round(event.payload.progress)
+    })
+
+    let outputPath = ''
+    if (!adjustSaveToSamePath.value) {
+      const defaultName = adjustFileName.value.replace(/\.[^.]+$/, '') + `_${adjustSpeed.value}x.` + adjustSpeedFormat.value
+      const saved = await save({
+        defaultPath: defaultName,
+        filters: [{ name: '视频文件', extensions: [adjustSpeedFormat.value] }],
+      })
+      if (!saved) { adjustSpeedProcessing.value = false; return }
+      outputPath = saved as string
+    }
+
+    const result: VideoSpeedResult = await invoke('video_speed_change', {
+      path: adjustFilePath.value,
+      options: {
+        speed: adjustSpeed.value,
+        keep_pitch: adjustKeepPitch.value,
+        output_format: adjustSpeedFormat.value,
+        output_path: outputPath || undefined,
+      }
+    })
+    adjustSpeedResult.value = result
+    adjustSpeedProgress.value = 100
+    ElMessage.success(`变速完成，新时长 ${formatDuration(result.duration)}，已保存到: ${result.output_path}`)
+
+    store.addHistory({
+      tool: 'videoTool',
+      action: '变速',
+      inputPreview: `${adjustFileName.value} @ ${adjustSpeed.value}x`,
+      outputPreview: formatDuration(result.duration),
+      inputFull: adjustFilePath.value,
+      outputFull: result.output_path,
+      options: {
+        speed: adjustSpeed.value,
+        keepPitch: adjustKeepPitch.value,
+        outputFormat: adjustSpeedFormat.value,
+      }
+    })
+    unlisten()
+  } catch (e: any) {
+    error.value = typeof e === 'string' ? e : e.message || '变速失败'
+  } finally { adjustSpeedProcessing.value = false }
+}
+
+// 视频旋转翻转
+async function doRotateFlip() {
+  if (!adjustFilePath.value) {
+    ElMessage.warning('请先选择视频文件')
+    return
+  }
+  try {
+    adjustRotateProcessing.value = true
+    adjustRotateProgress.value = 0
+    error.value = ''
+
+    const unlisten = await listen<{ progress: number }>('video-rotate-progress', (event) => {
+      adjustRotateProgress.value = Math.round(event.payload.progress)
+    })
+
+    let outputPath = ''
+    if (!adjustSaveToSamePath.value) {
+      const suffix = { '90': '_rot90', '180': '_rot180', '270': '_rot270', 'hflip': '_hflip', 'vflip': '_vflip' }[adjustRotation.value] || '_rotated'
+      const defaultName = adjustFileName.value.replace(/\.[^.]+$/, '') + suffix + '.' + adjustRotateFormat.value
+      const saved = await save({
+        defaultPath: defaultName,
+        filters: [{ name: '视频文件', extensions: [adjustRotateFormat.value] }],
+      })
+      if (!saved) { adjustRotateProcessing.value = false; return }
+      outputPath = saved as string
+    }
+
+    const result: VideoRotateResult = await invoke('video_rotate_flip', {
+      path: adjustFilePath.value,
+      options: {
+        rotation: adjustRotation.value,
+        output_format: adjustRotateFormat.value,
+        output_path: outputPath || undefined,
+      }
+    })
+    adjustRotateResult.value = result
+    adjustRotateProgress.value = 100
+    const actionLabel = { '90': '顺时针90°', '180': '180°', '270': '逆时针90°', 'hflip': '水平翻转', 'vflip': '垂直翻转' }[adjustRotation.value] || '旋转'
+    ElMessage.success(`${actionLabel}完成，已保存到: ${result.output_path}`)
+
+    store.addHistory({
+      tool: 'videoTool',
+      action: '旋转翻转',
+      inputPreview: `${adjustFileName.value} - ${actionLabel}`,
+      outputPreview: `${result.width}x${result.height}`,
+      inputFull: adjustFilePath.value,
+      outputFull: result.output_path,
+      options: {
+        rotation: adjustRotation.value,
+        outputFormat: adjustRotateFormat.value,
+      }
+    })
+    unlisten()
+  } catch (e: any) {
+    error.value = typeof e === 'string' ? e : e.message || '旋转失败'
+  } finally { adjustRotateProcessing.value = false }
+}
+
+// 视频音量调整
+async function doVolumeChange() {
+  if (!adjustFilePath.value) {
+    ElMessage.warning('请先选择视频文件')
+    return
+  }
+  try {
+    adjustVolumeProcessing.value = true
+    adjustVolumeProgress.value = 0
+    error.value = ''
+
+    const unlisten = await listen<{ progress: number }>('video-volume-progress', (event) => {
+      adjustVolumeProgress.value = Math.round(event.payload.progress)
+    })
+
+    const volumeDb = adjustMute.value ? -999 : adjustVolumeDb.value
+
+    let outputPath = ''
+    if (!adjustSaveToSamePath.value) {
+      const suffix = adjustMute.value ? '_muted' : (volumeDb >= 0 ? `_vol+${volumeDb}dB` : `_vol${volumeDb}dB`)
+      const defaultName = adjustFileName.value.replace(/\.[^.]+$/, '') + suffix + '.' + adjustVolumeFormat.value
+      const saved = await save({
+        defaultPath: defaultName,
+        filters: [{ name: '视频文件', extensions: [adjustVolumeFormat.value] }],
+      })
+      if (!saved) { adjustVolumeProcessing.value = false; return }
+      outputPath = saved as string
+    }
+
+    const result: VideoVolumeResult = await invoke('video_volume', {
+      path: adjustFilePath.value,
+      options: {
+        volume_db: volumeDb,
+        output_format: adjustVolumeFormat.value,
+        output_path: outputPath || undefined,
+      }
+    })
+    adjustVolumeResult.value = result
+    adjustVolumeProgress.value = 100
+    const actionLabel = adjustMute.value ? '静音' : `音量 ${volumeDb > 0 ? '+' : ''}${volumeDb}dB`
+    ElMessage.success(`${actionLabel}完成，已保存到: ${result.output_path}`)
+
+    store.addHistory({
+      tool: 'videoTool',
+      action: '音量调整',
+      inputPreview: `${adjustFileName.value} - ${actionLabel}`,
+      outputPreview: formatFileSize(result.output_size),
+      inputFull: adjustFilePath.value,
+      outputFull: result.output_path,
+      options: {
+        volumeDb,
+        mute: adjustMute.value,
+        outputFormat: adjustVolumeFormat.value,
+      }
+    })
+    unlisten()
+  } catch (e: any) {
+    error.value = typeof e === 'string' ? e : e.message || '音量调整失败'
+  } finally { adjustVolumeProcessing.value = false }
+}
+
 // ============ 格式化 ============
 function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60)
@@ -2183,6 +2701,9 @@ onActivated(() => {
       '合并': 'merge',
       '截图提取': 'frameExtract',
       '画面裁剪': 'cropRegion',
+      '变速': 'adjust',
+      '旋转翻转': 'adjust',
+      '音量调整': 'adjust',
     }
     if (restore.action) {
       const tab = actionTabMap[restore.action]
@@ -2634,5 +3155,81 @@ html.light .video-tool-tabs :deep(.el-tabs__header) {
   margin-top: 16px;
   padding-top: 16px;
   border-top: 1px solid var(--border-color);
+}
+
+/* ===== 视频调整 Tab 样式 ===== */
+.adjust-func-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.adjust-func-tab {
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--text-secondary);
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.adjust-func-tab:hover {
+  color: var(--text-primary);
+  border-color: var(--accent-cyan);
+}
+
+.adjust-func-tab.active {
+  color: var(--accent-cyan);
+  border-color: var(--accent-cyan);
+  background: rgba(0, 212, 255, 0.08);
+  font-weight: 600;
+}
+
+.adjust-section {
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.speed-info, .rotate-info {
+  margin-top: 12px;
+  padding: 10px 14px;
+  background: var(--bg-input);
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+}
+
+.rotate-info-hint {
+  margin-left: 8px;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.rotate-buttons {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.speed-slider, .volume-slider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.unit-text {
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin-left: 4px;
 }
 </style>

@@ -5,6 +5,85 @@ use tauri::Emitter;
 
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+fn run_ffmpeg_with_progress(
+    app_handle: &tauri::AppHandle,
+    args: &[String],
+    event_name: &str,
+    duration: f64,
+) -> Result<(), String> {
+    use std::io::{BufRead, BufReader, Read};
+    use std::process::{Command, Stdio};
+
+    // 在输出路径（最后一个参数）前插入 -progress pipe:1 和 -nostats
+    // ffmpeg 默认进度输出到 stderr 用 \r 刷新同一行，BufReader::lines() 按 \n 分割会堆积成一行直到退出
+    // -progress pipe:1 改为输出结构化进度到 stdout，每行 \n 分隔，便于实时解析
+    if args.len() < 2 {
+        return Err("ffmpeg 参数不完整".to_string());
+    }
+    let output_path = args.last().unwrap().clone();
+    let mut full_args: Vec<String> = args[..args.len() - 1].to_vec();
+    full_args.push("-progress".to_string());
+    full_args.push("pipe:1".to_string());
+    full_args.push("-nostats".to_string());
+    full_args.push(output_path);
+
+    let mut cmd = Command::new("ffmpeg")
+        .args(&full_args)
+        .creation_flags(CREATE_NO_WINDOW)
+        .stderr(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("ffmpeg 启动失败: {}", e))?;
+
+    let stdout = cmd.stdout.take().ok_or("无法获取 ffmpeg stdout")?;
+    let stderr = cmd.stderr.take().ok_or("无法获取 ffmpeg stderr")?;
+
+    // 用独立线程读取 stderr，避免管道缓冲区满导致 ffmpeg 阻塞死锁
+    // 同时保留 stderr 内容用于失败时返回错误信息
+    let stderr_handle = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let mut reader = BufReader::new(stderr);
+        let _ = reader.read_to_end(&mut buf);
+        buf
+    });
+
+    let _ = app_handle.emit(event_name, serde_json::json!({ "progress": 0.0 }));
+
+    let reader = BufReader::new(stdout);
+    for line in reader.lines() {
+        let line = match line {
+            Ok(l) => l,
+            Err(_) => continue,
+        };
+
+        // 解析 out_time_us=1234567（微秒），比 out_time=HH:MM:SS.ffffff 更易解析
+        if let Some(rest) = line.strip_prefix("out_time_us=") {
+            let rest = rest.trim();
+            if rest != "N/A" {
+                if let Ok(us) = rest.parse::<f64>() {
+                    if duration > 0.0 && us > 0.0 {
+                        let time_val = us / 1_000_000.0;
+                        let progress = (time_val / duration * 100.0).min(99.9);
+                        let _ = app_handle.emit(event_name, serde_json::json!({ "progress": progress }));
+                    }
+                }
+            }
+        }
+    }
+
+    let status = cmd.wait().map_err(|e| format!("ffmpeg 等待失败: {}", e))?;
+    let stderr_buf = stderr_handle.join().unwrap_or_default();
+
+    if !status.success() {
+        let stderr_str = String::from_utf8_lossy(&stderr_buf);
+        let preview: String = stderr_str.chars().take(500).collect();
+        return Err(format!("ffmpeg 执行失败: {}", preview));
+    }
+
+    let _ = app_handle.emit(event_name, serde_json::json!({ "progress": 100.0 }));
+    Ok(())
+}
+
 // ponytail: debug 模式输出日志到 stderr，release 模式编译时移除（零开销）
 macro_rules! debug_log {
     ($($arg:tt)*) => {
@@ -1847,5 +1926,414 @@ fn do_video_crop_region(
         output_size,
         width: options.width,
         height: options.height,
+    })
+}
+
+// ============ 视频变速 (F26) ============
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VideoSpeedOptions {
+    pub speed: f64,
+    pub keep_pitch: bool,
+    pub output_format: String,
+    pub output_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VideoSpeedResult {
+    pub output_path: String,
+    pub output_size: u64,
+    pub input_size: u64,
+    pub duration: f64,
+    pub input_duration: f64,
+}
+
+#[tauri::command]
+pub async fn video_speed_change(
+    app_handle: tauri::AppHandle,
+    path: String,
+    options: VideoSpeedOptions,
+) -> Result<VideoSpeedResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if !ffmpeg_available() {
+            return Err("视频变速需要 ffmpeg，请先安装 ffmpeg".to_string());
+        }
+        do_video_speed_change(&app_handle, &path, &options)
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
+}
+
+fn do_video_speed_change(
+    app_handle: &tauri::AppHandle,
+    path: &str,
+    options: &VideoSpeedOptions,
+) -> Result<VideoSpeedResult, String> {
+    if options.speed < 0.25 || options.speed > 4.0 {
+        return Err("变速范围必须在 0.25x ~ 4.0x 之间".to_string());
+    }
+
+    let input_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    let info = get_video_info_ffprobe(path)?;
+    let input_duration = info.duration;
+
+    let input_stem = std::path::Path::new(path)
+        .file_stem().and_then(|s| s.to_str()).unwrap_or("video");
+    let ext = &options.output_format;
+    let output_path = if let Some(ref custom_path) = options.output_path {
+        std::path::PathBuf::from(custom_path)
+    } else {
+        std::path::Path::new(path)
+            .parent().unwrap_or(std::path::Path::new("."))
+            .join(format!("{}_{}x.{}", input_stem, options.speed, ext))
+    };
+
+    let _ = app_handle.emit("video-speed-progress", serde_json::json!({ "progress": 5.0 }));
+
+    // 构建滤镜：视频用 setpts，音频用 atempo
+    let video_speed = 1.0 / options.speed; // setpts 是变慢时数值变大
+    let video_filter = format!("setpts={}*PTS", video_speed);
+
+    // 音频变速：保持音调用 atempo，不保持直接用 asetpts + 采样率
+    let audio_filter = if options.keep_pitch {
+        // atempo 范围 0.5~2.0，超出需要级联
+        if options.speed >= 0.5 && options.speed <= 2.0 {
+            format!("atempo={}", options.speed)
+        } else if options.speed > 2.0 && options.speed <= 4.0 {
+            let half = options.speed / 2.0;
+            format!("atempo={},atempo=2.0", half)
+        } else {
+            let double = options.speed * 2.0;
+            format!("atempo={},atempo=0.5", double)
+        }
+    } else {
+        // 不保持音调：直接改变播放速度（通过 asetpts 改变时长，采样率不变音高会变）
+        format!("asetrate=44100*{},aresample=44100", options.speed)
+    };
+
+    let _ = app_handle.emit("video-speed-progress", serde_json::json!({ "progress": 10.0 }));
+
+    let mut args: Vec<String> = vec![
+        "-y".to_string(),
+        "-i".to_string(), path.to_string(),
+        "-filter_complex".to_string(),
+        format!("[0:v]{}[v];[0:a]{}[a]", video_filter, audio_filter),
+        "-map".to_string(), "[v]".to_string(),
+        "-map".to_string(), "[a]".to_string(),
+    ];
+
+    // 根据输出格式选择编码器
+    match ext.as_str() {
+        "mp4" | "mov" => {
+            args.push("-c:v".to_string());
+            args.push("libx264".to_string());
+            args.push("-c:a".to_string());
+            args.push("aac".to_string());
+        }
+        "mkv" => {
+            args.push("-c:v".to_string());
+            args.push("libx264".to_string());
+            args.push("-c:a".to_string());
+            args.push("libmp3lame".to_string());
+        }
+        "webm" => {
+            args.push("-c:v".to_string());
+            args.push("libvpx-vp9".to_string());
+            args.push("-c:a".to_string());
+            args.push("libopus".to_string());
+        }
+        "avi" => {
+            args.push("-c:v".to_string());
+            args.push("libx264".to_string());
+            args.push("-c:a".to_string());
+            args.push("libmp3lame".to_string());
+        }
+        _ => {
+            args.push("-c:v".to_string());
+            args.push("libx264".to_string());
+            args.push("-c:a".to_string());
+            args.push("aac".to_string());
+        }
+    }
+
+    args.push("-preset".to_string());
+    args.push("fast".to_string());
+    args.push(output_path.to_string_lossy().to_string());
+
+    debug_log!("ffmpeg 视频变速: {:?}", args);
+
+    run_ffmpeg_with_progress(app_handle, &args, "video-speed-progress", input_duration)?;
+
+    let output_size = std::fs::metadata(&output_path).map(|m| m.len()).unwrap_or(0);
+    let output_duration = input_duration / options.speed;
+
+    let _ = app_handle.emit("video-speed-progress", serde_json::json!({ "progress": 100.0 }));
+
+    Ok(VideoSpeedResult {
+        output_path: output_path.to_string_lossy().to_string(),
+        output_size,
+        input_size,
+        duration: output_duration,
+        input_duration,
+    })
+}
+
+// ============ 视频旋转/翻转 (F27) ============
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VideoRotateOptions {
+    pub rotation: String, // 90, 180, 270, hflip, vflip, none
+    pub output_format: String,
+    pub output_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VideoRotateResult {
+    pub output_path: String,
+    pub output_size: u64,
+    pub input_size: u64,
+    pub duration: f64,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[tauri::command]
+pub async fn video_rotate_flip(
+    app_handle: tauri::AppHandle,
+    path: String,
+    options: VideoRotateOptions,
+) -> Result<VideoRotateResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if !ffmpeg_available() {
+            return Err("视频旋转需要 ffmpeg，请先安装 ffmpeg".to_string());
+        }
+        do_video_rotate_flip(&app_handle, &path, &options)
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
+}
+
+fn do_video_rotate_flip(
+    app_handle: &tauri::AppHandle,
+    path: &str,
+    options: &VideoRotateOptions,
+) -> Result<VideoRotateResult, String> {
+    let input_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    let info = get_video_info_ffprobe(path)?;
+    let duration = info.duration;
+
+    let input_stem = std::path::Path::new(path)
+        .file_stem().and_then(|s| s.to_str()).unwrap_or("video");
+    let ext = &options.output_format;
+
+    // 生成后缀名
+    let suffix = match options.rotation.as_str() {
+        "90" => "_rot90",
+        "180" => "_rot180",
+        "270" => "_rot270",
+        "hflip" => "_hflip",
+        "vflip" => "_vflip",
+        _ => "_rotated",
+    };
+
+    let output_path = if let Some(ref custom_path) = options.output_path {
+        std::path::PathBuf::from(custom_path)
+    } else {
+        std::path::Path::new(path)
+            .parent().unwrap_or(std::path::Path::new("."))
+            .join(format!("{}{}.{}", input_stem, suffix, ext))
+    };
+
+    let _ = app_handle.emit("video-rotate-progress", serde_json::json!({ "progress": 5.0 }));
+
+    // 构建滤镜
+    let filter = match options.rotation.as_str() {
+        "90" => "transpose=1",         // 顺时针 90°
+        "180" => "transpose=2,transpose=2", // 180° = 两次逆时针 90°
+        "270" => "transpose=2",        // 逆时针 90°（顺时针 270°）
+        "hflip" => "hflip",
+        "vflip" => "vflip",
+        "none" => "",
+        _ => return Err(format!("未知旋转方式: {}", options.rotation)),
+    };
+
+    let _ = app_handle.emit("video-rotate-progress", serde_json::json!({ "progress": 10.0 }));
+
+    let mut args: Vec<String> = vec![
+        "-y".to_string(),
+        "-i".to_string(), path.to_string(),
+    ];
+
+    if !filter.is_empty() {
+        args.push("-vf".to_string());
+        args.push(filter.to_string());
+    }
+
+    // 音频直接复制（旋转不影响音频）
+    args.push("-c:a".to_string());
+    args.push("copy".to_string());
+
+    // 视频编码
+    match ext.as_str() {
+        "mp4" | "mov" => {
+            args.push("-c:v".to_string());
+            args.push("libx264".to_string());
+            args.push("-preset".to_string());
+            args.push("fast".to_string());
+        }
+        "mkv" => {
+            args.push("-c:v".to_string());
+            args.push("libx264".to_string());
+            args.push("-preset".to_string());
+            args.push("fast".to_string());
+        }
+        "webm" => {
+            args.push("-c:v".to_string());
+            args.push("libvpx-vp9".to_string());
+        }
+        "avi" => {
+            args.push("-c:v".to_string());
+            args.push("libx264".to_string());
+            args.push("-preset".to_string());
+            args.push("fast".to_string());
+        }
+        _ => {
+            args.push("-c:v".to_string());
+            args.push("libx264".to_string());
+            args.push("-preset".to_string());
+            args.push("fast".to_string());
+        }
+    }
+
+    args.push(output_path.to_string_lossy().to_string());
+
+    debug_log!("ffmpeg 视频旋转: {:?}", args);
+
+    run_ffmpeg_with_progress(app_handle, &args, "video-rotate-progress", duration)?;
+
+    let output_size = std::fs::metadata(&output_path).map(|m| m.len()).unwrap_or(0);
+
+    // 计算输出分辨率（90/270 度旋转宽高互换）
+    let (out_w, out_h) = match options.rotation.as_str() {
+        "90" | "270" => (info.height, info.width),
+        _ => (info.width, info.height),
+    };
+
+    let _ = app_handle.emit("video-rotate-progress", serde_json::json!({ "progress": 100.0 }));
+
+    Ok(VideoRotateResult {
+        output_path: output_path.to_string_lossy().to_string(),
+        output_size,
+        input_size,
+        duration,
+        width: out_w,
+        height: out_h,
+    })
+}
+
+// ============ 视频音量调整 (F28) ============
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VideoVolumeOptions {
+    pub volume_db: f64, // 音量调整量（dB），正数增大，负数减小，-999 表示静音
+    pub output_format: String,
+    pub output_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VideoVolumeResult {
+    pub output_path: String,
+    pub output_size: u64,
+    pub input_size: u64,
+    pub duration: f64,
+}
+
+#[tauri::command]
+pub async fn video_volume(
+    app_handle: tauri::AppHandle,
+    path: String,
+    options: VideoVolumeOptions,
+) -> Result<VideoVolumeResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if !ffmpeg_available() {
+            return Err("视频音量调整需要 ffmpeg，请先安装 ffmpeg".to_string());
+        }
+        do_video_volume(&app_handle, &path, &options)
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
+}
+
+fn do_video_volume(
+    app_handle: &tauri::AppHandle,
+    path: &str,
+    options: &VideoVolumeOptions,
+) -> Result<VideoVolumeResult, String> {
+    let input_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    let info = get_video_info_ffprobe(path)?;
+    let duration = info.duration;
+
+    let input_stem = std::path::Path::new(path)
+        .file_stem().and_then(|s| s.to_str()).unwrap_or("video");
+    let ext = &options.output_format;
+
+    // 生成后缀
+    let suffix = if options.volume_db <= -999.0 {
+        "_muted".to_string()
+    } else if options.volume_db >= 0.0 {
+        format!("_vol+{}dB", options.volume_db as i32)
+    } else {
+        format!("_vol{}dB", options.volume_db as i32)
+    };
+
+    let output_path = if let Some(ref custom_path) = options.output_path {
+        std::path::PathBuf::from(custom_path)
+    } else {
+        std::path::Path::new(path)
+            .parent().unwrap_or(std::path::Path::new("."))
+            .join(format!("{}{}.{}", input_stem, suffix, ext))
+    };
+
+    let _ = app_handle.emit("video-volume-progress", serde_json::json!({ "progress": 5.0 }));
+
+    let mut args: Vec<String> = vec![
+        "-y".to_string(),
+        "-i".to_string(), path.to_string(),
+    ];
+
+    // 视频直接复制（音量调整不影响视频）
+    args.push("-c:v".to_string());
+    args.push("copy".to_string());
+
+    // 音频处理
+    if options.volume_db <= -999.0 {
+        // 静音：移除音频轨道
+        args.push("-an".to_string());
+    } else {
+        // 音量调整
+        let volume_filter = format!("volume={}dB", options.volume_db);
+        args.push("-af".to_string());
+        args.push(volume_filter);
+        args.push("-c:a".to_string());
+        args.push("aac".to_string());
+    }
+
+    args.push(output_path.to_string_lossy().to_string());
+
+    let _ = app_handle.emit("video-volume-progress", serde_json::json!({ "progress": 10.0 }));
+
+    debug_log!("ffmpeg 视频音量: {:?}", args);
+
+    run_ffmpeg_with_progress(app_handle, &args, "video-volume-progress", duration)?;
+
+    let output_size = std::fs::metadata(&output_path).map(|m| m.len()).unwrap_or(0);
+
+    let _ = app_handle.emit("video-volume-progress", serde_json::json!({ "progress": 100.0 }));
+
+    Ok(VideoVolumeResult {
+        output_path: output_path.to_string_lossy().to_string(),
+        output_size,
+        input_size,
+        duration,
     })
 }

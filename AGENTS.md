@@ -170,6 +170,7 @@ Tauri 2.x 子进程（`Command::new("powershell")` / `Command::new("reg")`）受
 20. **多 Tab 页面布局规范**：Tab 栏放在独立的 `.tool-card.sticky-card` 中，使用自定义 class（如 `pdf-tabs`/`image-tabs`），在 scoped 样式中定义完整 Tab 样式。各 Tab 内容用 `v-if="activeTab === 'xxx'"` 的 `.tool-card` 独立渲染，不要放在 `el-tab-pane` 内。参考 `_ToolTemplate.vue`、PdfTool.vue。
 21. **scoped 样式中禁止重复定义全局类名**：在 `<style scoped>` 中重复定义 `.tool-card`/`.card-header`/`.card-body` 等全局类名会导致样式冲突（padding 被覆盖等）。只定义页面特有样式，全局样式由 `theme.css` 提供。如需强制覆盖，用非 scoped `<style>` 块 + `!important`。
 22. **侧边栏菜单顺序由 `TOOL_LIST` 数组顺序决定**：`SidebarNav.vue` 按 `category` 分组，同组内按 `TOOL_LIST` 中的先后顺序排列。调整菜单顺序 = 在 `src/store/index.ts` 的 `TOOL_LIST` 中移动对应条目的位置（同 category 内调整），不是改 `SidebarNav.vue` 的渲染逻辑。
+23. **ffmpeg 实时进度必须用 `-progress pipe:1`**：ffmpeg 默认把进度输出到 stderr，且用 `\r`（回车）刷新同一行。Rust 的 `BufReader::lines()` 按 `\n` 分割，会导致所有进度更新堆积成一行直到进程退出，进度条从 0% 直接跳到 100%。正确做法：加 `-progress pipe:1 -nostats` 参数，让 ffmpeg 把结构化进度输出到 stdout（每行 `\n` 分隔），解析 `out_time_us=` 字段计算百分比。同时注意：同时捕获 stdout 和 stderr 时，必须用独立线程读取其中一个流，避免管道缓冲区满导致 ffmpeg 阻塞死锁。
 
 ## 工作流与变量池集成
 
