@@ -41,6 +41,15 @@ lopdf = "0.34"
 mp4 = "0.14"
 flate2 = "1.0"
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_Threading",
+    "Win32_System_ProcessStatus",
+    "Win32_System_Diagnostics_ToolHelp",
+] }
+
 [dev-dependencies]
 tempfile = "3.10"
 
