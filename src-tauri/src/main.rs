@@ -17,6 +17,8 @@ mod audio_tools;
 mod video_tools;
 mod pdf_tools;
 mod media_info;
+mod hotkey_probe;
+mod hotkey_data;
 
 use tauri::{Manager, Emitter};
 use tauri_plugin_dialog::{DialogExt, MessageDialogBuilder, MessageDialogButtons, MessageDialogKind};
@@ -183,6 +185,12 @@ fn main() {
             pdf_tools::save_temp_file,
             media_info::get_media_info,
             media_info::extract_cover_art,
+            // 全局快捷键占用查看器命令
+            hotkey_probe::hotkey_probe_start,
+            hotkey_probe::hotkey_probe_cancel,
+            hotkey_probe::hotkey_probe_status,
+            hotkey_probe::hotkey_probe_get_results,
+            hotkey_probe::hotkey_probe_export_csv,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
