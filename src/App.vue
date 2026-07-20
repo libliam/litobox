@@ -80,6 +80,7 @@ import VideoTool from '@/views/VideoTool.vue'
 import MediaInfoTool from '@/views/MediaInfoTool.vue'
 import ServiceListView from '@/views/ServiceListView.vue'
 import HotkeyView from '@/views/HotkeyView.vue'
+import HostsView from '@/views/HostsView.vue'
 
 // toolId → 组件 映射表（替代 v-if 链）
 const toolComponentMap: Record<string, any> = {
@@ -135,6 +136,7 @@ const toolComponentMap: Record<string, any> = {
   mediaInfo: MediaInfoTool,
   serviceList: ServiceListView,
   hotkeyViewer: HotkeyView,
+  hostsManager: HostsView,
 }
 
 const store = useToolboxStore()
