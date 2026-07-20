@@ -22,7 +22,7 @@ use windows_sys::Win32::Foundation::HWND;
 #[cfg(windows)]
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, RegisterClassW, WNDCLASSW,
-    HWND_MESSAGE,
+    HWND_MESSAGE, DestroyWindow,
 };
 #[cfg(windows)]
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
@@ -393,8 +393,18 @@ fn unregister_hotkey_probe(_hwnd: u64) {}
 
 /// 一次性枚举所有进程，返回进程名 → (pid, path) 映射
 /// 路径获取失败时 path = None（权限不足等）
+///
+/// 修复 Important #3：仅枚举映射表中出现的进程名（约 20 个），
+/// 避免对 200+ 进程都调用 QueryFullProcessImageNameW
 #[cfg(windows)]
 pub fn enumerate_processes_once() -> HashMap<String, (u32, Option<String>)> {
+    use std::collections::HashSet;
+    use crate::hotkey_data;
+
+    // 仅查询映射表中出现的进程名，避免为 200+ 进程都调用 OpenProcess
+    let names_to_scan: HashSet<&str> = hotkey_data::get_process_names_to_scan()
+        .into_iter()
+        .collect();
     let mut result: HashMap<String, (u32, Option<String>)> = HashMap::new();
 
     // ponytail: windows-sys 0.59 中 HANDLE 是 *mut c_void，与 0 比较 用 is_null()；
@@ -417,7 +427,8 @@ pub fn enumerate_processes_once() -> HashMap<String, (u32, Option<String>)> {
                 );
                 // 截断到第一个 null
                 let name = name.split('\0').next().unwrap_or("").to_string();
-                if !name.is_empty() {
+                // 仅查询映射表中的进程，跳过其他进程（避免 OpenProcess 开销）
+                if !name.is_empty() && names_to_scan.contains(name.as_str()) {
                     let pid = entry.th32ProcessID;
                     let path = query_process_path(pid);
                     result.entry(name).or_insert((pid, path));
@@ -430,7 +441,7 @@ pub fn enumerate_processes_once() -> HashMap<String, (u32, Option<String>)> {
         let _ = CloseHandle(snapshot);
     }
 
-    debug_log!("[hotkey_probe] enumerated {} processes", result.len());
+    debug_log!("[hotkey_probe] enumerated {} processes (filtered from maptable)", result.len());
     result
 }
 
@@ -524,6 +535,8 @@ fn run_probe(
                 stats: ProbeStats { total: 0, available: 0, occupied: 0, reserved: 0 },
                 cancelled: false,
             });
+            // 修复 Critical #1：窗口创建失败时必须清理 probe_id，否则状态永久锁死
+            *state_ref.current_probe_id.lock().unwrap() = None;
             return;
         }
     };
@@ -606,6 +619,12 @@ fn run_probe(
         stats: stats.clone(),
         cancelled,
     });
+
+    // 修复 Important #4：销毁消息窗口，避免 HWND 泄漏
+    // （AGENTS 经验：HWND 不会在线程退出时自动回收）
+    unsafe {
+        DestroyWindow(hwnd);
+    }
 
     // 清理 probe_id 标记
     *state_ref.current_probe_id.lock().unwrap() = None;
@@ -821,16 +840,16 @@ pub async fn hotkey_probe_start(
 ) -> Result<String, String> {
     let state_ref = state();
 
-    // 检查是否已有探测在运行
+    // 修复 Important #2：UUID 生成无需持锁，提前生成；
+    // check-and-set 合并到同一个锁范围，消除 TOCTOU 竞态
+    let probe_id = uuid::Uuid::new_v4().to_string();
     {
-        let current = state_ref.current_probe_id.lock().unwrap();
+        let mut current = state_ref.current_probe_id.lock().unwrap();
         if current.is_some() {
             return Err("已有探测任务正在运行".to_string());
         }
+        *current = Some(probe_id.clone());
     }
-
-    let probe_id = uuid::Uuid::new_v4().to_string();
-    *state_ref.current_probe_id.lock().unwrap() = Some(probe_id.clone());
 
     // 生成候选集：默认 + 自定义
     let mut candidates = generate_default_candidates();
