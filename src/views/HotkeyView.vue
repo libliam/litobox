@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="tool-container">
     <!-- 统计卡片 -->
     <div class="tool-card">
@@ -151,6 +151,8 @@ let unlistenProgress: UnlistenFn | null = null
 let unlistenComplete: UnlistenFn | null = null
 let pollTimer: number | null = null
 let done = false
+// ponytail: completed 守卫 handleComplete 入口，防止 event + 轮询竞态导致重复处理（AGENTS 经验 10）
+let completed = false
 
 const progressPercent = computed(() => {
   if (!progress.value || progress.value.total === 0) return 0
@@ -212,6 +214,7 @@ async function startProbe() {
   isProbing.value = true
   error.value = ''
   done = false
+  completed = false
   currentPage.value = 1
 
   try {
@@ -271,6 +274,8 @@ function stopPolling() {
 }
 
 function handleComplete(payload: ProbeCompletePayload | HotkeyResult[]) {
+  if (completed) return
+  completed = true
   // 兼容两种调用：事件 payload 是 ProbeCompletePayload，兜底拉取是 HotkeyResult[]
   if (Array.isArray(payload)) {
     results.value = payload
