@@ -17,6 +17,10 @@
   --glow-cyan: 0 0 15px rgba(0, 212, 255, 0.3);
   --glow-blue: 0 0 15px rgba(59, 130, 246, 0.3);
   --hover-bg: #1e293b;
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(0, 0, 0, 0.1);
+  --el-bg-color: transparent;
 }
 
 /* 浅色科技风 */
@@ -39,6 +43,10 @@ html.light {
   --glow-cyan: 0 0 10px rgba(8, 145, 178, 0.15);
   --glow-blue: 0 0 10px rgba(37, 99, 235, 0.15);
   --hover-bg: #f1f5f9;
+  --el-table-bg-color: #ffffff;
+  --el-table-tr-bg-color: #ffffff;
+  --el-table-header-bg-color: #f8fafc;
+  --el-bg-color: #ffffff;
 }
 
 html.light body {
@@ -256,6 +264,18 @@ html.light .tool-tabs :deep(.el-tabs__header) {
   background: transparent;
 }
 
+:deep(.el-table__body) {
+  background: transparent;
+}
+
+:deep(.el-table__header-wrapper) {
+  background: transparent;
+}
+
+:deep(.el-table__body-wrapper) {
+  background: transparent;
+}
+
 :deep(.el-table th.el-table__cell) {
   background: rgba(0, 0, 0, 0.1);
   color: var(--text-secondary);
@@ -287,6 +307,10 @@ html.light :deep(.el-table td.el-table__cell) {
 
 html.light :deep(.el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell) {
   background: rgba(8, 145, 178, 0.02);
+}
+
+:deep(.el-table tr.el-table__row td.el-table__cell) {
+  background: transparent;
 }
 
 /* ===== 分页样式（全局标准） ===== */

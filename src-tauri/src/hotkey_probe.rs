@@ -223,6 +223,93 @@ pub fn generate_default_candidates() -> Vec<(u32, u32, String)> {
     result
 }
 
+/// 生成完整候选集（默认候选 + 系统保留 + 自定义补充），去重
+pub fn generate_candidates(extra_keys: &[String]) -> Vec<(u32, u32, String)> {
+    let mut candidates = generate_default_candidates();
+    
+    // 加入系统保留热键（确保常用快捷键如 Ctrl+A/C/V/Z 等也在探测范围内）
+    // ponytail: 直接内联系统保留键，避免模块引用问题
+    use crate::hotkey_data::{MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN, VK_TAB};
+    let system_keys: &[(u32, u32, &str)] = &[
+        (MOD_WIN, 0x4C, "系统锁屏"),
+        (MOD_WIN, 0x44, "显示桌面"),
+        (MOD_WIN, 0x45, "资源管理器"),
+        (MOD_WIN, 0x52, "运行对话框"),
+        (MOD_WIN, 0x50, "投影切换"),
+        (MOD_WIN, 0x54, "任务栏切换"),
+        (MOD_WIN, 0x55, "轻松访问中心"),
+        (MOD_WIN, 0x56, "通知中心"),
+        (MOD_WIN, 0x49, "设置"),
+        (MOD_WIN, 0x4B, "连接面板"),
+        (MOD_WIN, 0x4D, "最小化所有窗口"),
+        (MOD_WIN | MOD_SHIFT, 0x4D, "还原最小化窗口"),
+        (MOD_WIN, VK_TAB, "任务视图"),
+        (MOD_WIN | MOD_CONTROL, VK_TAB, "虚拟桌面切换"),
+        (MOD_WIN | MOD_CONTROL, 0x44, "新建虚拟桌面"),
+        (MOD_WIN | MOD_CONTROL, 0x73, "关闭虚拟桌面"),
+        (MOD_WIN | MOD_CONTROL, 0x25, "虚拟桌面左切"),
+        (MOD_WIN | MOD_CONTROL, 0x27, "虚拟桌面右切"),
+        (MOD_CONTROL | MOD_ALT, 0x2E, "安全选项"),
+        // 常用应用内快捷键（不建议注册为全局热键）
+        (MOD_CONTROL, 0x41, "全选"),
+        (MOD_CONTROL, 0x43, "复制"),
+        (MOD_CONTROL, 0x56, "粘贴"),
+        (MOD_CONTROL, 0x58, "剪切"),
+        (MOD_CONTROL, 0x5A, "撤销"),
+        (MOD_CONTROL | MOD_SHIFT, 0x5A, "重做"),
+        (MOD_CONTROL, 0x53, "保存"),
+        (MOD_CONTROL, 0x46, "查找"),
+        (MOD_CONTROL, 0x47, "查找下一个"),
+        (MOD_CONTROL, 0x59, "替换"),
+        (MOD_CONTROL, 0x57, "关闭"),
+        (MOD_CONTROL, 0x54, "新建标签"),
+        (MOD_CONTROL, VK_TAB, "切换标签"),
+        (MOD_CONTROL | MOD_SHIFT, VK_TAB, "反向切换标签"),
+    ];
+    for &(m, vk, name) in system_keys {
+        let label = parse_accelerator_to_label(m, vk, name);
+        candidates.push((m, vk, label));
+    }
+    
+    for key_str in extra_keys {
+        if let Some((m, vk)) = parse_accelerator(key_str) {
+            let label = parse_accelerator_to_label(m, vk, key_str);
+            candidates.push((m, vk, label));
+        }
+    }
+    
+    candidates.sort_by(|a, b| a.2.cmp(&b.2));
+    candidates.dedup_by(|a, b| a.0 == b.0 && a.1 == b.1);
+    
+    candidates
+}
+
+fn parse_accelerator_to_label(mod_flags: u32, vk: u32, original: &str) -> String {
+    use crate::hotkey_data::{MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN};
+    
+    let mut parts: Vec<&str> = Vec::new();
+    if mod_flags & MOD_CONTROL != 0 { parts.push("Ctrl"); }
+    if mod_flags & MOD_ALT != 0 { parts.push("Alt"); }
+    if mod_flags & MOD_SHIFT != 0 { parts.push("Shift"); }
+    if mod_flags & MOD_WIN != 0 { parts.push("Win"); }
+    
+    let key_part = if vk >= b'A' as u32 && vk <= b'Z' as u32 {
+        (vk as u8 as char).to_string()
+    } else if vk >= b'0' as u32 && vk <= b'9' as u32 {
+        (vk as u8 as char).to_string()
+    } else if vk >= 0x70 && vk <= 0x7B {
+        format!("F{}", vk - 0x6F)
+    } else {
+        return original.to_string();
+    };
+    
+    if parts.is_empty() {
+        key_part
+    } else {
+        format!("{}+{}", parts.join("+"), key_part)
+    }
+}
+
 /// 解析自定义热键字符串（如 "Ctrl+Shift+S"）为 (mod_flags, vk)
 /// 解析失败返回 None，并打印 debug 日志
 pub fn parse_accelerator(s: &str) -> Option<(u32, u32)> {
@@ -495,9 +582,9 @@ fn run_probe(
     app: AppHandle,
     probe_id: String,
     candidates: Vec<(u32, u32, String)>,
-    extra_keys: Vec<String>,
+    _extra_keys: Vec<String>,
 ) {
-    use crate::hotkey_data::{lookup_maptable, lookup_system_reserved, scan_processes};
+
 
     let state_ref = state();
     let cancel_flag = state_ref.cancel_flag.clone();
@@ -641,11 +728,24 @@ fn probe_one(
 ) -> HotkeyResult {
     use crate::hotkey_data;
 
-    // 1. 先检查是否 LitoBox 自身注册
+    // 1. 先检查系统保留热键（必须在注册之前，否则系统保留会被当成"被占用"）
+    if let Some(p) = hotkey_data::lookup_system_reserved(mod_flags, vk) {
+        return HotkeyResult {
+            label: label.to_string(),
+            mod_flags,
+            vk,
+            status: HotkeyStatus::SystemReserved,
+            process_name: Some(p.name),
+            process_display: Some(p.display),
+            process_pid: p.pid,
+            process_path: p.path,
+            source: MatchSource::MapTable,
+        };
+    }
+
+    // 2. 检查是否 LitoBox 自身注册
     if self_keys.iter().any(|(m, v)| *m == mod_flags && *v == vk) {
         let self_pid = std::process::id();
-        // ponytail: PathBuf 没有 Deref<Target=str>，unwrap_or(&p) 类型不匹配；
-        // 改用 trim_start_matches 直接去掉 \\?\ 前缀
         let self_path = std::env::current_exe()
             .ok()
             .map(|p| p.to_string_lossy().trim_start_matches(r"\\?\").to_string());
@@ -662,7 +762,7 @@ fn probe_one(
         };
     }
 
-    // 2. 尝试注册
+    // 3. 尝试注册
     let ok = register_hotkey_probe(hwnd, mod_flags, vk);
     if ok {
         unregister_hotkey_probe(hwnd);
@@ -682,14 +782,45 @@ fn probe_one(
     let err = unsafe { GetLastError() };
     debug_log!("[hotkey_probe] {} failed: err={}", label, err);
 
-    // 3. 三级回退定位进程
-    let (process_info, source) = if err == ERROR_HOTKEY_ALREADY_REGISTERED {
-        // 已被占用
-        // 3.1 映射表查询
+    // 错误码 1409 (ERROR_HOTKEY_ALREADY_REGISTERED) = 已被其他程序占用
+    // 其他错误码（如 ERROR_ACCESS_DENIED 等）= 系统保留/不可注册
+    if err != ERROR_HOTKEY_ALREADY_REGISTERED {
+        // 非 1409 错误：系统保留或无效热键
+        // 优先用映射表里的系统保留信息
+        if let Some(p) = hotkey_data::lookup_system_reserved(mod_flags, vk) {
+            return HotkeyResult {
+                label: label.to_string(),
+                mod_flags,
+                vk,
+                status: HotkeyStatus::SystemReserved,
+                process_name: Some(p.name),
+                process_display: Some(p.display),
+                process_pid: p.pid,
+                process_path: p.path,
+                source: MatchSource::MapTable,
+            };
+        }
+        // 其他未知错误：视为可用（可能是无效 VK 码等，不应该占用用户的"被占用"名额）
+        return HotkeyResult {
+            label: label.to_string(),
+            mod_flags,
+            vk,
+            status: HotkeyStatus::Available,
+            process_name: None,
+            process_display: None,
+            process_pid: None,
+            process_path: None,
+            source: MatchSource::None,
+        };
+    }
+
+    // 4. 三级回退定位进程（被应用占用的热键）
+    let (process_info, source) = 
+        // 4.1 映射表查询
         if let Some(p) = hotkey_data::lookup_maptable(mod_flags, vk) {
             (Some(p), MatchSource::MapTable)
         }
-        // 3.2 进程扫描
+        // 4.2 进程扫描
         else if let Some(p) = hotkey_data::scan_processes(mod_flags, vk, |name| {
             process_map.get(name).cloned()
         }) {
@@ -697,29 +828,20 @@ fn probe_one(
         }
         else {
             (None, MatchSource::None)
-        }
-    } else {
-        // 系统保留
-        if let Some(p) = hotkey_data::lookup_system_reserved(mod_flags, vk) {
-            (Some(p), MatchSource::MapTable)
-        } else {
-            (None, MatchSource::None)
-        }
-    };
+        };
 
-    let status = if err == ERROR_HOTKEY_ALREADY_REGISTERED {
-        HotkeyStatus::Occupied
-    } else {
-        HotkeyStatus::SystemReserved
-    };
+    let process_name = process_info.as_ref().map(|p| p.name.clone())
+        .or_else(|| Some("未知进程".to_string()));
+    let process_display = process_info.as_ref().map(|p| p.display.clone())
+        .or_else(|| Some("未识别".to_string()));
 
     HotkeyResult {
         label: label.to_string(),
         mod_flags,
         vk,
-        status,
-        process_name: process_info.as_ref().map(|p| p.name.clone()),
-        process_display: process_info.as_ref().map(|p| p.display.clone()),
+        status: HotkeyStatus::Occupied,
+        process_name,
+        process_display,
         process_pid: process_info.as_ref().and_then(|p| p.pid),
         process_path: process_info.as_ref().and_then(|p| p.path.clone()),
         source,
@@ -851,18 +973,8 @@ pub async fn hotkey_probe_start(
         *current = Some(probe_id.clone());
     }
 
-    // 生成候选集：默认 + 自定义
-    let mut candidates = generate_default_candidates();
-    for key_str in &extra_keys {
-        if let Some((m, v)) = parse_accelerator(key_str) {
-            // 去重
-            if !candidates.iter().any(|(em, ev, _)| *em == m && *ev == v) {
-                candidates.push((m, v, key_str.clone()));
-            }
-        } else {
-            debug_log!("[hotkey_probe] 无法解析自定义热键: {}", key_str);
-        }
-    }
+    // 生成候选集：默认 + 自定义（去重）
+    let candidates = generate_candidates(&extra_keys);
 
     debug_log!(
         "[hotkey_probe] start id={} candidates={} extras={:?}",

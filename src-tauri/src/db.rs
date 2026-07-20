@@ -1793,18 +1793,33 @@ pub fn db_note_ensure_draft() -> Result<NoteItem, String> {
 }
 
 // 读取快捷键配置
+// 兼容两种格式：对象 {tool_id: shortcut} 或数组 [[tool_id, shortcut], ...]
 pub fn db_read_shortcuts() -> Vec<(String, String)> {
+    let default = vec![
+        ("json".to_string(), "CmdOrCtrl+Alt+J".to_string()),
+        ("string".to_string(), "CmdOrCtrl+Alt+S".to_string()),
+        ("encode".to_string(), "CmdOrCtrl+Alt+E".to_string()),
+        ("regex".to_string(), "CmdOrCtrl+Alt+R".to_string()),
+        ("http".to_string(), "CmdOrCtrl+Alt+H".to_string()),
+    ];
     let config = db_get_config("shortcuts".to_string()).unwrap_or_default();
     if config.is_empty() {
-        return vec![
-            ("json".to_string(), "CmdOrCtrl+Alt+J".to_string()),
-            ("string".to_string(), "CmdOrCtrl+Alt+S".to_string()),
-            ("encode".to_string(), "CmdOrCtrl+Alt+E".to_string()),
-            ("regex".to_string(), "CmdOrCtrl+Alt+R".to_string()),
-            ("http".to_string(), "CmdOrCtrl+Alt+H".to_string()),
-        ];
+        return default;
     }
-    serde_json::from_str(&config).unwrap_or_default()
+    // 先尝试对象格式
+    if let Ok(map) = serde_json::from_str::<std::collections::HashMap<String, String>>(&config) {
+        let result: Vec<(String, String)> = map.into_iter()
+            .filter(|(_, v)| !v.is_empty())
+            .collect();
+        if !result.is_empty() {
+            return result;
+        }
+    }
+    // 再尝试数组格式
+    if let Ok(vec) = serde_json::from_str::<Vec<(String, String)>>(&config) {
+        return vec;
+    }
+    default
 }
 
 #[tauri::command]

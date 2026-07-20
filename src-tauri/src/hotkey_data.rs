@@ -20,6 +20,7 @@ pub const VK_TAB: u32 = 0x09;
 /// 系统保留热键：不可注册，由 Windows 内核处理
 /// (mod_flags, vk, display_name)
 const SYSTEM_RESERVED: &[(u32, u32, &str)] = &[
+    // Windows 系统热键
     (MOD_WIN, 0x4C, "系统锁屏"),                // Win+L
     (MOD_WIN, 0x44, "显示桌面"),                // Win+D
     (MOD_WIN, 0x45, "资源管理器"),              // Win+E
@@ -41,6 +42,22 @@ const SYSTEM_RESERVED: &[(u32, u32, &str)] = &[
     (MOD_CONTROL | MOD_ALT, VK_DELETE, "安全选项"),       // Ctrl+Alt+Del
     // ponytail: 修正：MOD_MENU 是 Windows 别名同值 0x0001，统一用本文件定义的 MOD_ALT
     // 移除原"安全选项增强"条目（Ctrl+Alt+Shift+Del 非真实系统热键）
+    
+    // 常用应用内快捷键（不建议注册为全局热键）
+    (MOD_CONTROL, 0x41, "全选"),                 // Ctrl+A
+    (MOD_CONTROL, 0x43, "复制"),                 // Ctrl+C
+    (MOD_CONTROL, 0x56, "粘贴"),                 // Ctrl+V
+    (MOD_CONTROL, 0x58, "剪切"),                 // Ctrl+X
+    (MOD_CONTROL, 0x5A, "撤销"),                 // Ctrl+Z
+    (MOD_CONTROL | MOD_SHIFT, 0x5A, "重做"),      // Ctrl+Shift+Z
+    (MOD_CONTROL, 0x53, "保存"),                 // Ctrl+S
+    (MOD_CONTROL, 0x46, "查找"),                 // Ctrl+F
+    (MOD_CONTROL, 0x47, "查找下一个"),           // Ctrl+G
+    (MOD_CONTROL, 0x59, "替换"),                 // Ctrl+H
+    (MOD_CONTROL, 0x57, "关闭"),                 // Ctrl+W
+    (MOD_CONTROL, 0x54, "新建标签"),             // Ctrl+T
+    (MOD_CONTROL, VK_TAB, "切换标签"),           // Ctrl+Tab
+    (MOD_CONTROL | MOD_SHIFT, VK_TAB, "反向切换标签"), // Ctrl+Shift+Tab
 ];
 
 /// 常见应用热键表：已知的第三方应用占用
@@ -82,7 +99,7 @@ pub fn lookup_system_reserved(mod_flags: u32, vk: u32) -> Option<ProcessInfo> {
     SYSTEM_RESERVED.iter().find_map(|(m, v, name)| {
         if *m == mod_flags && *v == vk {
             Some(ProcessInfo {
-                name: String::new(),
+                name: "system".to_string(),
                 display: name.to_string(),
                 pid: None,
                 path: None,
@@ -95,10 +112,15 @@ pub fn lookup_system_reserved(mod_flags: u32, vk: u32) -> Option<ProcessInfo> {
 
 /// 查询常见应用热键表（不依赖进程扫描，直接命中）
 pub fn lookup_maptable(mod_flags: u32, vk: u32) -> Option<ProcessInfo> {
-    APP_HOTKEYS.iter().find_map(|(m, v, display, _procs)| {
+    APP_HOTKEYS.iter().find_map(|(m, v, display, procs)| {
         if *m == mod_flags && *v == vk {
+            let name = if procs.is_empty() {
+                display.to_string()
+            } else {
+                procs[0].to_string()
+            };
             Some(ProcessInfo {
-                name: String::new(),
+                name,
                 display: display.to_string(),
                 pid: None,
                 path: None,

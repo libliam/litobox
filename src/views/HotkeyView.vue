@@ -29,7 +29,10 @@
             </el-radio-group>
           </div>
           <div class="action-group">
-            <el-input v-model="extraKeysInput" placeholder="补充: Ctrl+Shift+S, Alt+F7" style="width: 240px" size="small" />
+            <el-input v-model="extraKeysInput" placeholder="自定义热键" style="width: 200px" size="small" />
+            <el-tooltip content="输入要探测的自定义热键，逗号分隔，如: Ctrl+Shift+S, Alt+F7" placement="top">
+              <el-icon size="16"><HelpFilled /></el-icon>
+            </el-tooltip>
           </div>
           <div class="action-group">
             <el-button type="primary" size="small" :loading="isProbing" @click="startProbe">开始探测</el-button>
@@ -55,7 +58,7 @@
         </div>
       </div>
       <div class="card-body">
-        <el-table :data="pagedResults" stripe size="small" max-height="600" style="width: 100%">
+        <el-table :data="pagedResults" border size="small" max-height="600" style="width: 100%">
           <el-table-column prop="label" label="热键组合" width="140" sortable />
           <el-table-column label="状态" width="120" sortable :sort-method="sortByStatus">
             <template #default="{ row }">
@@ -95,6 +98,7 @@ import { ref, computed, onMounted, onActivated, onDeactivated, onUnmounted } fro
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { ElMessage } from 'element-plus'
+import { HelpFilled } from '@element-plus/icons-vue'
 import { useToolboxStore } from '@/store'
 
 // Rust struct 字段为 snake_case，前端 interface 必须一致（AGENTS 经验 16）
@@ -341,23 +345,36 @@ function debug_log(msg: string) {
   if (import.meta.env.DEV) console.log(`[HotkeyView] ${msg}`)
 }
 
+let retryCount = 0
+const MAX_RETRIES = 10
+
+async function initAndProbe() {
+  try {
+    unlistenProgress = await listen<ProbeProgress>('hotkey-probe-progress', (e) => {
+      progress.value = e.payload
+    })
+    unlistenComplete = await listen<ProbeCompletePayload>('hotkey-probe-complete', (e) => {
+      handleComplete(e.payload)
+    })
+    startProbe()
+  } catch (e) {
+    retryCount++
+    if (retryCount >= MAX_RETRIES) {
+      debug_log(`初始化失败超过 ${MAX_RETRIES} 次，停止重试`)
+      error.value = '初始化失败，API 未就绪'
+      return
+    }
+    debug_log(`初始化失败，第 ${retryCount} 次重试: ${e}`)
+    setTimeout(initAndProbe, 500)
+  }
+}
+
 onMounted(async () => {
-  // 先填充上次结果
   if (store.hotkeyLastResult?.length) {
     results.value = store.hotkeyLastResult
     stats.value = store.hotkeyLastStats
   }
-
-  // 监听后端事件
-  unlistenProgress = await listen<ProbeProgress>('hotkey-probe-progress', (e) => {
-    progress.value = e.payload
-  })
-  unlistenComplete = await listen<ProbeCompletePayload>('hotkey-probe-complete', (e) => {
-    handleComplete(e.payload)
-  })
-
-  // 进入页面自动启动探测（首次 + KeepAlive 激活）
-  startProbe()
+  setTimeout(initAndProbe, 100)
 })
 
 onActivated(() => {
@@ -380,7 +397,6 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-/* 只定义页面特有样式，全局 .tool-card/.card-header 等由 theme.css 提供（AGENTS 经验 21） */
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -410,4 +426,11 @@ onUnmounted(() => {
   display: flex;
   justify-content: flex-end;
 }
+:deep(.el-table) { background: var(--bg-card); color: var(--text-primary); }
+:deep(.el-table th) { background: var(--bg-input) !important; color: var(--accent-cyan) !important; font-weight: 600; }
+:deep(.el-table td) { background: var(--bg-card) !important; color: var(--text-primary) !important; }
+:deep(.el-table--border) { border-color: var(--border-color) !important; }
+:deep(.el-table tr) { background: var(--bg-card) !important; }
+:deep(.el-table__body tr:hover > td) { background: rgba(0, 212, 255, 0.15) !important; }
+:deep(.el-table__inner-wrapper::before) { background-color: var(--border-color) !important; }
 </style>
