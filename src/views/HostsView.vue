@@ -183,7 +183,7 @@ async function applyProfile(name: string) {
     ElMessage.success(`已切换到 profile: ${name}`)
     await loadHosts()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error(`切换失败: ${e}`)
+    if (e !== 'cancel' && e !== 'close') ElMessage.error(`切换失败: ${e}`)
   }
 }
 
@@ -194,7 +194,7 @@ async function deleteProfile(name: string) {
     ElMessage.success('已删除')
     await loadProfiles()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error(`删除失败: ${e}`)
+    if (e !== 'cancel' && e !== 'close') ElMessage.error(`删除失败: ${e}`)
   }
 }
 
@@ -257,8 +257,9 @@ async function createBackupNow() {
 async function previewBackup(filename: string) {
   try {
     const content = await invoke<string>('hosts_preview_backup', { filename })
-    await ElMessageBox.alert(content, `预览: ${filename}`, {
-      customClass: 'hosts-preview-dialog',
+    const escaped = content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    await ElMessageBox.alert(`<pre style="white-space: pre-wrap; word-break: break-all; max-height: 60vh; overflow-y: auto; font-size: 12px;">${escaped}</pre>`, `预览: ${filename}`, {
+      dangerouslyUseHTMLString: true,
       confirmButtonText: '关闭'
     })
   } catch (e) {
@@ -277,7 +278,7 @@ async function restoreBackup(filename: string) {
     ElMessage.success('已恢复')
     await loadHosts()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error(`恢复失败: ${e}`)
+    if (e !== 'cancel' && e !== 'close') ElMessage.error(`恢复失败: ${e}`)
   }
 }
 
@@ -288,7 +289,7 @@ async function deleteBackup(filename: string) {
     ElMessage.success('已删除')
     await loadBackups()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error(`删除失败: ${e}`)
+    if (e !== 'cancel' && e !== 'close') ElMessage.error(`删除失败: ${e}`)
   }
 }
 
