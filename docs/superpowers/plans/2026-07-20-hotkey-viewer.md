@@ -107,14 +107,14 @@ const SYSTEM_RESERVED: &[(u32, u32, &str)] = &[
     (MOD_WIN, 0x4D, "最小化所有窗口"),          // Win+M
     (MOD_WIN | MOD_SHIFT, 0x4D, "还原最小化窗口"), // Win+Shift+M
     (MOD_WIN, VK_TAB, "任务视图"),              // Win+Tab
-    (MOD_WIN | MOD_CONTROL, VK_TAB, "虚拟桌面切换"), // Win+Ctrl+Tab（左/右用箭头）
-    (MOD_WIN | MOD_CONTROL, 0xD, "虚拟桌面切换"),   // Win+Ctrl+Enter(0x0D 不准,实际用 Left/Right)
-    (MOD_WIN | MOD_CONTROL, 0x24, "新建虚拟桌面"),   // Win+Ctrl+D
-    (MOD_WIN | MOD_CONTROL, 0x23, "关闭虚拟桌面"),   // Win+Ctrl+F4
-    (MOD_CONTROL | MOD_MENU, VK_DELETE, "安全选项"), // Ctrl+Alt+Del
-    (MOD_CONTROL | MOD_MENU | MOD_SHIFT, VK_DELETE, "安全选项增强"), // Ctrl+Alt+Shift+Del 不存在，删除
-    // ponytail: Win+Ctrl+Left/Right 是虚拟桌面切换，但 Left=0x25/Right=0x27 是箭头键
-    // 实际探测时会注册失败（系统占用），映射表此处省略，由通用机制处理
+    (MOD_WIN | MOD_CONTROL, VK_TAB, "虚拟桌面切换"),      // Win+Ctrl+Tab
+    (MOD_WIN | MOD_CONTROL, 0x44, "新建虚拟桌面"),        // Win+Ctrl+D ('D' = 0x44)
+    (MOD_WIN | MOD_CONTROL, 0x73, "关闭虚拟桌面"),        // Win+Ctrl+F4 (VK_F4 = 0x73)
+    (MOD_WIN | MOD_CONTROL, 0x25, "虚拟桌面左切"),        // Win+Ctrl+Left (VK_LEFT = 0x25)
+    (MOD_WIN | MOD_CONTROL, 0x27, "虚拟桌面右切"),        // Win+Ctrl+Right (VK_RIGHT = 0x27)
+    (MOD_CONTROL | MOD_ALT, VK_DELETE, "安全选项"),       // Ctrl+Alt+Del
+    // ponytail: 修正：MOD_MENU 是 Windows 别名同值 0x0001，统一用本文件定义的 MOD_ALT
+    // 移除原"安全选项增强"条目（Ctrl+Alt+Shift+Del 非真实系统热键）
 ];
 
 /// 常见应用热键表：已知的第三方应用占用
@@ -330,8 +330,6 @@ use windows_sys::Win32::System::Threading::{
 use windows_sys::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
 };
-#[cfg(windows)]
-use windows_sys::Win32::System::ProcessStatus as _;
 
 // ponytail: debug 模式输出日志到 stderr，release 模式编译时移除
 macro_rules! debug_log {

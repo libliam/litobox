@@ -1,55 +1,40 @@
-# SDD Progress Ledger
+﻿# SDD Progress Ledger
 
-Plan: docs/superpowers/plans/2026-07-15-video-tool.md
-Spec: docs/superpowers/specs/2026-07-15-video-tool-design.md
-Base commit: b9cfba0
+Plan: docs/superpowers/plans/2026-07-20-hotkey-viewer.md
+Spec: docs/superpowers/specs/2026-07-20-hotkey-viewer-design.md
+Base commit: bcfb453
 
-## Task Progress
+## Pre-Flight Plan Review 修正
 
-| Task | Status | Commit(s) | Notes |
-|------|--------|-----------|-------|
-| 1: 添加 mp4 依赖 | ✅ | 709fe3f | review clean; 1 line added |
-| 2: 创建 video_tools.rs | ✅ | 6110dc0 | 559 行，mp4 0.14 API 适配（9 处差异），关键帧裁剪简化策略 |
-| 3: 注册 Tauri commands | ✅ | 5c69f27 | 3 commands 注册; cargo check 通过 |
-| 4: 创建 VideoTool.vue | ✅ | 8986d70 | 693 行; npm run build 通过; vue-tsc 0 错误 |
-| 5: 注册到 App.vue 和 TOOL_LIST | ✅ | be2c08c | 3 insertions; npm run build 通过 |
-| 6: 版本号 + README | ✅ | a5fc9cc | 5.1.0→5.2.0; README 功能表 + 版本历史更新 |
-| 7: 端到端验证 | ⏳ | — | 需手动运行 npm run tauri dev 测试 |
-
-## Minor Notes
-- Task 2: 关键帧裁剪采用"头部复制 + mdat 裁剪"简化策略，不重写 moov 元数据，播放器容错播放可用。如需精确裁剪建议使用 ffmpeg 路径。
-
----
-
-Plan: docs/superpowers/plans/2026-07-09-background-collect.md
-Spec: docs/superpowers/specs/2026-07-09-background-collect-design.md
-Base commit: b7d4a4e
+- 修复 hotkey_data.rs SYSTEM_RESERVED 表 MOD_MENU 未定义（→ MOD_ALT）
+- 移除"安全选项增强"矛盾条目（注释写"删除"但条目仍在）
+- 修正虚拟桌面 VK 码（0x24→0x44 'D', 0x23→0x73 VK_F4, 0xD→0x25/0x27 Left/Right）
+- 移除 hotkey_probe.rs 未使用的 ProcessStatus import
 
 ## Task Progress
 
 | Task | Status | Commit(s) | Notes |
 |------|--------|-----------|-------|
-| 1: 后端采集类型与状态表 | ✅ | da542ea | review clean; +Debug derive, tauri::async_runtime::spawn_blocking (brief 笔误修正) |
-| 2: 5 采集命令改后台 + 注册 | ✅ | 1475d68 + 2affe5d | fix: CollectKind +serde rename_all=lowercase + 序列化守护测试; Minor: 测试清空全局态有理论竞态(待 final triage) |
-| 3: 前端 systemInfoClient 封装 | ✅ | 5553d0f | review clean; kill 函数完整保留 |
-| 4: store 采集状态 | ✅ | 25107cf | review clean |
-| 5: useBackgroundCollect composable | ✅ | 2826902 | review clean; verbatim from brief |
-| 6: 5 采集页改造 | ✅ | db33c64 | review clean; ElEmpty 未 import（全局注册）, 0 ts 错误 |
-| 7: 版本号 + README | ✅ | 45721fc | 自验通过; 4.7.0 minor bump（偏离 plan 补丁位措辞，尊重 README 约定）; tauri.conf.json 滞后顺带修复 |
-| Final: 整支分支审查 | ✅ | origin/dev..45721fc | APPROVED; 0 Critical/0 Important/3 Minor(全 defer); vue-tsc 0 错误, cargo test 24 通过(含 2 新测试) |
+| 1: 添加 windows-sys 依赖 | ✅ | f376b8c | review clean; 1 file +9 lines; Minor: Cargo.lock 未提交（项目 .gitignore 策略） |
+| 2: 创建 hotkey_data.rs | ⏳ | — | — |
+| 3: 创建 hotkey_probe.rs | ⏳ | — | — |
+| 4: main.rs 注册 | ⏳ | — | — |
+| 5: 创建 HotkeyView.vue | ⏳ | — | — |
+| 6: 注册到 TOOL_LIST 和 App.vue | ⏳ | — | — |
+| 7: 版本号 + README | ⏳ | — | — |
+| 8: 整体验证 | ⏳ | — | — |
 
-## Minor Findings (for final review triage) — final reviewer 已 triage，均为 defer
+## Minor Findings (for final review triage)
 
-- Task 2: `get_collect_status_returns_none_when_empty` 测试清空全局 `COLLECT_STATE`，单线程测试无干扰，若未来并行测试需重新评估 → defer
-- Task 5 review-package diff 文件中文乱码（PowerShell Out-File 编码问题），源码 UTF-8 正常，不影响功能 → defer
-- 跨切面: post-kill 刷新被 `collect()` 重入拦截跳过（kill 时若已有采集在跑，刷新被忽略，用户可手动点刷新）→ defer，可接受权衡
+- Task 1: Cargo.lock 被 .gitignore 忽略未提交，符合项目策略；Tauri 二进制应用业内通常建议提交 Cargo.lock，但项目级决策不阻塞本任务 → defer
 
-Plan: docs/superpowers/plans/2026-07-13-audio-crop.md
-Spec: docs/superpowers/specs/2026-07-13-audio-crop-design.md
-Base commit: 988cdc5
 
-## Task Progress
-
-| Task | Status | Commit(s) | Notes |
-|------|--------|-----------|-------|
-| 1: ���� Rust ���� | ? | 12c5a84 | review clean; mp3lame-encoder 0.5��0.2.4 (API ������֪��Task 3 ����) |
+### Task 4 Review Minor Findings (defer to final review)
+- Minor #1: extra_keys 参数在 run_probe 内未使用（已折叠进 candidates）— 删除该参数即可
+- Minor #2: CSV 路径字符串构造冗余（两次 to_string_lossy）— 用 trim_start_matches 统一
+- Minor #3: test_generate_default_candidates_count 断言过松（>=190 应改为 ==198）
+- Minor #4: 错误路径持锁调用 app.emit（应释放锁后再 emit）
+- Minor #5: ProbeCompletePayload 缺少 error 字段（超时无法通过事件感知，需轮询）
+- Minor #6: 文件末尾 use 声明位置怪异（应放进 mod tests）
+- Minor #7: test_parse_accelerator_invalid 覆盖不全（缺 "+", "Ctrl+Shift+", "Foo" 等边界）
+- Dismissed: Important #1 rename_all 是误报（file_searcher.rs 约定无 rename_all，前端用 camelCase）
