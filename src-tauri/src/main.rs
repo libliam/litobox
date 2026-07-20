@@ -19,6 +19,7 @@ mod pdf_tools;
 mod media_info;
 mod hotkey_probe;
 mod hotkey_data;
+mod hosts_manager;
 
 use tauri::{Manager, Emitter};
 use tauri_plugin_dialog::{DialogExt, MessageDialogBuilder, MessageDialogButtons, MessageDialogKind};
