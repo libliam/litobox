@@ -1,4 +1,4 @@
-import { defineStore } from 'pinia'
+﻿import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import * as db from '@/utils/dbClient'
 
@@ -93,6 +93,7 @@ export const TOOL_LIST: ToolItem[] = [
   { id: 'sqliteViewer', name: 'SQLite查看器', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 5v6c0 1.66-4.03 3-9 3s-9-1.34-9-3V5"/><path d="M21 11v6c0 1.66-4.03 3-9 3s-9-1.34-9-3v-6"/></svg>`, description: '浏览本地SQLite数据库表结构和数据，执行SELECT查询，导出CSV', keywords: ['sqlite', '数据库', 'db', '查询', '查看', 'database'], category: 'dev' },
   { id: 'diskAnalyzer', name: '磁盘分析', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>`, description: '分析磁盘空间占用，查找大文件和重复文件', keywords: ['磁盘', '空间', '重复', '清理', 'disk', 'space', 'duplicate'], category: 'system' },
   { id: 'fileSearcher', name: '全文搜索', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`, description: '按文件名或内容搜索，支持正则表达式，类似 Everything + grep', keywords: ['搜索', '全文', '文件名', '内容', 'grep', 'find', 'search'], category: 'system' },
+  { id: 'hotkeyViewer', name: '快捷键占用', icon: '⌨', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M18 14h.01M10 14h4"/></svg>`, description: '探测 Windows 已注册的全局快捷键，标注占用进程', keywords: ['快捷键', '热键', 'hotkey', '冲突', '占用'], category: 'system' },
 ]
 
 const MAX_HISTORY = 100
@@ -127,6 +128,10 @@ export const useToolboxStore = defineStore('toolbox', () => {
 
   const pendingHistoryRestore = ref<HistoryRestoreState | null>(null)
   let restoreTimeout: ReturnType<typeof setTimeout> | null = null
+
+  // 快捷键占用查看器：上次探测结果缓存（仅内存，不持久化 — 探测结果是实时快照）
+  const hotkeyLastResult = ref<any[]>([])
+  const hotkeyLastStats = ref<any | null>(null)
 
   // ============ 多 Tab 状态 ============
   interface Tab {
@@ -354,6 +359,8 @@ export const useToolboxStore = defineStore('toolbox', () => {
     addRecentTool,
     toggleFavorite,
     pendingHistoryRestore,
+    hotkeyLastResult,
+    hotkeyLastStats,
     triggerHistoryRestore,
     clearHistoryRestore,
     activeTool,
