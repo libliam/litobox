@@ -489,6 +489,184 @@ fn format_systemtime(t: SystemTime) -> String {
     format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", year, month, day, hour, min, sec)
 }
 
+// ============ Profile 管理 ============
+
+/// 列出所有 profile（包含虚拟的"默认"项）
+pub fn profile_list() -> Result<Vec<ProfileMeta>, String> {
+    ensure_dir(&profiles_dir())?;
+
+    let mut profiles: Vec<ProfileMeta> = vec![
+        ProfileMeta {
+            name: "默认".to_string(),
+            entry_count: read_hosts().map(|f| f.entries.len()).unwrap_or(0),
+            updated_at: String::new(),
+            is_default: true,
+        },
+    ];
+
+    // 读取 profiles_dir 下的所有 .json 文件
+    if let Ok(entries) = fs::read_dir(profiles_dir()) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().map(|e| e == "json").unwrap_or(false) {
+                if let Ok(content) = fs::read_to_string(&path) {
+                    if let Ok(profile) = serde_json::from_str::<Profile>(&content) {
+                        profiles.push(ProfileMeta {
+                            name: profile.name,
+                            entry_count: profile.entries.len(),
+                            updated_at: profile.updated_at,
+                            is_default: false,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(profiles)
+}
+
+/// 加载指定 profile 的条目
+pub fn profile_load(name: &str) -> Result<Vec<HostsEntry>, String> {
+    if name == "默认" {
+        return read_hosts().map(|f| f.entries);
+    }
+
+    let path = profiles_dir().join(format!("{}.json", name));
+    let content = fs::read_to_string(&path)
+        .map_err(|e| format!("读取 profile 失败: {}", e))?;
+    let profile: Profile = serde_json::from_str(&content)
+        .map_err(|e| format!("解析 profile 失败: {}", e))?;
+    Ok(profile.entries)
+}
+
+/// 保存 profile（已存在则覆盖，不存在则创建）
+pub fn profile_save(name: &str, entries: &[HostsEntry]) -> Result<(), String> {
+    if name == "默认" {
+        return Err("默认 profile 不可保存".to_string());
+    }
+
+    ensure_dir(&profiles_dir())?;
+
+    let now = format_systemtime(SystemTime::now());
+
+    // 检查是否已存在（决定 created_at）
+    let path = profiles_dir().join(format!("{}.json", name));
+    let created_at = if path.exists() {
+        if let Ok(content) = fs::read_to_string(&path) {
+            serde_json::from_str::<Profile>(&content)
+                .map(|p| p.created_at)
+                .unwrap_or(now.clone())
+        } else {
+            now.clone()
+        }
+    } else {
+        now.clone()
+    };
+
+    let profile = Profile {
+        name: name.to_string(),
+        entries: entries.to_vec(),
+        created_at,
+        updated_at: now,
+    };
+
+    let json = serde_json::to_string_pretty(&profile)
+        .map_err(|e| format!("序列化 profile 失败: {}", e))?;
+    fs::write(&path, json)
+        .map_err(|e| format!("写入 profile 失败: {}", e))?;
+
+    Ok(())
+}
+
+/// 删除 profile（默认不可删）
+pub fn profile_delete(name: &str) -> Result<(), String> {
+    if name == "默认" {
+        return Err("默认 profile 不可删除".to_string());
+    }
+
+    let path = profiles_dir().join(format!("{}.json", name));
+    if !path.exists() {
+        return Err(format!("profile {} 不存在", name));
+    }
+
+    fs::remove_file(&path)
+        .map_err(|e| format!("删除 profile 失败: {}", e))
+}
+
+/// 将 profile 写入系统 hosts（自动备份当前）
+pub fn profile_apply(name: &str) -> Result<(), String> {
+    let entries = profile_load(name)?;
+    save_hosts(&entries)
+}
+
+// ============ Tauri 命令 ============
+
+#[tauri::command]
+pub async fn hosts_read() -> Result<HostsFile, String> {
+    read_hosts()
+}
+
+#[tauri::command]
+pub async fn hosts_save(entries: Vec<HostsEntry>) -> Result<(), String> {
+    save_hosts(&entries)
+}
+
+#[tauri::command]
+pub async fn hosts_check_admin() -> Result<bool, String> {
+    Ok(is_admin())
+}
+
+#[tauri::command]
+pub async fn hosts_list_backups() -> Result<Vec<BackupInfo>, String> {
+    list_backups()
+}
+
+#[tauri::command]
+pub async fn hosts_preview_backup(filename: String) -> Result<String, String> {
+    preview_backup(&filename)
+}
+
+#[tauri::command]
+pub async fn hosts_restore_backup(filename: String) -> Result<(), String> {
+    restore_backup(&filename)
+}
+
+#[tauri::command]
+pub async fn hosts_delete_backup(filename: String) -> Result<(), String> {
+    delete_backup(&filename)
+}
+
+#[tauri::command]
+pub async fn hosts_create_backup() -> Result<BackupInfo, String> {
+    create_backup()
+}
+
+#[tauri::command]
+pub async fn hosts_profile_list() -> Result<Vec<ProfileMeta>, String> {
+    profile_list()
+}
+
+#[tauri::command]
+pub async fn hosts_profile_load(name: String) -> Result<Vec<HostsEntry>, String> {
+    profile_load(&name)
+}
+
+#[tauri::command]
+pub async fn hosts_profile_save(name: String, entries: Vec<HostsEntry>) -> Result<(), String> {
+    profile_save(&name, &entries)
+}
+
+#[tauri::command]
+pub async fn hosts_profile_delete(name: String) -> Result<(), String> {
+    profile_delete(&name)
+}
+
+#[tauri::command]
+pub async fn hosts_profile_apply(name: String) -> Result<(), String> {
+    profile_apply(&name)
+}
+
 // ============ 单元测试 ============
 
 #[cfg(test)]

@@ -192,6 +192,20 @@ fn main() {
             hotkey_probe::hotkey_probe_status,
             hotkey_probe::hotkey_probe_get_results,
             hotkey_probe::hotkey_probe_export_csv,
+            // Hosts 文件管理器命令
+            hosts_manager::hosts_read,
+            hosts_manager::hosts_save,
+            hosts_manager::hosts_check_admin,
+            hosts_manager::hosts_list_backups,
+            hosts_manager::hosts_preview_backup,
+            hosts_manager::hosts_restore_backup,
+            hosts_manager::hosts_delete_backup,
+            hosts_manager::hosts_create_backup,
+            hosts_manager::hosts_profile_list,
+            hosts_manager::hosts_profile_load,
+            hosts_manager::hosts_profile_save,
+            hosts_manager::hosts_profile_delete,
+            hosts_manager::hosts_profile_apply,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
