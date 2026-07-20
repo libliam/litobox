@@ -526,8 +526,23 @@ pub fn profile_list() -> Result<Vec<ProfileMeta>, String> {
     Ok(profiles)
 }
 
+/// 校验 profile 名称（防止路径遍历，trust boundary input validation）
+fn validate_profile_name(name: &str) -> Result<(), String> {
+    if name.is_empty() {
+        return Err("profile 名称不能为空".to_string());
+    }
+    if name == "默认" {
+        return Ok(());
+    }
+    if !name.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || (c >= '\u{4e00}' && c <= '\u{9fa5}')) {
+        return Err("profile 名称只能包含字母、数字、下划线、连字符和中文字符".to_string());
+    }
+    Ok(())
+}
+
 /// 加载指定 profile 的条目
 pub fn profile_load(name: &str) -> Result<Vec<HostsEntry>, String> {
+    validate_profile_name(name)?;
     if name == "默认" {
         return read_hosts().map(|f| f.entries);
     }
@@ -542,6 +557,7 @@ pub fn profile_load(name: &str) -> Result<Vec<HostsEntry>, String> {
 
 /// 保存 profile（已存在则覆盖，不存在则创建）
 pub fn profile_save(name: &str, entries: &[HostsEntry]) -> Result<(), String> {
+    validate_profile_name(name)?;
     if name == "默认" {
         return Err("默认 profile 不可保存".to_string());
     }
@@ -581,6 +597,7 @@ pub fn profile_save(name: &str, entries: &[HostsEntry]) -> Result<(), String> {
 
 /// 删除 profile（默认不可删）
 pub fn profile_delete(name: &str) -> Result<(), String> {
+    validate_profile_name(name)?;
     if name == "默认" {
         return Err("默认 profile 不可删除".to_string());
     }
