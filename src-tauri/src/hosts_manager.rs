@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
-use std::time::SystemTime;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 // ============ 常量 ============
 
@@ -212,6 +212,283 @@ fn ensure_dir(dir: &PathBuf) -> Result<(), String> {
     Ok(())
 }
 
+// ============ 管理员检测 ============
+
+/// 检测当前进程是否以管理员权限运行
+#[cfg(windows)]
+pub fn is_admin() -> bool {
+    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows_sys::Win32::Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY};
+    use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+
+    unsafe {
+        let mut token: HANDLE = std::ptr::null_mut();
+        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) == 0 {
+            return false;
+        }
+
+        let mut elevation = TOKEN_ELEVATION { TokenIsElevated: 0 };
+        let mut ret_len = 0u32;
+        let result = GetTokenInformation(
+            token,
+            TokenElevation,
+            &mut elevation as *mut _ as *mut std::ffi::c_void,
+            std::mem::size_of::<TOKEN_ELEVATION>() as u32,
+            &mut ret_len,
+        );
+
+        CloseHandle(token);
+
+        result != 0 && elevation.TokenIsElevated != 0
+    }
+}
+
+#[cfg(not(windows))]
+pub fn is_admin() -> bool {
+    false
+}
+
+// ============ 文件读写 ============
+
+/// 读取系统 hosts 文件
+pub fn read_hosts() -> Result<HostsFile, String> {
+    let content = fs::read_to_string(HOSTS_PATH)
+        .map_err(|e| format!("读取 hosts 文件失败: {}", e))?;
+    Ok(parse_hosts(&content, HOSTS_PATH))
+}
+
+/// 原子写入 hosts 文件
+/// 1. 自动备份当前 hosts
+/// 2. 写入同目录临时文件
+/// 3. rename 替换（同分区保证原子性）
+pub fn save_hosts(entries: &[HostsEntry]) -> Result<(), String> {
+    // 1. 自动备份
+    auto_backup()?;
+
+    // 2. 读取当前 hosts（保留 raw_lines）
+    let current = read_hosts().unwrap_or(HostsFile {
+        entries: vec![],
+        raw_lines: vec![],
+        path: HOSTS_PATH.to_string(),
+    });
+
+    // 3. 构建新内容
+    let new_file = HostsFile {
+        entries: entries.to_vec(),
+        raw_lines: current.raw_lines,
+        path: HOSTS_PATH.to_string(),
+    };
+    let content = serialize_hosts(&new_file);
+
+    // 4. 原子写入：写入临时文件 → rename
+    let tmp_path = format!("{}.tmp", HOSTS_PATH);
+    let mut file = fs::File::create(&tmp_path)
+        .map_err(|e| format!("创建临时文件失败: {}", e))?;
+    file.write_all(content.as_bytes())
+        .map_err(|e| format!("写入临时文件失败: {}", e))?;
+    file.sync_all()
+        .map_err(|e| format!("同步文件失败: {}", e))?;
+    drop(file);
+
+    fs::rename(&tmp_path, HOSTS_PATH)
+        .map_err(|e| format!("替换 hosts 文件失败: {}", e))?;
+
+    Ok(())
+}
+
+// ============ 备份管理 ============
+
+/// 生成时间戳字符串：YYYYMMDD_HHMMSS
+fn timestamp_str() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    let secs = now.as_secs();
+
+    // 简单的时间转换（ponytail: 不引入 chrono，手动计算够用）
+    let days = secs / 86400;
+    let remainder = secs % 86400;
+    let hour = remainder / 3600;
+    let min = (remainder % 3600) / 60;
+    let sec = remainder % 60;
+
+    // 从 1970-01-01 计算年月日
+    let (year, month, day) = days_to_ymd(days as i64);
+
+    format!("{:04}{:02}{:02}_{:02}{:02}{:02}", year, month, day, hour, min, sec)
+}
+
+/// 将天数（从 1970-01-01）转为 (year, month, day)
+fn days_to_ymd(days: i64) -> (i64, u32, u32) {
+    // ponytail: 简单的算法，够用，不处理闰秒等边界
+    let mut y = 1970i64;
+    let mut d = days;
+
+    loop {
+        let leap = (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0);
+        let yd = if leap { 366 } else { 365 };
+        if d < yd {
+            break;
+        }
+        d -= yd;
+        y += 1;
+    }
+
+    let leap = (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0);
+    let mdays = [31, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let mut m = 0;
+    while d >= mdays[m] {
+        d -= mdays[m];
+        m += 1;
+    }
+
+    (y, (m + 1) as u32, (d + 1) as u32)
+}
+
+/// 自动备份当前 hosts 文件
+pub fn auto_backup() -> Result<(), String> {
+    ensure_dir(&backups_dir())?;
+
+    // 读取当前 hosts
+    if let Ok(content) = fs::read(HOSTS_PATH) {
+        let filename = format!("hosts_{}", timestamp_str());
+        let path = backups_dir().join(&filename);
+        fs::write(&path, &content)
+            .map_err(|e| format!("备份失败: {}", e))?;
+
+        // 清理超过 MAX_BACKUPS 的旧备份
+        cleanup_old_backups()?;
+    }
+
+    Ok(())
+}
+
+/// 清理旧备份，保留最近 MAX_BACKUPS 份
+fn cleanup_old_backups() -> Result<(), String> {
+    let dir = backups_dir();
+    let mut backups: Vec<(PathBuf, SystemTime)> = fs::read_dir(&dir)
+        .map_err(|e| format!("读取备份目录失败: {}", e))?
+        .filter_map(|e| e.ok())
+        .filter_map(|e| {
+            let path = e.path();
+            let mtime = e.metadata().ok()?.modified().ok()?;
+            Some((path, mtime))
+        })
+        .collect();
+
+    if backups.len() <= MAX_BACKUPS {
+        return Ok(());
+    }
+
+    // 按 mtime 降序排序（最新在前）
+    backups.sort_by(|a, b| b.1.cmp(&a.1));
+
+    // 删除多余的
+    for (path, _) in backups.iter().skip(MAX_BACKUPS) {
+        let _ = fs::remove_file(path);
+    }
+
+    Ok(())
+}
+
+/// 列出所有备份
+pub fn list_backups() -> Result<Vec<BackupInfo>, String> {
+    ensure_dir(&backups_dir())?;
+
+    let mut backups: Vec<BackupInfo> = fs::read_dir(&backups_dir())
+        .map_err(|e| format!("读取备份目录失败: {}", e))?
+        .filter_map(|e| e.ok())
+        .filter_map(|e| {
+            let path = e.path();
+            let metadata = e.metadata().ok()?;
+            let filename = path.file_name()?.to_string_lossy().to_string();
+            let size = metadata.len();
+            let mtime = metadata.modified().ok()?;
+            let timestamp = format_systemtime(mtime);
+            Some(BackupInfo {
+                filename,
+                timestamp,
+                size,
+                path: path.to_string_lossy().to_string(),
+            })
+        })
+        .collect();
+
+    // 按时间降序（最新在前）
+    backups.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+    Ok(backups)
+}
+
+/// 预览备份内容
+pub fn preview_backup(filename: &str) -> Result<String, String> {
+    let path = backups_dir().join(filename);
+    fs::read_to_string(&path)
+        .map_err(|e| format!("读取备份失败: {}", e))
+}
+
+/// 恢复备份（恢复前再备份一次当前 hosts）
+pub fn restore_backup(filename: &str) -> Result<(), String> {
+    // 恢复前备份当前
+    auto_backup()?;
+
+    let backup_path = backups_dir().join(filename);
+    let content = fs::read(&backup_path)
+        .map_err(|e| format!("读取备份失败: {}", e))?;
+
+    // 原子写入
+    let tmp_path = format!("{}.tmp", HOSTS_PATH);
+    fs::write(&tmp_path, &content)
+        .map_err(|e| format!("写入临时文件失败: {}", e))?;
+    fs::rename(&tmp_path, HOSTS_PATH)
+        .map_err(|e| format!("替换 hosts 文件失败: {}", e))?;
+
+    Ok(())
+}
+
+/// 删除指定备份
+pub fn delete_backup(filename: &str) -> Result<(), String> {
+    let path = backups_dir().join(filename);
+    fs::remove_file(&path)
+        .map_err(|e| format!("删除备份失败: {}", e))
+}
+
+/// 立即创建备份
+pub fn create_backup() -> Result<BackupInfo, String> {
+    ensure_dir(&backups_dir())?;
+
+    let content = fs::read(HOSTS_PATH)
+        .map_err(|e| format!("读取 hosts 失败: {}", e))?;
+    let filename = format!("hosts_{}", timestamp_str());
+    let path = backups_dir().join(&filename);
+    fs::write(&path, &content)
+        .map_err(|e| format!("备份失败: {}", e))?;
+
+    let metadata = fs::metadata(&path)
+        .map_err(|e| format!("读取备份信息失败: {}", e))?;
+
+    Ok(BackupInfo {
+        filename,
+        timestamp: format_systemtime(metadata.modified().map_err(|e| e.to_string())?),
+        size: metadata.len(),
+        path: path.to_string_lossy().to_string(),
+    })
+}
+
+/// 格式化 SystemTime 为可读字符串
+fn format_systemtime(t: SystemTime) -> String {
+    let secs = t.duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let days = (secs / 86400) as i64;
+    let remainder = secs % 86400;
+    let hour = remainder / 3600;
+    let min = (remainder % 3600) / 60;
+    let sec = remainder % 60;
+    let (year, month, day) = days_to_ymd(days);
+    format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", year, month, day, hour, min, sec)
+}
+
 // ============ 单元测试 ============
 
 #[cfg(test)]
@@ -296,5 +573,28 @@ mod tests {
         };
         let serialized = serialize_hosts(&file);
         assert!(serialized.starts_with("# 192.168.1.1 test.com # 测试"));
+    }
+
+    #[test]
+    fn test_timestamp_str_format() {
+        let ts = timestamp_str();
+        assert_eq!(ts.len(), 15);
+        assert!(ts.contains('_'));
+        // 格式 YYYYMMDD_HHMMSS
+        assert_eq!(ts.split('_').count(), 2);
+    }
+
+    #[test]
+    fn test_days_to_ymd_epoch() {
+        // 1970-01-01 = day 0
+        let (y, m, d) = days_to_ymd(0);
+        assert_eq!((y, m, d), (1970, 1, 1));
+    }
+
+    #[test]
+    fn test_days_to_ymd_2024() {
+        // 2024-01-01 ≈ day 19723
+        let (y, _m, _d) = days_to_ymd(19723);
+        assert_eq!(y, 2024);
     }
 }
