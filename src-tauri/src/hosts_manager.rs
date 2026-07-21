@@ -273,6 +273,11 @@ pub fn read_hosts() -> Result<HostsFile, String> {
 pub fn save_hosts(entries: &[HostsEntry]) -> Result<(), String> {
     debug_log!("[hosts] save_hosts: entries={}", entries.len());
 
+    // 0. 权限检查（信任边界，前端也可能误判）
+    if !is_admin() {
+        return Err("需要管理员权限才能保存 hosts 文件。请以管理员身份运行栗的百宝箱。".to_string());
+    }
+
     // 1. 自动备份
     auto_backup()?;
     debug_log!("[hosts] save_hosts: auto_backup done");
@@ -494,6 +499,12 @@ pub fn preview_backup(filename: &str) -> Result<String, String> {
 pub fn restore_backup(filename: &str) -> Result<(), String> {
     debug_log!("[hosts] restore_backup: filename={}", filename);
     validate_backup_filename(filename)?;
+
+    // 权限检查
+    if !is_admin() {
+        return Err("需要管理员权限才能恢复 hosts 文件。请以管理员身份运行栗的百宝箱。".to_string());
+    }
+
     // 恢复前备份当前
     auto_backup()?;
 
