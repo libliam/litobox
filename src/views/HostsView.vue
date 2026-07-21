@@ -23,6 +23,7 @@
           <el-input v-model="searchQuery" size="small" placeholder="搜索 IP/域名/备注..." style="width: 200px" clearable />
           <el-button size="small" @click="loadHosts" :loading="loading">刷新</el-button>
           <el-button type="primary" size="small" @click="addEntry">添加条目</el-button>
+          <el-button size="small" @click="showBatchImport = true">批量导入</el-button>
           <el-button type="success" size="small" :disabled="!isAdmin" :loading="saving" @click="saveHosts">保存</el-button>
         </div>
       </div>
@@ -114,6 +115,26 @@
         </el-table>
       </div>
     </div>
+
+    <!-- 批量导入对话框 -->
+    <el-dialog v-model="showBatchImport" title="批量导入 Hosts 条目" width="600px" destroy-on-close>
+      <div style="margin-bottom: 8px; font-size: 12px; color: var(--text-secondary)">
+        粘贴多条 hosts 配置，每行一条。IP+域名与现有条目完全一致时覆盖，否则追加。
+      </div>
+      <el-input
+        v-model="batchImportText"
+        type="textarea"
+        :rows="14"
+        placeholder="127.0.0.1 localhost
+192.168.1.100 dev.example.com api.dev.example.com
+# 192.168.1.101 test.example.com
+10.0.0.50 db.internal # 数据库服务器"
+      />
+      <template #footer>
+        <el-button @click="showBatchImport = false">取消</el-button>
+        <el-button type="primary" @click="doBatchImport" :disabled="!batchImportText.trim()">确认导入</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -142,6 +163,9 @@ const saving = ref(false)
 const searchQuery = ref('')
 // 编辑 Tab 是否有未保存修改
 const isDirty = ref(false)
+// 批量导入
+const showBatchImport = ref(false)
+const batchImportText = ref('')
 
 function markDirty() {
   isDirty.value = true
@@ -397,6 +421,86 @@ function removeEntry(index: number) {
   markDirty()
 }
 
+/// 解析单行导入文本，与后端 parse_line 逻辑一致
+function parseImportLine(line: string): HostsEntry | null {
+  const trimmed = line.trim()
+  if (!trimmed) return null
+
+  let enabled = true
+  let content = trimmed
+
+  // 处理 # 前缀（禁用条目）
+  if (content.startsWith('#')) {
+    const rest = content.slice(1).trimStart()
+    if (!rest) return null  // 纯注释行，跳过
+    content = rest
+    enabled = false
+  }
+
+  // 提取行内注释
+  let comment = ''
+  const hashIdx = content.indexOf('#')
+  if (hashIdx >= 0) {
+    comment = content.slice(hashIdx + 1).trim()
+    content = content.slice(0, hashIdx).trim()
+  }
+
+  if (!content) return null
+
+  const parts = content.split(/\s+/)
+  const ip = parts[0]
+  // IP 简单校验：包含 . 或 :
+  if (!ip.includes('.') && !ip.includes(':')) return null
+
+  const domains = parts.slice(1)
+
+  return {
+    enabled,
+    ip,
+    domains,
+    comment,
+    domainsText: domains.join(' ')
+  }
+}
+
+function doBatchImport() {
+  const lines = batchImportText.value.split('\n')
+  const imported: HostsEntry[] = []
+
+  for (const line of lines) {
+    const entry = parseImportLine(line)
+    if (entry) imported.push(entry)
+  }
+
+  if (imported.length === 0) {
+    ElMessage.warning('未识别到有效的 hosts 条目')
+    return
+  }
+
+  // 合并：IP+域名完全一致 → 覆盖，否则追加
+  let overwritten = 0
+  for (const imp of imported) {
+    const idx = entries.value.findIndex(e =>
+      e.ip === imp.ip && e.domainsText === imp.domainsText
+    )
+    if (idx >= 0) {
+      entries.value[idx] = imp
+      overwritten++
+    } else {
+      entries.value.push(imp)
+    }
+  }
+
+  const appended = imported.length - overwritten
+  const parts: string[] = []
+  if (appended > 0) parts.push(`新增 ${appended} 条`)
+  if (overwritten > 0) parts.push(`覆盖 ${overwritten} 条`)
+  ElMessage.success(`导入完成：${parts.join('，')}`)
+  markDirty()
+  showBatchImport.value = false
+  batchImportText.value = ''
+}
+
 async function saveHosts(): Promise<boolean> {
   if (!isAdmin.value) {
     ElMessage.warning('需要管理员权限才能保存')
@@ -465,6 +569,23 @@ watch(activeTab, async (newTab) => {
 }
 .admin-icon { font-size: 16px; }
 .sticky-card { position: sticky; top: 0; z-index: 10; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3); }
+.hosts-tabs :deep(.el-tabs__nav-wrap) {
+  padding-left: 12px;
+}
+.hosts-tabs :deep(.el-tabs__item) {
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+}
+.hosts-tabs :deep(.el-tabs__item.is-active) {
+  color: var(--accent-cyan);
+}
+.hosts-tabs :deep(.el-tabs__active-bar) {
+  background-color: var(--accent-cyan);
+}
+.hosts-tabs :deep(.el-tabs__nav-wrap::after) {
+  background-color: var(--border-color);
+}
 :deep(.el-table) { background: var(--bg-card); color: var(--text-primary); }
 :deep(.el-table th) { background: var(--bg-input) !important; color: var(--accent-cyan) !important; font-weight: 600; }
 :deep(.el-table td) { background: var(--bg-card) !important; color: var(--text-primary) !important; }
