@@ -1792,6 +1792,21 @@ pub fn db_note_ensure_draft() -> Result<NoteItem, String> {
     })
 }
 
+/// 合并默认热键：把 defaults 中 existing 缺失的 key 补进去（向后兼容老配置，补全新增默认项如 __palette__）。
+/// 已存在的 key 保留用户自定义值，不被 default 覆盖。
+pub fn merge_shortcut_defaults(
+    mut existing: Vec<(String, String)>,
+    defaults: &[(String, String)],
+) -> Vec<(String, String)> {
+    let has: std::collections::HashSet<String> = existing.iter().map(|(k, _)| k.clone()).collect();
+    for (k, v) in defaults {
+        if !has.contains(k.as_str()) {
+            existing.push((k.clone(), v.clone()));
+        }
+    }
+    existing
+}
+
 // 读取快捷键配置
 // 兼容两种格式：对象 {tool_id: shortcut} 或数组 [[tool_id, shortcut], ...]
 pub fn db_read_shortcuts() -> Vec<(String, String)> {
@@ -1814,12 +1829,12 @@ pub fn db_read_shortcuts() -> Vec<(String, String)> {
             .filter(|(_, v)| !v.is_empty())
             .collect();
         if !result.is_empty() {
-            return result;
+            return merge_shortcut_defaults(result, &default);
         }
     }
     // 再尝试数组格式
     if let Ok(vec) = serde_json::from_str::<Vec<(String, String)>>(&config) {
-        return vec;
+        return merge_shortcut_defaults(vec, &default);
     }
     default
 }
@@ -1844,4 +1859,45 @@ pub fn cmd_db_get_history_detail(history_id: i64) -> Result<Option<HistoryDetail
 #[tauri::command]
 pub fn cmd_db_delete_history_details_for_history(history_id: i64) -> Result<(), String> {
     db_delete_history_details_for_history(history_id)
+}
+
+#[cfg(test)]
+mod shortcut_merge_tests {
+    use super::*;
+
+    #[test]
+    fn test_merge_adds_missing_default() {
+        let existing = vec![("json".to_string(), "CmdOrCtrl+Alt+J".to_string())];
+        let defaults = vec![
+            ("json".to_string(), "CmdOrCtrl+Alt+J".to_string()),
+            ("__palette__".to_string(), "CmdOrCtrl+Alt+P".to_string()),
+        ];
+        let result = merge_shortcut_defaults(existing, &defaults);
+        assert_eq!(result.len(), 2);
+        assert!(result.iter().any(|(k, _)| k == "__palette__"));
+    }
+
+    #[test]
+    fn test_merge_preserves_user_custom_value() {
+        // 用户自定义了 json 热键，不应被 default 覆盖
+        let existing = vec![
+            ("json".to_string(), "Ctrl+X".to_string()),
+            ("__palette__".to_string(), "Ctrl+Alt+P".to_string()),
+        ];
+        let defaults = vec![
+            ("json".to_string(), "CmdOrCtrl+Alt+J".to_string()),
+            ("__palette__".to_string(), "CmdOrCtrl+Alt+P".to_string()),
+        ];
+        let result = merge_shortcut_defaults(existing, &defaults);
+        assert_eq!(result.len(), 2, "不重复添加已存在的 key");
+        assert!(result.iter().any(|(k, v)| k == "json" && v == "Ctrl+X"), "保留用户自定义值");
+    }
+
+    #[test]
+    fn test_merge_empty_existing() {
+        let existing: Vec<(String, String)> = vec![];
+        let defaults = vec![("__palette__".to_string(), "CmdOrCtrl+Alt+P".to_string())];
+        let result = merge_shortcut_defaults(existing, &defaults);
+        assert_eq!(result.len(), 1);
+    }
 }
