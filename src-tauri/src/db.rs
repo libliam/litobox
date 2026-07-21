@@ -1801,6 +1801,8 @@ pub fn db_read_shortcuts() -> Vec<(String, String)> {
         ("encode".to_string(), "CmdOrCtrl+Alt+E".to_string()),
         ("regex".to_string(), "CmdOrCtrl+Alt+R".to_string()),
         ("http".to_string(), "CmdOrCtrl+Alt+H".to_string()),
+        // 命令面板特殊 id（非真实工具），main.rs 触发时走 show+focus+emit 分支
+        ("__palette__".to_string(), "CmdOrCtrl+Alt+P".to_string()),
     ];
     let config = db_get_config("shortcuts".to_string()).unwrap_or_default();
     if config.is_empty() {
