@@ -30,12 +30,12 @@
         <el-table :data="filteredEntries" border size="small" max-height="600" style="width: 100%" v-loading="loading">
           <el-table-column label="启用" width="70">
             <template #default="{ row }">
-              <el-checkbox v-model="row.enabled" />
+              <el-checkbox v-model="row.enabled" @change="markDirty" />
             </template>
           </el-table-column>
           <el-table-column label="IP 地址" width="180">
             <template #default="{ row }">
-              <el-input v-model="row.ip" size="small" placeholder="127.0.0.1" />
+              <el-input v-model="row.ip" size="small" placeholder="127.0.0.1" @input="markDirty" />
             </template>
           </el-table-column>
           <el-table-column label="域名" min-width="280">
@@ -46,12 +46,13 @@
                 type="textarea"
                 :autosize="{ minRows: 1, maxRows: 3 }"
                 placeholder="example.com api.example.com"
+                @input="markDirty"
               />
             </template>
           </el-table-column>
           <el-table-column label="备注" width="200">
             <template #default="{ row }">
-              <el-input v-model="row.comment" size="small" placeholder="备注（可选）" />
+              <el-input v-model="row.comment" size="small" placeholder="备注（可选）" @input="markDirty" />
             </template>
           </el-table-column>
           <el-table-column label="操作" width="80" fixed="right">
@@ -117,7 +118,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onActivated, watch } from 'vue'
+import { ref, computed, onActivated, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
@@ -139,6 +140,12 @@ const isAdmin = ref(false)
 const loading = ref(false)
 const saving = ref(false)
 const searchQuery = ref('')
+// 编辑 Tab 是否有未保存修改
+const isDirty = ref(false)
+
+function markDirty() {
+  isDirty.value = true
+}
 
 // ============ Profile 数据 ============
 interface ProfileMeta {
@@ -173,17 +180,49 @@ async function loadProfiles() {
 }
 
 async function applyProfile(name: string) {
+  // 检查未保存修改
+  if (isDirty.value) {
+    try {
+      await ElMessageBox.confirm(
+        '编辑 Tab 有未保存修改，是否保存？',
+        '提示',
+        {
+          confirmButtonText: '保存并切换',
+          cancelButtonText: '丢弃修改',
+          type: 'warning',
+          distinguishCancelAndClose: true,
+        }
+      )
+      // 用户选"保存并切换"
+      const ok = await saveHosts()
+      if (!ok) return // 保存失败，不切换
+    } catch (action) {
+      if (action === 'cancel') {
+        // 丢弃修改，继续切换
+      } else {
+        // close，不切换
+        return
+      }
+    }
+  } else {
+    // 无未保存修改，确认切换
+    try {
+      await ElMessageBox.confirm(
+        `切换到 profile "${name}"？当前 hosts 将被覆盖（会自动备份）。`,
+        '确认切换',
+        { type: 'warning' }
+      )
+    } catch {
+      return
+    }
+  }
+
   try {
-    await ElMessageBox.confirm(
-      `切换到 profile "${name}"？当前 hosts 将被覆盖（会自动备份）。`,
-      '确认切换',
-      { type: 'warning' }
-    )
     await invoke('hosts_profile_apply', { name })
     ElMessage.success(`已切换到 profile: ${name}`)
     await loadHosts()
   } catch (e) {
-    if (e !== 'cancel' && e !== 'close') ElMessage.error(`切换失败: ${e}`)
+    ElMessage.error(`切换失败: ${e}`)
   }
 }
 
@@ -334,6 +373,7 @@ async function loadHosts() {
       comment: e.comment || '',
       domainsText: (e.domains || []).join(' ')
     }))
+    isDirty.value = false  // 从文件加载，干净状态
   } catch (e) {
     ElMessage.error(`读取 hosts 失败: ${e}`)
   } finally {
@@ -349,16 +389,18 @@ function addEntry() {
     comment: '',
     domainsText: ''
   })
+  markDirty()
 }
 
 function removeEntry(index: number) {
   entries.value.splice(index, 1)
+  markDirty()
 }
 
-async function saveHosts() {
+async function saveHosts(): Promise<boolean> {
   if (!isAdmin.value) {
     ElMessage.warning('需要管理员权限才能保存')
-    return
+    return false
   }
 
   // 转换：domainsText → domains 数组
@@ -373,21 +415,19 @@ async function saveHosts() {
   try {
     await invoke('hosts_save', { entries: payload })
     ElMessage.success('保存成功')
-    // 保存后重新加载（确保 raw_lines 一致）
+    // 保存后重新加载（确保 raw_lines 一致）—— loadHosts 会重置 isDirty
     await loadHosts()
+    return true
   } catch (e) {
     ElMessage.error(`保存失败: ${e}`)
+    return false
   } finally {
     saving.value = false
   }
 }
 
 // ============ 生命周期 ============
-onMounted(async () => {
-  await checkAdmin()
-  await loadHosts()
-})
-
+// KeepAlive 下 onActivated 首次也会触发，无需 onMounted
 onActivated(async () => {
   await checkAdmin()
   if (entries.value.length === 0) {
