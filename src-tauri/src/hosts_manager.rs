@@ -13,6 +13,15 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// debug 模式日志宏（release 模式自动移除）
+macro_rules! debug_log {
+    ($($arg:tt)*) => {
+        if cfg!(debug_assertions) {
+            eprintln!($($arg)*)
+        }
+    };
+}
+
 // ============ 常量 ============
 
 /// 系统 hosts 文件路径
@@ -262,8 +271,11 @@ pub fn read_hosts() -> Result<HostsFile, String> {
 /// 2. 写入同目录临时文件
 /// 3. rename 替换（同分区保证原子性）
 pub fn save_hosts(entries: &[HostsEntry]) -> Result<(), String> {
+    debug_log!("[hosts] save_hosts: entries={}", entries.len());
+
     // 1. 自动备份
     auto_backup()?;
+    debug_log!("[hosts] save_hosts: auto_backup done");
 
     // 2. 读取当前 hosts（保留 raw_lines）
     let current = read_hosts().unwrap_or(HostsFile {
@@ -283,7 +295,10 @@ pub fn save_hosts(entries: &[HostsEntry]) -> Result<(), String> {
     // 4. 原子写入：写入临时文件 → rename
     let tmp_path = format!("{}.tmp", HOSTS_PATH);
     let mut file = fs::File::create(&tmp_path)
-        .map_err(|e| format!("创建临时文件失败: {}", e))?;
+        .map_err(|e| {
+            debug_log!("[hosts] save_hosts: create tmp failed: {}", e);
+            format!("创建临时文件失败: {}", e)
+        })?;
     file.write_all(content.as_bytes())
         .map_err(|e| format!("写入临时文件失败: {}", e))?;
     file.sync_all()
@@ -291,32 +306,60 @@ pub fn save_hosts(entries: &[HostsEntry]) -> Result<(), String> {
     drop(file);
 
     fs::rename(&tmp_path, HOSTS_PATH)
-        .map_err(|e| format!("替换 hosts 文件失败: {}", e))?;
+        .map_err(|e| {
+            debug_log!("[hosts] save_hosts: rename failed: {}", e);
+            format!("替换 hosts 文件失败: {}", e)
+        })?;
 
+    debug_log!("[hosts] save_hosts: done");
     Ok(())
 }
 
 // ============ 备份管理 ============
 
-/// 生成时间戳字符串：YYYYMMDD_HHMMSS
+/// 生成时间戳字符串：YYYYMMDD_HHMMSS（本地时间）
 fn timestamp_str() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default();
-    let secs = now.as_secs();
+    let st = local_systemtime();
+    format!("{:04}{:02}{:02}_{:02}{:02}{:02}",
+        st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond)
+}
 
-    // 简单的时间转换（ponytail: 不引入 chrono，手动计算够用）
+/// 获取当前本地时间（Windows）或 UTC（其他平台，仅用于编译兼容）
+#[cfg(windows)]
+fn local_systemtime() -> windows_sys::Win32::Foundation::SYSTEMTIME {
+    use windows_sys::Win32::Foundation::SYSTEMTIME;
+    use windows_sys::Win32::System::SystemInformation::GetLocalTime;
+    let mut st: SYSTEMTIME = unsafe { std::mem::zeroed() };
+    unsafe { GetLocalTime(&mut st); }
+    st
+}
+
+#[cfg(not(windows))]
+fn local_systemtime() -> LocalSt {
+    // 非 Windows 平台 fallback，仅保证编译
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+    let secs = now.as_secs();
     let days = secs / 86400;
     let remainder = secs % 86400;
-    let hour = remainder / 3600;
-    let min = (remainder % 3600) / 60;
-    let sec = remainder % 60;
-
-    // 从 1970-01-01 计算年月日
     let (year, month, day) = days_to_ymd(days as i64);
+    LocalSt {
+        wYear: year as u16,
+        wMonth: month as u16,
+        wDay: day as u16,
+        wHour: (remainder / 3600) as u16,
+        wMinute: ((remainder % 3600) / 60) as u16,
+        wSecond: (remainder % 60) as u16,
+    }
+}
 
-    format!("{:04}{:02}{:02}_{:02}{:02}{:02}", year, month, day, hour, min, sec)
+#[cfg(not(windows))]
+struct LocalSt {
+    wYear: u16,
+    wMonth: u16,
+    wDay: u16,
+    wHour: u16,
+    wMinute: u16,
+    wSecond: u16,
 }
 
 /// 将天数（从 1970-01-01）转为 (year, month, day)
@@ -420,8 +463,28 @@ pub fn list_backups() -> Result<Vec<BackupInfo>, String> {
     Ok(backups)
 }
 
+/// 校验备份文件名（防路径遍历，与 timestamp_str() 生成的格式匹配）
+fn validate_backup_filename(filename: &str) -> Result<(), String> {
+    // 期望格式：hosts_YYYYMMDD_HHMMSS
+    let rest = match filename.strip_prefix("hosts_") {
+        Some(r) => r,
+        None => return Err("非法备份文件名".to_string()),
+    };
+    // 剩余部分应为 8 位日期 + '_' + 6 位时间
+    let bytes = rest.as_bytes();
+    if bytes.len() != 15
+        || !bytes[0..8].iter().all(|b| b.is_ascii_digit())
+        || bytes[8] != b'_'
+        || !bytes[9..15].iter().all(|b| b.is_ascii_digit())
+    {
+        return Err("非法备份文件名".to_string());
+    }
+    Ok(())
+}
+
 /// 预览备份内容
 pub fn preview_backup(filename: &str) -> Result<String, String> {
+    validate_backup_filename(filename)?;
     let path = backups_dir().join(filename);
     fs::read_to_string(&path)
         .map_err(|e| format!("读取备份失败: {}", e))
@@ -429,25 +492,35 @@ pub fn preview_backup(filename: &str) -> Result<String, String> {
 
 /// 恢复备份（恢复前再备份一次当前 hosts）
 pub fn restore_backup(filename: &str) -> Result<(), String> {
+    debug_log!("[hosts] restore_backup: filename={}", filename);
+    validate_backup_filename(filename)?;
     // 恢复前备份当前
     auto_backup()?;
 
     let backup_path = backups_dir().join(filename);
     let content = fs::read(&backup_path)
-        .map_err(|e| format!("读取备份失败: {}", e))?;
+        .map_err(|e| {
+            debug_log!("[hosts] restore_backup: read backup failed: {}", e);
+            format!("读取备份失败: {}", e)
+        })?;
 
     // 原子写入
     let tmp_path = format!("{}.tmp", HOSTS_PATH);
     fs::write(&tmp_path, &content)
         .map_err(|e| format!("写入临时文件失败: {}", e))?;
     fs::rename(&tmp_path, HOSTS_PATH)
-        .map_err(|e| format!("替换 hosts 文件失败: {}", e))?;
+        .map_err(|e| {
+            debug_log!("[hosts] restore_backup: rename failed: {}", e);
+            format!("替换 hosts 文件失败: {}", e)
+        })?;
 
+    debug_log!("[hosts] restore_backup: done");
     Ok(())
 }
 
 /// 删除指定备份
 pub fn delete_backup(filename: &str) -> Result<(), String> {
+    validate_backup_filename(filename)?;
     let path = backups_dir().join(filename);
     fs::remove_file(&path)
         .map_err(|e| format!("删除备份失败: {}", e))
@@ -475,11 +548,36 @@ pub fn create_backup() -> Result<BackupInfo, String> {
     })
 }
 
-/// 格式化 SystemTime 为可读字符串
+/// 格式化 SystemTime 为本地时间可读字符串：YYYY-MM-DD HH:MM:SS
+#[cfg(windows)]
 fn format_systemtime(t: SystemTime) -> String {
-    let secs = t.duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
+    use windows_sys::Win32::Foundation::{FILETIME, SYSTEMTIME};
+    use windows_sys::Win32::Storage::FileSystem::FileTimeToLocalFileTime;
+    use windows_sys::Win32::System::Time::FileTimeToSystemTime;
+
+    let dur = match t.duration_since(UNIX_EPOCH) {
+        Ok(d) => d,
+        Err(_) => return String::new(),
+    };
+    // UNIX epoch(1970) 与 FILETIME epoch(1601) 偏移：11644473600 秒 = 116444736000000000 (100ns 单位)
+    let intervals = dur.as_nanos() as u64 / 100 + 116_444_736_000_000_000;
+    let utc_ft = FILETIME {
+        dwLowDateTime: intervals as u32,
+        dwHighDateTime: (intervals >> 32) as u32,
+    };
+    let mut local_ft = utc_ft;
+    let mut st: SYSTEMTIME = unsafe { std::mem::zeroed() };
+    unsafe {
+        FileTimeToLocalFileTime(&utc_ft, &mut local_ft);
+        FileTimeToSystemTime(&local_ft, &mut st);
+    }
+    format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+        st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond)
+}
+
+#[cfg(not(windows))]
+fn format_systemtime(t: SystemTime) -> String {
+    let secs = t.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
     let days = (secs / 86400) as i64;
     let remainder = secs % 86400;
     let hour = remainder / 3600;
@@ -534,7 +632,8 @@ fn validate_profile_name(name: &str) -> Result<(), String> {
     if name == "默认" {
         return Ok(());
     }
-    if !name.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || (c >= '\u{4e00}' && c <= '\u{9fa5}')) {
+    // is_alphanumeric() 已包含 CJK 等所有 Unicode 字母
+    if !name.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
         return Err("profile 名称只能包含字母、数字、下划线、连字符和中文字符".to_string());
     }
     Ok(())
@@ -542,6 +641,7 @@ fn validate_profile_name(name: &str) -> Result<(), String> {
 
 /// 加载指定 profile 的条目
 pub fn profile_load(name: &str) -> Result<Vec<HostsEntry>, String> {
+    debug_log!("[hosts] profile_load: name={}", name);
     validate_profile_name(name)?;
     if name == "默认" {
         return read_hosts().map(|f| f.entries);
@@ -549,14 +649,19 @@ pub fn profile_load(name: &str) -> Result<Vec<HostsEntry>, String> {
 
     let path = profiles_dir().join(format!("{}.json", name));
     let content = fs::read_to_string(&path)
-        .map_err(|e| format!("读取 profile 失败: {}", e))?;
+        .map_err(|e| {
+            debug_log!("[hosts] profile_load: read failed: {}", e);
+            format!("读取 profile 失败: {}", e)
+        })?;
     let profile: Profile = serde_json::from_str(&content)
         .map_err(|e| format!("解析 profile 失败: {}", e))?;
+    debug_log!("[hosts] profile_load: entries={}", profile.entries.len());
     Ok(profile.entries)
 }
 
 /// 保存 profile（已存在则覆盖，不存在则创建）
 pub fn profile_save(name: &str, entries: &[HostsEntry]) -> Result<(), String> {
+    debug_log!("[hosts] profile_save: name={}, entries={}", name, entries.len());
     validate_profile_name(name)?;
     if name == "默认" {
         return Err("默认 profile 不可保存".to_string());
@@ -590,8 +695,12 @@ pub fn profile_save(name: &str, entries: &[HostsEntry]) -> Result<(), String> {
     let json = serde_json::to_string_pretty(&profile)
         .map_err(|e| format!("序列化 profile 失败: {}", e))?;
     fs::write(&path, json)
-        .map_err(|e| format!("写入 profile 失败: {}", e))?;
+        .map_err(|e| {
+            debug_log!("[hosts] profile_save: write failed: {}", e);
+            format!("写入 profile 失败: {}", e)
+        })?;
 
+    debug_log!("[hosts] profile_save: done");
     Ok(())
 }
 
@@ -613,15 +722,20 @@ pub fn profile_delete(name: &str) -> Result<(), String> {
 
 /// 将 profile 写入系统 hosts（自动备份当前）
 pub fn profile_apply(name: &str) -> Result<(), String> {
+    debug_log!("[hosts] profile_apply: name={}", name);
     let entries = profile_load(name)?;
-    save_hosts(&entries)
+    save_hosts(&entries)?;
+    debug_log!("[hosts] profile_apply: done");
+    Ok(())
 }
 
 // ============ Tauri 命令 ============
 
 #[tauri::command]
 pub async fn hosts_read() -> Result<HostsFile, String> {
-    read_hosts()
+    let f = read_hosts()?;
+    debug_log!("[hosts] hosts_read: entries={}", f.entries.len());
+    Ok(f)
 }
 
 #[tauri::command]
@@ -791,5 +905,39 @@ mod tests {
         // 2024-01-01 ≈ day 19723
         let (y, _m, _d) = days_to_ymd(19723);
         assert_eq!(y, 2024);
+    }
+
+    #[test]
+    fn test_validate_profile_name() {
+        // 合法
+        assert!(validate_profile_name("默认").is_ok());
+        assert!(validate_profile_name("dev").is_ok());
+        assert!(validate_profile_name("test-env").is_ok());
+        assert!(validate_profile_name("test_env").is_ok());
+        assert!(validate_profile_name("测试环境").is_ok());
+        assert!(validate_profile_name("env123").is_ok());
+        // 非法
+        assert!(validate_profile_name("").is_err());
+        assert!(validate_profile_name("../etc").is_err());
+        assert!(validate_profile_name("a/b").is_err());
+        assert!(validate_profile_name("a:b").is_err());
+        assert!(validate_profile_name("a\\b").is_err());
+        assert!(validate_profile_name("a*b").is_err());
+        assert!(validate_profile_name("a b").is_err());
+    }
+
+    #[test]
+    fn test_validate_backup_filename() {
+        // 合法
+        assert!(validate_backup_filename("hosts_20260721_143025").is_ok());
+        assert!(validate_backup_filename("hosts_00000000_000000").is_ok());
+        // 非法
+        assert!(validate_backup_filename("").is_err());
+        assert!(validate_backup_filename("hosts_20260721").is_err());       // 太短
+        assert!(validate_backup_filename("hosts_20260721_14302").is_err()); // 少一位
+        assert!(validate_backup_filename("hosts_2026AB21_143025").is_err()); // 非数字
+        assert!(validate_backup_filename("hosts_20260721-143025").is_err()); // 分隔符错
+        assert!(validate_backup_filename("../../../etc/passwd").is_err());
+        assert!(validate_backup_filename("hosts_20260721_143025.txt").is_err()); // 多后缀
     }
 }
