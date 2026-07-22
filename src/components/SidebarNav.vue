@@ -212,6 +212,7 @@ const SHORTCUT_TOOLS = [
   { id: 'color', label: '颜色工具' },
   { id: 'password', label: '密码工具' },
   { id: 'snippet', label: '代码片段' },
+  { id: '__palette__', label: '命令面板' },
 ]
 
 const initShortcutList = () => {
