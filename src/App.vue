@@ -203,7 +203,12 @@ onMounted(async () => {
   })
 
   unlistenPalette = await listen('command-palette-triggered', () => {
-    store.openCommandPalette()
+    // 全局热键也是 toggle 行为，与应用内 Ctrl+P 保持一致
+    if (store.isCommandPaletteOpen) {
+      store.closeCommandPalette()
+    } else {
+      store.openCommandPalette()
+    }
   })
 
   // 应用内 Ctrl+P toggle 命令面板（仅应用激活时生效）

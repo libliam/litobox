@@ -241,7 +241,6 @@ fn main() {
             });
             
             let shortcuts = db::db_read_shortcuts();
-            
             let manager = app.global_shortcut();
             
             for (tool_id, shortcut_str) in shortcuts {
@@ -256,7 +255,15 @@ fn main() {
                     if let tauri_plugin_global_shortcut::ShortcutState::Pressed = event.state {
                         if let Some(window) = h.get_webview_window("main") {
                             if tool == "__palette__" {
-                                // 命令面板：先唤起窗口到前台（show 幂等，已显示无副作用）
+                                // 命令面板：先唤起窗口到前台（最小化状态也能正确恢复）
+                                #[cfg(target_os = "windows")]
+                                if let Ok(hwnd) = window.hwnd() {
+                                    use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SetForegroundWindow, SW_RESTORE};
+                                    unsafe {
+                                        let _ = ShowWindow(hwnd.0, SW_RESTORE);
+                                        let _ = SetForegroundWindow(hwnd.0);
+                                    }
+                                }
                                 let _ = window.show();
                                 let _ = window.set_focus();
                                 debug_log!("[command_palette] global hotkey triggered, window shown");

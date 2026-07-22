@@ -1793,18 +1793,23 @@ pub fn db_note_ensure_draft() -> Result<NoteItem, String> {
 }
 
 /// 合并默认热键：把 defaults 中 existing 缺失的 key 补进去（向后兼容老配置，补全新增默认项如 __palette__）。
-/// 已存在的 key 保留用户自定义值，不被 default 覆盖。
-pub fn merge_shortcut_defaults(
-    mut existing: Vec<(String, String)>,
+/// 已存在的 key 若值为空或无效，也用默认值覆盖（修复用户误操作导致的空值）。
+fn merge_shortcut_defaults(
+    existing: Vec<(String, String)>,
     defaults: &[(String, String)],
 ) -> Vec<(String, String)> {
-    let has: std::collections::HashSet<String> = existing.iter().map(|(k, _)| k.clone()).collect();
+    let existing_map: std::collections::HashMap<String, String> = existing.into_iter().collect();
+    let mut result: Vec<(String, String)> = Vec::new();
     for (k, v) in defaults {
-        if !has.contains(k.as_str()) {
-            existing.push((k.clone(), v.clone()));
+        if let Some(existing_v) = existing_map.get(k) {
+            if !existing_v.trim().is_empty() {
+                result.push((k.clone(), existing_v.clone()));
+                continue;
+            }
         }
+        result.push((k.clone(), v.clone()));
     }
-    existing
+    result
 }
 
 // 读取快捷键配置
