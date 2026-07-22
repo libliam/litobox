@@ -21,6 +21,15 @@ mod hotkey_probe;
 mod hotkey_data;
 mod hosts_manager;
 
+// ponytail: debug 模式输出日志到 stderr，release 模式编译时移除（零开销）
+macro_rules! debug_log {
+    ($($arg:tt)*) => {
+        if cfg!(debug_assertions) {
+            eprintln!($($arg)*)
+        }
+    };
+}
+
 use tauri::{Manager, Emitter};
 use tauri_plugin_dialog::{DialogExt, MessageDialogBuilder, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
@@ -246,7 +255,15 @@ fn main() {
                 manager.on_shortcut(shortcut, move |_app, _sc, event| {
                     if let tauri_plugin_global_shortcut::ShortcutState::Pressed = event.state {
                         if let Some(window) = h.get_webview_window("main") {
-                            let _ = window.emit("global-shortcut-triggered", &tool);
+                            if tool == "__palette__" {
+                                // 命令面板：先唤起窗口到前台（show 幂等，已显示无副作用）
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                                debug_log!("[command_palette] global hotkey triggered, window shown");
+                                let _ = window.emit("command-palette-triggered", ());
+                            } else {
+                                let _ = window.emit("global-shortcut-triggered", &tool);
+                            }
                         }
                     }
                 }).unwrap_or_else(|e| {
