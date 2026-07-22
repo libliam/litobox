@@ -111,12 +111,18 @@ export const useToolboxStore = defineStore('toolbox', () => {
       json: 'CmdOrCtrl+Alt+J',
       string: 'CmdOrCtrl+Alt+S',
       devtools: 'CmdOrCtrl+Alt+D',
-      fileprocessing: 'CmdOrCtrl+Alt+F'
-    }
+      fileprocessing: 'CmdOrCtrl+Alt+F',
+      __palette__: 'CmdOrCtrl+Alt+P',
+    },
   })
 
   const history = ref<HistoryRecord[]>([])
   const recentTools = ref<string[]>([])
+
+  // ============ 命令面板 ============
+  const isCommandPaletteOpen = ref(false)
+  const openCommandPalette = () => { isCommandPaletteOpen.value = true }
+  const closeCommandPalette = () => { isCommandPaletteOpen.value = false }
 
   // ============ 后台采集状态 ============
   type CollectKind = 'system' | 'network' | 'process' | 'hardware' | 'software'
@@ -378,5 +384,9 @@ export const useToolboxStore = defineStore('toolbox', () => {
     // 后台采集
     collectResults,
     collecting,
+    // 命令面板
+    isCommandPaletteOpen,
+    openCommandPalette,
+    closeCommandPalette,
   }
 })
