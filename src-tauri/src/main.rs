@@ -20,6 +20,7 @@ mod media_info;
 mod hotkey_probe;
 mod hotkey_data;
 mod hosts_manager;
+mod network_connections;
 
 // ponytail: debug 模式输出日志到 stderr，release 模式编译时移除（零开销）
 macro_rules! debug_log {
@@ -125,6 +126,7 @@ fn main() {
             system_info::start_service,
             system_info::stop_service,
             system_info::restart_service,
+            network_connections::get_network_connections,
             // SQLite 查看器命令
             sqlite_viewer::sqlite_list_tables,
             sqlite_viewer::sqlite_get_schema,
