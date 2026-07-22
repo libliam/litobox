@@ -63,7 +63,7 @@
         <span class="card-title">连接列表 ({{ filteredConnections.length }} / {{ connections.length }})</span>
       </div>
       <div class="card-body">
-        <el-table :data="filteredConnections" border size="small" max-height="600" style="width: 100%" v-loading="loading">
+        <DataTable :data="filteredConnections" max-height="600" style="width: 100%">
           <el-table-column label="协议" width="70">
             <template #default="{ row }">
               <el-tag :type="row.protocol === 'TCP' ? '' : 'success'" size="small">{{ row.protocol }}</el-tag>
@@ -110,7 +110,7 @@
               </el-button>
             </template>
           </el-table-column>
-        </el-table>
+        </DataTable>
       </div>
     </div>
 
@@ -138,8 +138,12 @@
 
 <script setup lang="ts">
 import { ref, computed, onUnmounted, onMounted, nextTick } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { getNetworkConnections, killProcess, formatTimestamp, type NetworkConnection } from '@/utils/systemInfoClient'
+import { useConfirmDialog } from '@/composables/useConfirmDialog'
+import DataTable from '@/components/DataTable.vue'
+
+const { confirm } = useConfirmDialog()
 
 const connections = ref<NetworkConnection[]>([])
 const loading = ref(false)
@@ -242,15 +246,12 @@ const refresh = async () => {
 // ============ 操作 ============
 
 const handleKill = async (row: NetworkConnection) => {
-  try {
-    await ElMessageBox.confirm(
-      `确定结束进程 "${row.process_name}" (PID: ${row.pid})？\n强制结束可能导致未保存的数据丢失。`,
-      '结束进程确认',
-      { type: 'warning', confirmButtonText: '结束', cancelButtonText: '取消' }
-    )
-  } catch {
-    return
-  }
+  const ok = await confirm.ask(
+    '结束进程确认',
+    `确定结束进程 "${row.process_name}" (PID: ${row.pid})？\n强制结束可能导致未保存的数据丢失。`,
+    { type: 'danger', confirmText: '结束' }
+  )
+  if (!ok) return
 
   killingPids.value.add(row.pid)
   try {
@@ -271,15 +272,12 @@ const handleKill = async (row: NetworkConnection) => {
 
 const handleReleasePort = async (row: NetworkConnection) => {
   const port = row.local_addr.split(':').pop() || ''
-  try {
-    await ElMessageBox.confirm(
-      `确定释放端口 ${port}？将结束占用进程 "${row.process_name}" (PID: ${row.pid})。`,
-      '释放端口确认',
-      { type: 'warning', confirmButtonText: '释放', cancelButtonText: '取消' }
-    )
-  } catch {
-    return
-  }
+  const ok = await confirm.ask(
+    '释放端口确认',
+    `确定释放端口 ${port}？\n将结束占用进程 "${row.process_name}" (PID: ${row.pid})。`,
+    { type: 'warning', confirmText: '释放' }
+  )
+  if (!ok) return
 
   killingPids.value.add(row.pid)
   try {
@@ -361,59 +359,14 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.stats-row {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 16px;
-  flex-wrap: wrap;
-}
-
-.stat-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 12px 16px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  min-width: 80px;
-}
-
-.stat-number {
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--accent-cyan);
-}
-
-.stat-label {
-  font-size: 12px;
-  color: var(--text-secondary);
-  margin-top: 2px;
-}
-
-.mono-text {
-  font-family: 'Consolas', 'Courier New', monospace;
-  font-size: 12px;
-}
-
-.text-secondary {
-  color: var(--text-secondary);
-}
-
-.bottom-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.auto-refresh {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.bottom-actions {
-  display: flex;
-  gap: 8px;
-}
+.stats-row { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.stat-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; padding: 12px 16px; display: flex; flex-direction: column; align-items: center; min-width: 80px; }
+.stat-number { font-size: 22px; font-weight: 700; color: var(--accent-cyan); }
+.stat-label { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+.mono-text { font-family: 'Consolas', 'Courier New', monospace; font-size: 12px; }
+.text-secondary { color: var(--text-secondary); }
+.bottom-bar { display: flex; justify-content: space-between; align-items: center; }
+.auto-refresh { display: flex; align-items: center; gap: 8px; }
+.bottom-actions { display: flex; gap: 8px; }
+.refresh-time { font-size: 12px; color: var(--text-muted); }
 </style>

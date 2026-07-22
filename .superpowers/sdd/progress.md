@@ -1,5 +1,43 @@
 # SDD Progress Ledger
 
+## Plan: 2026-07-23-network-connections (V6.1 网络连接查看器)
+
+Plan: `docs/superpowers/plans/2026-07-23-network-connections.md` (6 tasks)
+Spec: `docs/superpowers/specs/2026-07-23-network-connections-design.md`
+MERGE_BASE: d35a54f (chore(release): 发布 v6.0.0)
+
+Task 1: complete (commit eab20da, review clean)
+  - network_connections.rs: NetworkConnection struct + parse_netstat_output + parse_ps_tcp/udp + enrich_process_info + get_network_connections
+  - cargo check 通过
+  - Minor: ConvertTo-Json 单对象降级问题（brief 层面，netstat 主路径不受影响）
+
+Task 2: complete (commit 33fc185, review clean)
+  - main.rs: mod network_connections + invoke_handler 注册
+  - cargo check 通过
+
+Task 3: complete (commit 7c5812b, review clean)
+  - systemInfoClient.ts: NetworkConnection interface + getNetworkConnections() invoke
+  - npm run build 通过
+
+Task 4: complete (commit f955372, review clean)
+  - store/index.ts: TOOL_LIST 加 networkConnections 条目 (category: system)
+  - NetworkConnections.vue 占位组件
+  - npm run build 通过
+
+Task 5: complete (commit 551e238, review clean)
+  - NetworkConnections.vue: 全功能组件 (统计/筛选/表格/操作/自动刷新/导出CSV)
+  - 修复: 移除未使用的 useToolboxStore 导入
+  - npm run build 通过
+
+Task 6: complete (commit a7dbd88, review clean)
+  - 版本号 6.0.0→6.1.0 (package.json / tauri.conf.json / Cargo.toml)
+  - README V6.1 行 + backlog A10 标记完成
+  - npm run build 通过
+
+全分支交叉一致性: ✅
+  - Rust struct 字段名 ↔ TS interface 字段名完全一致 (snake_case)
+  - main.rs mod + invoke_handler 与 network_connections.rs 签名匹配
+
 ## Plan: 2026-07-21-hosts-manager
 
 Task 2: complete (commits 5fe3623..f77335c, review clean)

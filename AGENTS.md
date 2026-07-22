@@ -115,6 +115,33 @@ litobox/
 - 配置数据持久化到localStorage
 - 操作历史最多保留10条
 
+### 公共组件索引（开发新功能时优先复用）
+
+| 组件/Composable | 文件路径 | 用途 | 使用场景 |
+|----------------|----------|------|----------|
+| `ConfirmDialog` | `src/components/ConfirmDialog.vue` | 确认弹窗组件 | 删除/结束进程/危险操作前确认 |
+| `useConfirmDialog` | `src/composables/useConfirmDialog.ts` | 弹窗调用 composable | `const { confirm } = useConfirmDialog(); const ok = await confirm.ask('标题', '消息', { type: 'danger' })` |
+| `DataTable` | `src/components/DataTable.vue` | 表格组件（el-table薄封装） | 数据列表展示，默认 border+stripe+small |
+| `ToolInput` | `src/components/ToolInput.vue` | 工具输入区 | 单输入工具页的输入区域 |
+| `ToolOutput` | `src/components/ToolOutput.vue` | 工具输出区 | 工具页的输出展示区域 |
+| `ToolActions` | `src/components/ToolActions.vue` | 工具操作按钮组 | 输入/输出区的操作按钮（清空/粘贴/复制） |
+| `VariablePicker` | `src/components/VariablePicker.vue` | 变量选择器 | 输入区插入变量池变量 |
+| `TabBar` | `src/components/TabBar.vue` | 顶部标签栏 | 多Tab页面的标签管理 |
+
+**使用示例**：
+
+```vue
+<!-- 表格 -->
+<DataTable :data="list" max-height="600">
+  <el-table-column prop="name" label="名称" />
+</DataTable>
+
+<!-- 确认弹窗 -->
+const { confirm } = useConfirmDialog()
+const ok = await confirm.ask('删除确认', '确定删除吗？', { type: 'danger', confirmText: '删除' })
+if (!ok) return
+```
+
 ### 通用注意事项
 - **禁止添加网络请求相关代码**
 - **禁止引入广告/推荐内容**
