@@ -137,7 +137,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onUnmounted } from 'vue'
+import { ref, computed, onUnmounted, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getNetworkConnections, killProcess, formatTimestamp, type NetworkConnection } from '@/utils/systemInfoClient'
 
@@ -348,8 +348,16 @@ onUnmounted(() => {
   }
 })
 
-// 初始加载
-refresh()
+onMounted(() => {
+  nextTick(() => {
+    try {
+      refresh()
+    } catch (e) {
+      console.error('[networkConnections] init error:', e)
+      error.value = '初始化失败: ' + String(e)
+    }
+  })
+})
 </script>
 
 <style scoped>
