@@ -77,11 +77,31 @@ Task 7: complete (commit 27228ed, base b4a406c)
   - npm run build 通过
   - Review: ✅ Approved，无缺陷（brief 对 base 尾逗号描述略有出入，实现者按真实 end state 正确处理）
 
-Task 8: complete (version bump 5.9.0→6.0.0 + README + backlog + build 验证)
+Task 8: complete (commit aa631b9, release commit, version bump 5.9.0→6.0.0 + README + backlog + Cargo.toml + build 验证)
   - package.json: version 5.9.0 → 6.0.0
   - src-tauri/tauri.conf.json: version 5.9.0 → 6.0.0（同步）
+  - src-tauri/Cargo.toml: version 5.9.0 → 6.0.0（同步，参考 hosts-manager Task 7 模式）
   - README.md: 版本路线表追加 V6.0 行（全局热键 Ctrl+Alt+P 呼出浮层，模糊搜索一键跳转）
   - docs/superpowers/plans/feature-backlog.md: 已完成版本表追加 V6.0 行（2026-07-22）+ D3 条目标记 ✅ 已完成 + 下次 brainstorming 检查清单 D3 标记 ✅
   - npm run build 通过（vue-tsc 类型检查 + vite build 30.84s，无新增 warning）
   - Step 1 交互式手动验收（12 项场景 `npm run tauri dev`）：defer 给用户（无法自动化执行）
-  - 整条 feature 分支代码已完成，待用户手动验收 + 最终 whole-branch review
+  - commit message 模式：`chore(release): 发布 v6.0.0 - 新增 快捷命令面板`（参考 hosts-manager Task 7）
+
+Final whole-branch review: ✅ APPROVED (opus 模型)
+  - Critical: 0 / Important: 0 / Minor: 2（均不阻塞合并）
+  - Minor 1: merge_shortcut_defaults 不必要的 `pub` → 已修复：改为非 pub（cargo check 通过，无外部引用）
+  - Minor 2: spec 请求的 db_read_shortcuts 默认值断言被替换为更价值的 merge_shortcut_defaults 测试（测试覆盖更有价值，可不改）
+  - 跨任务一致性：✅ magic string `__palette__` 跨 5 层一致（db.rs/main.rs/store/SidebarNav/CommandPalette）
+  - 事件链闭合：✅ main.rs emit ↔ App.vue listen ↔ store.openCommandPalette ↔ CommandPalette watch
+  - 监听器清理：✅ unlistenPalette + globalKeydownHandler 同引用
+  - CSS 变量合规：✅ 只用 theme.css 变量（rgba 遮罩例外可接受）
+  - 版本号三处同步：✅ package.json / tauri.conf.json / Cargo.toml 都是 6.0.0
+  - Rust 借用安全：✅ HashSet<String> 正确解决 E0502
+  - Report: .superpowers/sdd/final-review-report.md
+  - 待用户执行：12 项交互式手动验收（npm run tauri dev）
+
+Bugfix (commit 16c28cb):
+  - db.rs: merge_shortcut_defaults 增强 — 数据库值为空时也用默认值覆盖（修复用户误设置空热键导致解析失败）
+  - main.rs: 使用 Windows API `ShowWindow(SW_RESTORE)` + `SetForegroundWindow` 确保最小化状态下窗口能正确恢复
+  - App.vue: 清理调试日志，恢复正式代码
+  - 用户验证通过：全局热键 Ctrl+Alt+P 在窗口最小化状态下能正确唤起窗口并弹出命令面板
