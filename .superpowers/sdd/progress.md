@@ -37,3 +37,51 @@ Task 2: complete (commit 07cfa49, base 1d8faaa)
   - 普通工具仍走 `global-shortcut-triggered`，行为不变
   - cargo check 通过，0 新增 warning
   - Review: ✅ Approved，无 Critical/Important/Minor
+
+Note: e772f1d = chore(sdd) cleanup commit (删除 5 个 hosts-manager 残留 tracked SDD 文件 + ledger 更新)，非 feature 代码，最终 review MERGE_BASE 仍为 041ce63。
+
+Task 3: complete (commit 31342ed, base e772f1d)
+  - 新建 `src/utils/commandPalette.ts`：`RankedTool` 接口 + `filterTools(query, tools)` 纯函数
+  - 加权：name 精确=100/前缀=50/子串=5, keywords=30, desc=20, id=10；空查询返回全部(score=0)；无匹配返回 []；降序排序
+  - 新建 `src/utils/commandPalette.test.ts`：手写 assert 模式，6 个测试段/8 条断言，TDD 红灯→绿灯
+  - `import type` 擦除避免 `@/store` 运行时解析
+  - Review: ✅ Approved，无缺陷（brief 验收 prose 写"6 passed"但 brief 测试代码本身含 8 条 assert，纯文档措辞差异，非代码缺陷）
+
+Task 4: complete (commit 34902c3, base 31342ed)
+  - store/index.ts: config.shortcuts 加 `__palette__: 'CmdOrCtrl+Alt+P'`
+  - 新增 `isCommandPaletteOpen` ref + `openCommandPalette`/`closeCommandPalette` 方法 + return 导出
+  - npm run build 通过（vue-tsc + vite）
+  - Review: ✅ Approved，无缺陷。前后端 `__palette__` 默认键名+热键一致（controller 交叉确认）
+
+Task 5: complete (commit a1a0aba, base 34902c3)
+  - 新建 `src/components/CommandPalette.vue`（260 行）：Teleport 到 body
+  - 搜索框 + 分组结果（按 category）+ 空状态 + 键盘提示栏
+  - 键盘导航 ↑↓ wrap-around / Enter 跳转 / Esc 关闭；flatIndex 分组下高亮正确
+  - watch(isCommandPaletteOpen) nextTick focus input；watch(query) 重置选中
+  - 所有颜色用 theme.css 变量（rgba 纯黑遮罩/阴影为可接受例外）
+  - npm run build 通过
+  - Review: ✅ Approved，无 Critical/Important
+
+Task 6: complete (commit b4a406c, base a1a0aba)
+  - App.vue: 模板挂载 `<CommandPalette />`、import 组件
+  - onMounted 监听 `command-palette-triggered` → `store.openCommandPalette()`
+  - 应用内 Ctrl+P toggle（preventDefault 拦截打印，按 isCommandPaletteOpen 切换）
+  - 顶层 `let globalKeydownHandler` 持引用，onUnmounted removeEventListener 同引用（无泄漏）
+  - npm run build 通过
+  - Review: ✅ Approved，无缺陷
+
+Task 7: complete (commit 27228ed, base b4a406c)
+  - SidebarNav.vue: SHORTCUT_TOOLS 加 `{ id: '__palette__', label: '命令面板' }` 第 14 项
+  - initShortcutList/saveShortcuts 自动复用（store 默认值已含 __palette__）
+  - magic string `__palette__` 跨层一致（db.rs / store / SidebarNav）
+  - npm run build 通过
+  - Review: ✅ Approved，无缺陷（brief 对 base 尾逗号描述略有出入，实现者按真实 end state 正确处理）
+
+Task 8: complete (version bump 5.9.0→6.0.0 + README + backlog + build 验证)
+  - package.json: version 5.9.0 → 6.0.0
+  - src-tauri/tauri.conf.json: version 5.9.0 → 6.0.0（同步）
+  - README.md: 版本路线表追加 V6.0 行（全局热键 Ctrl+Alt+P 呼出浮层，模糊搜索一键跳转）
+  - docs/superpowers/plans/feature-backlog.md: 已完成版本表追加 V6.0 行（2026-07-22）+ D3 条目标记 ✅ 已完成 + 下次 brainstorming 检查清单 D3 标记 ✅
+  - npm run build 通过（vue-tsc 类型检查 + vite build 30.84s，无新增 warning）
+  - Step 1 交互式手动验收（12 项场景 `npm run tauri dev`）：defer 给用户（无法自动化执行）
+  - 整条 feature 分支代码已完成，待用户手动验收 + 最终 whole-branch review
