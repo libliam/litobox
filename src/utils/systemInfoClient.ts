@@ -300,6 +300,22 @@ export function formatTimestamp(): string {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
+// ============ 网络连接查看器 ============
+
+export interface NetworkConnection {
+  protocol: string
+  local_addr: string
+  remote_addr: string
+  state: string
+  pid: number
+  process_name: string
+  process_path: string
+}
+
+export function getNetworkConnections(): Promise<NetworkConnection[]> {
+  return invoke<NetworkConnection[]>('get_network_connections')
+}
+
 // ============ 自检 ============
 // ponytail: 纯函数自检，确保格式化逻辑正确
 console.assert(formatBytes(0) === '0 B', 'formatBytes(0)')
