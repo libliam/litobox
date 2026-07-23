@@ -316,6 +316,75 @@ export function getNetworkConnections(): Promise<NetworkConnection[]> {
   return invoke<NetworkConnection[]>('get_network_connections')
 }
 
+// ============ 计划任务管理器 ============
+
+export interface ScheduledTask {
+  task_name: string
+  task_path: string
+  state: string         // "Ready" / "Running" / "Disabled" / "Unknown"
+  description: string
+  author: string
+  last_run_time: string
+  last_task_result: number
+  next_run_time: string
+  trigger_brief: string
+  action_brief: string
+  principal: string
+  is_system: boolean
+  triggers_json: string
+  actions_json: string
+}
+
+export interface TaskOpResult {
+  success: boolean
+  task_name: string
+  action: string
+  message: string
+}
+
+export function getScheduledTasks(includeSystem: boolean): Promise<ScheduledTask[]> {
+  return invoke<ScheduledTask[]>('get_scheduled_tasks', { includeSystem })
+}
+
+export function enableScheduledTask(taskName: string, taskPath: string): Promise<TaskOpResult> {
+  return invoke<TaskOpResult>('enable_scheduled_task', { taskName, taskPath })
+}
+
+export function disableScheduledTask(taskName: string, taskPath: string): Promise<TaskOpResult> {
+  return invoke<TaskOpResult>('disable_scheduled_task', { taskName, taskPath })
+}
+
+export function runScheduledTask(taskName: string, taskPath: string): Promise<TaskOpResult> {
+  return invoke<TaskOpResult>('run_scheduled_task', { taskName, taskPath })
+}
+
+export function deleteScheduledTask(taskName: string, taskPath: string): Promise<TaskOpResult> {
+  return invoke<TaskOpResult>('delete_scheduled_task', { taskName, taskPath })
+}
+
+/**
+ * 前端镜像触发器格式化（与 Rust format_trigger_brief 一致），用于详情面板渲染
+ */
+export function formatTriggerBrief(triggerType: string, startBoundary: string): string {
+  const time = extractTimeFromBoundary(startBoundary)
+  switch (triggerType) {
+    case 'MSFT_TaskDailyTrigger': return `每日 ${time}`
+    case 'MSFT_TaskWeeklyTrigger': return `每周 ${time}`
+    case 'MSFT_TaskLogonTrigger': return '登录时'
+    case 'MSFT_TaskBootTrigger': return '启动时'
+    case 'MSFT_TaskTimeTrigger': return `${time} 一次性`
+    default: return '自定义'
+  }
+}
+
+function extractTimeFromBoundary(boundary: string): string {
+  if (!boundary) return '—'
+  const parts = boundary.split('T')
+  if (parts.length < 2) return '—'
+  const timePart = parts[1].split('+')[0]
+  return timePart.length >= 5 ? timePart.slice(0, 5) : '—'
+}
+
 // ============ 自检 ============
 // ponytail: 纯函数自检，确保格式化逻辑正确
 console.assert(formatBytes(0) === '0 B', 'formatBytes(0)')
@@ -323,3 +392,13 @@ console.assert(formatBytes(1024) === '1.0 KB', 'formatBytes(1024)')
 console.assert(formatBytes(1073741824) === '1.0 GB', 'formatBytes(1GB)')
 console.assert(formatUptime(3661) === '1小时1分钟', 'formatUptime(3661)')
 console.assert(formatUptime(90061) === '1天1小时1分钟', 'formatUptime(90061)')
+console.assert(formatTriggerBrief('MSFT_TaskDailyTrigger', '2026-07-23T09:00:00') === '每日 09:00', 'daily trigger')
+console.assert(formatTriggerBrief('MSFT_TaskWeeklyTrigger', '2026-07-23T08:30:00') === '每周 08:30', 'weekly trigger')
+console.assert(formatTriggerBrief('MSFT_TaskLogonTrigger', '') === '登录时', 'logon trigger')
+console.assert(formatTriggerBrief('MSFT_TaskBootTrigger', '') === '启动时', 'boot trigger')
+console.assert(formatTriggerBrief('MSFT_TaskTimeTrigger', '2026-07-23T15:00:00') === '15:00 一次性', 'time trigger')
+console.assert(formatTriggerBrief('', '') === '自定义', 'empty trigger')
+console.assert(formatTriggerBrief('MSFT_TaskUnknown', '2026-07-23T09:00:00') === '自定义', 'unknown trigger')
+console.assert(extractTimeFromBoundary('') === '—', 'empty boundary')
+console.assert(extractTimeFromBoundary('invalid') === '—', 'malformed boundary')
+console.assert(extractTimeFromBoundary('2026-07-23T09:00:00+08:00') === '09:00', 'boundary with tz')
