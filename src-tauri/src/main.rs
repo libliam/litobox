@@ -21,6 +21,7 @@ mod hotkey_probe;
 mod hotkey_data;
 mod hosts_manager;
 mod network_connections;
+mod scheduled_tasks;
 
 // ponytail: debug 模式输出日志到 stderr，release 模式编译时移除（零开销）
 macro_rules! debug_log {
