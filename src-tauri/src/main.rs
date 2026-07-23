@@ -128,6 +128,12 @@ fn main() {
             system_info::stop_service,
             system_info::restart_service,
             network_connections::get_network_connections,
+            // 计划任务管理命令
+            scheduled_tasks::get_scheduled_tasks,
+            scheduled_tasks::enable_scheduled_task,
+            scheduled_tasks::disable_scheduled_task,
+            scheduled_tasks::run_scheduled_task,
+            scheduled_tasks::delete_scheduled_task,
             // SQLite 查看器命令
             sqlite_viewer::sqlite_list_tables,
             sqlite_viewer::sqlite_get_schema,
