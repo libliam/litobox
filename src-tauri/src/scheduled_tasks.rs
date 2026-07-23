@@ -207,6 +207,229 @@ fn parse_task_op_result(output: &str, task_name: &str, action: &str) -> TaskOpRe
     }
 }
 
+// ============ Tauri 命令 ============
+
+/// PowerShell 采集脚本：Get-ScheduledTask + Get-ScheduledTaskInfo
+/// 显式投影 CimClass.CimClassName 为字符串，避免 ConvertTo-Json 丢失元数据
+fn build_query_script(include_system: bool) -> String {
+    let filter_clause = if include_system {
+        "$true".to_string()
+    } else {
+        "$_.TaskPath -notlike '\\Microsoft\\Windows\\*'".to_string()
+    };
+    format!(
+        r#"$tasks = Get-ScheduledTask | Where-Object {{ {filter_clause} }} | ForEach-Object {{
+    $info = Get-ScheduledTaskInfo -TaskName $_.TaskName -TaskPath $_.TaskPath
+    [PSCustomObject]{{
+        TaskName        = $_.TaskName
+        TaskPath        = $_.TaskPath
+        State           = $_.State.ToString()
+        Description     = if ($_.Description) {{ $_.Description }} else {{ '' }}
+        Author          = if ($_.Author) {{ $_.Author }} else {{ '' }}
+        Principal       = if ($_.Principal -and $_.Principal.UserId) {{ $_.Principal.UserId }} else {{ '' }}
+        LastRunTime     = if ($info.LastRunTime) {{ $info.LastRunTime.ToString('yyyy-MM-dd HH:mm:ss') }} else {{ '' }}
+        LastTaskResult  = $info.LastTaskResult
+        NextRunTime     = if ($info.NextRunTime) {{ $info.NextRunTime.ToString('yyyy-MM-dd HH:mm:ss') }} else {{ '' }}
+        Triggers        = @($_.Triggers | ForEach-Object {{
+            [PSCustomObject]{{
+                Type          = $_.CimClass.CimClassName
+                StartBoundary = if ($_.StartBoundary) {{ $_.StartBoundary }} else {{ '' }}
+                DaysInterval  = if ($_.DaysInterval) {{ $_.DaysInterval }} else {{ 0 }}
+                DaysOfWeek    = if ($_.DaysOfWeek) {{ $_.DaysOfWeek }} else {{ 0 }}
+            }}
+        }})
+        Actions         = @($_.Actions | ForEach-Object {{
+            [PSCustomObject]{{
+                Type      = $_.CimClass.CimClassName
+                Command   = if ($_.Execute) {{ $_.Execute }} else {{ '' }}
+                Arguments = if ($_.Arguments) {{ $_.Arguments }} else {{ '' }}
+            }}
+        }})
+    }}
+}} | ConvertTo-Json -Depth 4
+Write-Output $tasks"#,
+        filter_clause = filter_clause
+    )
+}
+
+#[derive(Deserialize)]
+struct PsScheduledTask {
+    #[serde(rename = "TaskName")]
+    task_name: String,
+    #[serde(rename = "TaskPath")]
+    task_path: String,
+    #[serde(rename = "State")]
+    state: String,
+    #[serde(rename = "Description")]
+    description: Option<String>,
+    #[serde(rename = "Author")]
+    author: Option<String>,
+    #[serde(rename = "Principal")]
+    principal: Option<String>,
+    #[serde(rename = "LastRunTime")]
+    last_run_time: Option<String>,
+    #[serde(rename = "LastTaskResult")]
+    last_task_result: Option<i32>,
+    #[serde(rename = "NextRunTime")]
+    next_run_time: Option<String>,
+    #[serde(rename = "Triggers")]
+    triggers: Option<Vec<serde_json::Value>>,
+    #[serde(rename = "Actions")]
+    actions: Option<Vec<serde_json::Value>>,
+}
+
+#[tauri::command]
+pub fn get_scheduled_tasks(include_system: bool) -> Result<Vec<ScheduledTask>, String> {
+    debug_log!("[scheduled_tasks] 开始采集, include_system={}", include_system);
+
+    let script = build_query_script(include_system);
+    let output = run_powershell(&script)?;
+    let trimmed = output.trim();
+
+    if trimmed.is_empty() {
+        debug_log!("[scheduled_tasks] 无任务");
+        return Ok(Vec::new());
+    }
+
+    // ponytail: ConvertTo-Json 单元素时输出对象而非数组，需归一化
+    let json_val: serde_json::Value = serde_json::from_str(trimmed)
+        .map_err(|e| format!("JSON 解析失败: {} - 输入前 200 字: {}", e, &trimmed[..200.min(trimmed.len())]))?;
+    let arr: Vec<serde_json::Value> = match json_val {
+        serde_json::Value::Array(a) => a,
+        serde_json::Value::Object(_) => vec![serde_json::Value::Object(json_val.as_object().unwrap().clone())],
+        _ => Vec::new(),
+    };
+
+    let ps_tasks: Vec<PsScheduledTask> = arr
+        .into_iter()
+        .map(|v| serde_json::from_value(v).unwrap_or(PsScheduledTask {
+            task_name: String::new(),
+            task_path: String::new(),
+            state: String::new(),
+            description: None,
+            author: None,
+            principal: None,
+            last_run_time: None,
+            last_task_result: None,
+            next_run_time: None,
+            triggers: None,
+            actions: None,
+        }))
+        .collect();
+
+    let tasks: Vec<ScheduledTask> = ps_tasks
+        .into_iter()
+        .map(|ps| {
+            let triggers_json = serde_json::to_string(&ps.triggers.clone().unwrap_or_default()).unwrap_or_default();
+            let actions_json = serde_json::to_string(&ps.actions.clone().unwrap_or_default()).unwrap_or_default();
+
+            // 取首个触发器作为简述依据
+            let (trigger_type, trigger_boundary) = ps.triggers
+                .as_ref()
+                .and_then(|t| t.first())
+                .and_then(|t| {
+                    let ty = t.get("Type").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let bd = t.get("StartBoundary").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    Some((ty, bd))
+                })
+                .unwrap_or_default();
+
+            ScheduledTask {
+                is_system: is_system_task(&ps.task_path),
+                trigger_brief: format_trigger_brief(&trigger_type, &trigger_boundary),
+                action_brief: format_action_brief(&actions_json),
+                task_name: ps.task_name,
+                task_path: ps.task_path,
+                state: ps.state,
+                description: ps.description.unwrap_or_default(),
+                author: ps.author.unwrap_or_default(),
+                principal: ps.principal.unwrap_or_default(),
+                last_run_time: ps.last_run_time.unwrap_or_default(),
+                last_task_result: ps.last_task_result.unwrap_or(0),
+                next_run_time: ps.next_run_time.unwrap_or_default(),
+                triggers_json,
+                actions_json,
+            }
+        })
+        .collect();
+
+    debug_log!("[scheduled_tasks] 采集到 {} 个任务", tasks.len());
+    Ok(tasks)
+}
+
+/// 通用操作执行器：构造 try/catch PowerShell，返回 TaskOpResult
+fn execute_task_op(task_name: &str, task_path: &str, action: &str, ps_cmd: &str) -> Result<TaskOpResult, String> {
+    debug_log!("[scheduled_tasks] {} task_name={}, task_path={}", action, task_name, task_path);
+
+    // 拒绝操作系统任务（双重保险，前端已禁用）
+    if action == "delete" && is_system_task(task_path) {
+        return Ok(TaskOpResult {
+            success: false,
+            task_name: task_name.to_string(),
+            action: action.to_string(),
+            message: "系统任务不可删除".to_string(),
+        });
+    }
+
+    // 转义单引号（PowerShell 字符串字面量用单引号包裹，内部单引号需翻倍）
+    let escaped_name = task_name.replace('\'', "''");
+    let escaped_path = task_path.replace('\'', "''");
+    let script = format!(
+        r#"try {{ {ps_cmd} -TaskName '{name}' -TaskPath '{path}' -ErrorAction Stop; Write-Output 'SUCCESS' }} catch {{ Write-Output "ERROR:$($_.Exception.Message)" }}"#,
+        ps_cmd = ps_cmd,
+        name = escaped_name,
+        path = escaped_path,
+    );
+
+    let output = run_powershell(&script)?;
+    let result = parse_task_op_result(&output, task_name, action);
+    debug_log!("[scheduled_tasks] {} result: {:?}", action, result);
+    Ok(result)
+}
+
+#[tauri::command]
+pub fn enable_scheduled_task(task_name: String, task_path: String) -> Result<TaskOpResult, String> {
+    execute_task_op(&task_name, &task_path, "enable", "Enable-ScheduledTask")
+}
+
+#[tauri::command]
+pub fn disable_scheduled_task(task_name: String, task_path: String) -> Result<TaskOpResult, String> {
+    execute_task_op(&task_name, &task_path, "disable", "Disable-ScheduledTask")
+}
+
+#[tauri::command]
+pub fn run_scheduled_task(task_name: String, task_path: String) -> Result<TaskOpResult, String> {
+    execute_task_op(&task_name, &task_path, "run", "Start-ScheduledTask")
+}
+
+#[tauri::command]
+pub fn delete_scheduled_task(task_name: String, task_path: String) -> Result<TaskOpResult, String> {
+    // Unregister-ScheduledTask 需要 -Confirm:$false 跳过交互确认
+    debug_log!("[scheduled_tasks] delete task_name={}, task_path={}", task_name, task_path);
+
+    if is_system_task(&task_path) {
+        return Ok(TaskOpResult {
+            success: false,
+            task_name,
+            action: "delete".to_string(),
+            message: "系统任务不可删除".to_string(),
+        });
+    }
+
+    let escaped_name = task_name.replace('\'', "''");
+    let escaped_path = task_path.replace('\'', "''");
+    let script = format!(
+        r#"try {{ Unregister-ScheduledTask -TaskName '{name}' -TaskPath '{path}' -Confirm:$false -ErrorAction Stop; Write-Output 'SUCCESS' }} catch {{ Write-Output "ERROR:$($_.Exception.Message)" }}"#,
+        name = escaped_name,
+        path = escaped_path,
+    );
+
+    let output = run_powershell(&script)?;
+    let result = parse_task_op_result(&output, &task_name, "delete");
+    debug_log!("[scheduled_tasks] delete result: {:?}", result);
+    Ok(result)
+}
+
 // ============ 单元测试 ============
 
 #[cfg(test)]
