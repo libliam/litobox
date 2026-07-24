@@ -121,43 +121,33 @@
               <span>{{ row.next_run_time || '—' }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="240" fixed="right">
+          <el-table-column label="操作" width="100" fixed="right" align="center">
             <template #default="{ row }">
-              <el-button
-                v-if="row.state === 'Disabled'"
-                type="success" size="small" link
-                :loading="operatingTasks.has(row.rowKey)"
-                @click="handleAction(row, 'enable')">
-                启用
-              </el-button>
-              <el-button
-                v-if="row.state === 'Ready' || row.state === 'Disabled'"
-                type="primary" size="small" link
-                :loading="operatingTasks.has(row.rowKey)"
-                @click="handleAction(row, 'run')">
-                立即运行
-              </el-button>
-              <el-button
-                v-if="row.state === 'Ready' || row.state === 'Running'"
-                type="warning" size="small" link
-                :loading="operatingTasks.has(row.rowKey)"
-                @click="handleAction(row, 'disable')">
-                禁用
-              </el-button>
-              <el-tooltip
-                :content="row.is_system ? '系统任务不可删除' : ''"
-                :disabled="!row.is_system"
-                placement="top">
-                <span>
-                  <el-button
-                    type="danger" size="small" link
-                    :disabled="row.is_system"
-                    :loading="operatingTasks.has(row.rowKey)"
-                    @click="handleAction(row, 'delete')">
-                    删除
-                  </el-button>
-                </span>
-              </el-tooltip>
+              <el-dropdown
+                trigger="click"
+                @command="(cmd: string) => handleAction(row, cmd as 'enable' | 'disable' | 'run' | 'delete')"
+                :disabled="operatingTasks.has(row.rowKey)">
+                <el-button type="primary" size="small" plain :loading="operatingTasks.has(row.rowKey)">
+                  操作<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="run" v-if="row.state === 'Ready' || row.state === 'Disabled'">
+                      <el-icon style="margin-right: 6px"><VideoPlay /></el-icon>立即运行
+                    </el-dropdown-item>
+                    <el-dropdown-item command="enable" v-if="row.state === 'Disabled'">
+                      <el-icon style="margin-right: 6px; color: var(--el-color-success)"><CircleCheck /></el-icon>启用
+                    </el-dropdown-item>
+                    <el-dropdown-item command="disable" v-if="row.state === 'Ready' || row.state === 'Running'">
+                      <el-icon style="margin-right: 6px; color: var(--el-color-warning)"><VideoPause /></el-icon>禁用
+                    </el-dropdown-item>
+                    <el-dropdown-item divided command="delete" :disabled="row.is_system">
+                      <el-icon style="margin-right: 6px; color: var(--el-color-danger)"><Delete /></el-icon>
+                      <span :style="{ color: row.is_system ? 'var(--text-muted)' : '' }">删除{{ row.is_system ? '（系统任务）' : '' }}</span>
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
             </template>
           </el-table-column>
         </el-table>
@@ -201,6 +191,7 @@ import {
 } from '@/utils/systemInfoClient'
 import { useToolboxStore } from '@/store'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
+import { ArrowDown, VideoPlay, VideoPause, Delete, CircleCheck } from '@element-plus/icons-vue'
 
 const store = useToolboxStore()
 const { confirm } = useConfirmDialog()
@@ -489,4 +480,15 @@ onMounted(() => {
 :deep(.el-table tr) { background: var(--bg-card) !important; }
 :deep(.el-table__body tr:hover > td) { background: rgba(0, 212, 255, 0.15) !important; }
 :deep(.el-table__inner-wrapper::before) { background-color: var(--border-color) !important; }
+:deep(.el-table__fixed-right) { background: var(--bg-card) !important; }
+:deep(.el-table__fixed-right::before) {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 100%;
+  background: var(--border-color);
+}
+:deep(.el-table__fixed-right-patch) { background: var(--bg-input) !important; }
 </style>

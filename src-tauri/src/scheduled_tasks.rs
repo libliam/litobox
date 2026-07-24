@@ -31,7 +31,7 @@ pub struct ScheduledTask {
     pub description: String,
     pub author: String,
     pub last_run_time: String,
-    pub last_task_result: i32,
+    pub last_task_result: i64,
     pub next_run_time: String,
     pub trigger_brief: String,
     pub action_brief: String,
@@ -218,36 +218,44 @@ fn build_query_script(include_system: bool) -> String {
         "$_.TaskPath -notlike '\\Microsoft\\Windows\\*'".to_string()
     };
     format!(
-        r#"$tasks = Get-ScheduledTask | Where-Object {{ {filter_clause} }} | ForEach-Object {{
-    $info = Get-ScheduledTaskInfo -TaskName $_.TaskName -TaskPath $_.TaskPath
-    [PSCustomObject]{{
-        TaskName        = $_.TaskName
-        TaskPath        = $_.TaskPath
-        State           = $_.State.ToString()
-        Description     = if ($_.Description) {{ $_.Description }} else {{ '' }}
-        Author          = if ($_.Author) {{ $_.Author }} else {{ '' }}
-        Principal       = if ($_.Principal -and $_.Principal.UserId) {{ $_.Principal.UserId }} else {{ '' }}
+        r#"$ErrorActionPreference = 'Stop'
+$tasks = @(Get-ScheduledTask | Where-Object {{ {filter_clause} }})
+$list = New-Object System.Collections.ArrayList
+foreach ($task in $tasks) {{
+    $info = Get-ScheduledTaskInfo -TaskName $task.TaskName -TaskPath $task.TaskPath
+    $trigObjs = @()
+    foreach ($t in $task.Triggers) {{
+        $trigObjs += New-Object PSObject -Property @{{
+            Type          = $t.CimClass.CimClassName
+            StartBoundary = if ($t.StartBoundary) {{ $t.StartBoundary }} else {{ '' }}
+            DaysInterval  = if ($t.DaysInterval) {{ $t.DaysInterval }} else {{ 0 }}
+            DaysOfWeek    = if ($t.DaysOfWeek) {{ [int]$t.DaysOfWeek }} else {{ 0 }}
+        }}
+    }}
+    $actObjs = @()
+    foreach ($a in $task.Actions) {{
+        $actObjs += New-Object PSObject -Property @{{
+            Type      = $a.CimClass.CimClassName
+            Command   = if ($a.Execute) {{ $a.Execute }} else {{ '' }}
+            Arguments = if ($a.Arguments) {{ $a.Arguments }} else {{ '' }}
+        }}
+    }}
+    $obj = New-Object PSObject -Property @{{
+        TaskName        = $task.TaskName
+        TaskPath        = $task.TaskPath
+        State           = $task.State.ToString()
+        Description     = if ($task.Description) {{ $task.Description }} else {{ '' }}
+        Author          = if ($task.Author) {{ $task.Author }} else {{ '' }}
+        Principal       = if ($task.Principal -and $task.Principal.UserId) {{ $task.Principal.UserId }} else {{ '' }}
         LastRunTime     = if ($info.LastRunTime) {{ $info.LastRunTime.ToString('yyyy-MM-dd HH:mm:ss') }} else {{ '' }}
         LastTaskResult  = $info.LastTaskResult
         NextRunTime     = if ($info.NextRunTime) {{ $info.NextRunTime.ToString('yyyy-MM-dd HH:mm:ss') }} else {{ '' }}
-        Triggers        = @($_.Triggers | ForEach-Object {{
-            [PSCustomObject]{{
-                Type          = $_.CimClass.CimClassName
-                StartBoundary = if ($_.StartBoundary) {{ $_.StartBoundary }} else {{ '' }}
-                DaysInterval  = if ($_.DaysInterval) {{ $_.DaysInterval }} else {{ 0 }}
-                DaysOfWeek    = if ($_.DaysOfWeek) {{ $_.DaysOfWeek }} else {{ 0 }}
-            }}
-        }})
-        Actions         = @($_.Actions | ForEach-Object {{
-            [PSCustomObject]{{
-                Type      = $_.CimClass.CimClassName
-                Command   = if ($_.Execute) {{ $_.Execute }} else {{ '' }}
-                Arguments = if ($_.Arguments) {{ $_.Arguments }} else {{ '' }}
-            }}
-        }})
+        Triggers        = $trigObjs
+        Actions         = $actObjs
     }}
-}} | ConvertTo-Json -Depth 4
-Write-Output $tasks"#,
+    [void]$list.Add($obj)
+}}
+$list | ConvertTo-Json -Depth 4"#,
         filter_clause = filter_clause
     )
 }
@@ -269,7 +277,7 @@ struct PsScheduledTask {
     #[serde(rename = "LastRunTime")]
     last_run_time: Option<String>,
     #[serde(rename = "LastTaskResult")]
-    last_task_result: Option<i32>,
+    last_task_result: Option<i64>,
     #[serde(rename = "NextRunTime")]
     next_run_time: Option<String>,
     #[serde(rename = "Triggers")]
@@ -302,20 +310,9 @@ pub fn get_scheduled_tasks(include_system: bool) -> Result<Vec<ScheduledTask>, S
 
     let ps_tasks: Vec<PsScheduledTask> = arr
         .into_iter()
-        .map(|v| serde_json::from_value(v).unwrap_or(PsScheduledTask {
-            task_name: String::new(),
-            task_path: String::new(),
-            state: String::new(),
-            description: None,
-            author: None,
-            principal: None,
-            last_run_time: None,
-            last_task_result: None,
-            next_run_time: None,
-            triggers: None,
-            actions: None,
-        }))
-        .collect();
+        .map(|v| serde_json::from_value::<PsScheduledTask>(v))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("字段映射失败: {}", e))?;
 
     let tasks: Vec<ScheduledTask> = ps_tasks
         .into_iter()

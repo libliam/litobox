@@ -359,11 +359,13 @@ mod tests {
 
     #[test]
     fn format_action_exec_long_path_truncated() {
-        let long_cmd = "C:\\".to_string() + &"a".repeat(60) + "\\update.exe";
-        let json = format!(
-            r#"[{{"Type":"MSFT_TaskExecAction","Command":"{}","Arguments":""}}]"#,
-            long_cmd
-        );
+        // 用 serde_json::json! 宏构造，自动转义反斜杠（手工 format! 会丢失转义）
+        let long_cmd = format!("C:\\{}\\update.exe", "a".repeat(60));
+        let json = serde_json::json!([{
+            "Type": "MSFT_TaskExecAction",
+            "Command": long_cmd,
+            "Arguments": ""
+        }]).to_string();
         let result = format_action_brief(&json);
         assert!(result.starts_with("启动程序: ..."), "应截断前缀，实际: {}", result);
         assert!(result.ends_with("update.exe"), "应保留末尾文件名，实际: {}", result);
