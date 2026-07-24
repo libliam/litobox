@@ -22,6 +22,7 @@ mod hotkey_data;
 mod hosts_manager;
 mod network_connections;
 mod scheduled_tasks;
+mod startup_items;
 
 // ponytail: debug 模式输出日志到 stderr，release 模式编译时移除（零开销）
 macro_rules! debug_log {
@@ -134,6 +135,11 @@ fn main() {
             scheduled_tasks::disable_scheduled_task,
             scheduled_tasks::run_scheduled_task,
             scheduled_tasks::delete_scheduled_task,
+            startup_items::get_startup_items,
+            startup_items::enable_startup_item,
+            startup_items::disable_startup_item,
+            startup_items::delete_startup_item,
+            startup_items::add_startup_item,
             // SQLite 查看器命令
             sqlite_viewer::sqlite_list_tables,
             sqlite_viewer::sqlite_get_schema,

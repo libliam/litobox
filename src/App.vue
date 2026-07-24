@@ -85,6 +85,7 @@ import HotkeyView from '@/views/HotkeyView.vue'
 import HostsView from '@/views/HostsView.vue'
 import NetworkConnections from '@/views/NetworkConnections.vue'
 import ScheduledTasksView from '@/views/ScheduledTasksView.vue'
+import StartupItemsView from '@/views/StartupItemsView.vue'
 import CommandPalette from '@/components/CommandPalette.vue'
 import { ConfirmDialogWrapper } from '@/composables/useConfirmDialog'
 
@@ -145,6 +146,7 @@ const toolComponentMap: Record<string, any> = {
   hostsManager: HostsView,
   networkConnections: NetworkConnections,
   scheduledTasks: ScheduledTasksView,
+  startupItems: StartupItemsView,
 }
 
 const store = useToolboxStore()

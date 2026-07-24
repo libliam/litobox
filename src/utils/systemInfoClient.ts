@@ -362,6 +362,44 @@ export function deleteScheduledTask(taskName: string, taskPath: string): Promise
   return invoke<TaskOpResult>('delete_scheduled_task', { taskName, taskPath })
 }
 
+// ============ 开机启动项管理 ============
+
+export interface StartupItemInfo {
+  name: string
+  command: string
+  location: string
+  source: string       // "registry" | "startup_folder"
+  enabled: boolean
+  is_system: boolean
+}
+
+export interface StartupOpResult {
+  success: boolean
+  item_name: string
+  action: string
+  message: string
+}
+
+export function getStartupItems(): Promise<StartupItemInfo[]> {
+  return invoke<StartupItemInfo[]>('get_startup_items')
+}
+
+export function enableStartupItem(name: string, location: string, source: string): Promise<StartupOpResult> {
+  return invoke<StartupOpResult>('enable_startup_item', { name, location, source })
+}
+
+export function disableStartupItem(name: string, location: string, source: string): Promise<StartupOpResult> {
+  return invoke<StartupOpResult>('disable_startup_item', { name, location, source })
+}
+
+export function deleteStartupItem(name: string, location: string, source: string): Promise<StartupOpResult> {
+  return invoke<StartupOpResult>('delete_startup_item', { name, location, source })
+}
+
+export function addStartupItem(name: string, command: string, source: string): Promise<StartupOpResult> {
+  return invoke<StartupOpResult>('add_startup_item', { name, command, source })
+}
+
 /**
  * 前端镜像触发器格式化（与 Rust format_trigger_brief 一致），用于详情面板渲染
  */
