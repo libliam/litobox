@@ -312,7 +312,7 @@ const exportCsv = async () => {
     const { invoke } = await import('@tauri-apps/api/core')
     const savedPath = await invoke<string>('save_text_with_dialog', { content: csv, filename })
     if (savedPath) {
-      ElMessage.success('CSV 已导出')
+      ElMessage.success(`已导出到: ${savedPath}`)
     }
   } catch (e) {
     ElMessage.error('导出失败: ' + String(e))

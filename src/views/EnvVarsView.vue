@@ -464,13 +464,20 @@ const exportCsv = async () => {
   const scope = activeTab.value === 'system' ? '系统' : '用户'
   const rows = filteredVars.value.map(v => `${v.name},"${v.value.replace(/"/g, '""')}",${scope}`)
   const csv = BOM + header + '\n' + rows.join('\n')
-  const blob = new Blob([csv], { type: 'text/csv' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `环境变量_${activeTab.value}_${new Date().toISOString().slice(0, 10)}.csv`
-  a.click()
-  URL.revokeObjectURL(url)
+
+  const now = new Date()
+  const pad = (n: number) => n.toString().padStart(2, '0')
+  const filename = `环境变量_${activeTab.value}_${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.csv`
+
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    const savedPath = await invoke<string>('save_text_with_dialog', { content: csv, filename })
+    if (savedPath) {
+      ElMessage.success(`已导出到: ${savedPath}`)
+    }
+  } catch (e) {
+    ElMessage.error('导出失败: ' + String(e))
+  }
 }
 
 onMounted(() => {
