@@ -70,13 +70,55 @@ fn run_powershell(script: &str) -> Result<String, String> {
 
 #[cfg(target_os = "windows")]
 mod memory_ops {
-    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+    use std::mem;
+    use windows_sys::Win32::Foundation::{CloseHandle, FALSE, HANDLE};
     use windows_sys::Win32::System::Diagnostics::ToolHelp::{
         CreateToolhelp32Snapshot, Process32First, Process32Next, PROCESSENTRY32, TH32CS_SNAPPROCESS,
     };
     use windows_sys::Win32::System::Threading::{
         OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_SET_QUOTA,
     };
+
+    #[repr(C)]
+    struct PROCESS_MEMORY_COUNTERS {
+        cb: u32,
+        PageFaultCount: u32,
+        PeakWorkingSetSize: usize,
+        WorkingSetSize: usize,
+        QuotaPeakPagedPoolUsage: usize,
+        QuotaPagedPoolUsage: usize,
+        QuotaPeakNonPagedPoolUsage: usize,
+        QuotaNonPagedPoolUsage: usize,
+        PagefileUsage: usize,
+        PeakPagefileUsage: usize,
+    }
+
+    #[link(name = "psapi")]
+    extern "system" {
+        fn GetProcessMemoryInfo(
+            hProcess: HANDLE,
+            ppsmemCounters: *mut PROCESS_MEMORY_COUNTERS,
+            cb: u32,
+        ) -> i32;
+    }
+
+    fn get_process_working_set(pid: u32) -> u64 {
+        unsafe {
+            let handle = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
+            if handle.is_null() {
+                return 0;
+            }
+            let mut counters: PROCESS_MEMORY_COUNTERS = mem::zeroed();
+            counters.cb = mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
+            let ret = GetProcessMemoryInfo(handle, &mut counters, counters.cb);
+            CloseHandle(handle);
+            if ret == 0 {
+                0
+            } else {
+                counters.WorkingSetSize as u64
+            }
+        }
+    }
 
     /// 获取所有进程的工作集总和（字节）
     pub fn get_total_working_set() -> u64 {
@@ -86,15 +128,14 @@ mod memory_ops {
             if snapshot as isize == -1 {
                 return 0;
             }
-            let mut pe: PROCESSENTRY32 = std::mem::zeroed();
-            pe.dwSize = std::mem::size_of::<PROCESSENTRY32>() as u32;
+            let mut pe: PROCESSENTRY32 = mem::zeroed();
+            pe.dwSize = mem::size_of::<PROCESSENTRY32>() as u32;
             if Process32First(snapshot, &mut pe) != 0 {
                 loop {
-                    let working_set = std::mem::transmute::<[u32; 2], u64>([
-                        pe.cntUsage as u32,
-                        pe.cntThreads as u32,
-                    ]);
-                    total += working_set;
+                    let pid = pe.th32ProcessID;
+                    if pid != 0 {
+                        total += get_process_working_set(pid);
+                    }
                     if Process32Next(snapshot, &mut pe) == 0 {
                         break;
                     }
@@ -112,38 +153,35 @@ mod memory_ops {
         let mut total: u32 = 0;
         let mut skipped: u32 = 0;
 
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn SetProcessWorkingSetSize(
+                hProcess: HANDLE,
+                dwMinimumWorkingSetSize: usize,
+                dwMaximumWorkingSetSize: usize,
+            ) -> i32;
+        }
+
         unsafe {
             let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
             if snapshot as isize == -1 {
                 return (0, 0, 0);
             }
-            let mut pe: PROCESSENTRY32 = std::mem::zeroed();
-            pe.dwSize = std::mem::size_of::<PROCESSENTRY32>() as u32;
+            let mut pe: PROCESSENTRY32 = mem::zeroed();
+            pe.dwSize = mem::size_of::<PROCESSENTRY32>() as u32;
             if Process32First(snapshot, &mut pe) != 0 {
                 loop {
                     total += 1;
                     let pid = pe.th32ProcessID;
                     if pid != 0 {
-                        let before = std::mem::transmute::<[u32; 2], u64>([
-                            pe.cntUsage as u32,
-                            pe.cntThreads as u32,
-                        ]);
+                        let before = get_process_working_set(pid);
 
                         let handle = OpenProcess(
                             PROCESS_QUERY_INFORMATION | PROCESS_SET_QUOTA,
-                            0,
+                            FALSE,
                             pid,
                         );
                         if !handle.is_null() {
-                            #[link(name = "kernel32")]
-                            extern "system" {
-                                fn SetProcessWorkingSetSize(
-                                    hProcess: HANDLE,
-                                    dwMinimumWorkingSetSize: usize,
-                                    dwMaximumWorkingSetSize: usize,
-                                ) -> i32;
-                            }
-
                             // -1,-1 参数等同于 EmptyWorkingSet
                             let ret = SetProcessWorkingSetSize(handle, !0, !0);
                             if ret != 0 {
