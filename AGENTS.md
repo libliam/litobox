@@ -153,36 +153,10 @@ if (!ok) return
 
 ### CSV 导出规范（所有导出功能必须遵循）
 
-```typescript
-// 模板：直接复制后替换 header、rows、文件名前缀即可
-const exportCsv = async () => {
-  const BOM = '\uFEFF'
-  const header = '列1,列2,列3'
-  const rows = data.value.map(item => `${item.a},"${item.b.replace(/"/g, '""')}",${item.c}`)
-  const csv = BOM + header + '\n' + rows.join('\n')
-
-  const now = new Date()
-  const pad = (n: number) => n.toString().padStart(2, '0')
-  const filename = `文件名前缀_${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.csv`
-
-  try {
-    const { invoke } = await import('@tauri-apps/api/core')
-    const savedPath = await invoke<string>('save_text_with_dialog', { content: csv, filename })
-    if (savedPath) {
-      ElMessage.success(`已导出到: ${savedPath}`)
-    }
-  } catch (e) {
-    ElMessage.error('导出失败: ' + String(e))
-  }
-}
-```
-
-**关键要点**：
-- 使用 `save_text_with_dialog` 后端命令（弹出保存对话框，用户选位置），**禁止**使用浏览器 blob 下载
-- 必须显示完整保存路径：`已导出到: ${savedPath}`（用户能确认文件保存在哪）
-- BOM 前缀 `\uFEFF` 确保 Excel 正确识别 UTF-8 编码
-- 包含逗号或换行的字段用双引号包裹，内部双引号转义为 `""`
-- 时间戳精确到秒，避免多次导出同名文件覆盖
+- 使用 `save_text_with_dialog` 后端命令弹出保存对话框，**禁止**浏览器 blob 自动下载
+- 必须显示完整保存路径：`ElMessage.success(\`已导出到: ${savedPath}\`)`
+- BOM 前缀 `\uFEFF` 确保 Excel 正确识别 UTF-8
+- 文件名带时间戳到秒，避免覆盖；含逗号/换行的字段用双引号包裹并转义
 
 ## 后端开发指南
 
