@@ -69,7 +69,7 @@ fn ps_escape(s: &str) -> String {
 }
 
 /// 解析操作结果输出
-fn parse_op_result(raw: &str, action: &str) -> EnvVarResult {
+fn parse_op_result(raw: &str, _action: &str) -> EnvVarResult {
     let trimmed = raw.trim();
     if trimmed.starts_with("SUCCESS:") {
         EnvVarResult {
@@ -122,73 +122,34 @@ $sysVars = Get-EnvFromReg 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manage
 
 /// 设置/新增环境变量
 fn build_set_script(name: &str, value: &str, scope: &str) -> String {
-    let reg_path = match scope {
-        "system" => r"HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
-        _ => r"HKCU:\Environment",
-    };
     format!(
         r#"$ErrorActionPreference = 'Stop'
-
-Add-Type -Name User32 -Namespace Win32 -MemberDefinition @'
-[DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
-public static extern IntPtr SendMessageTimeout(
-    IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam,
-    uint fuFlags, uint uTimeout, out IntPtr lpdwResult);
-'@
-
 try {{
-    $regPath = '{reg_path}'
-    $name = '{name}'
-    $value = '{value}'
-    Set-ItemProperty -Path $regPath -Name $name -Value $value -Type String -Force
-    # 广播环境变量变更通知
-    $HWND_BROADCAST = [IntPtr]0xffff
-    $WM_SETTINGCHANGE = 0x001a
-    $SMTO_ABORTIFHUNG = 0x0002
-    $result = [System.IntPtr]::Zero
-    [User32]::SendMessageTimeout($HWND_BROADCAST, $WM_SETTINGCHANGE, [IntPtr]::Zero, [IntPtr]::Zero, $SMTO_ABORTIFHUNG, 5000, [ref]$result) | Out-Null
+    $target = if ('{scope}' -eq 'system') {{ [EnvironmentVariableTarget]::Machine }} else {{ [EnvironmentVariableTarget]::User }}
+    [Environment]::SetEnvironmentVariable('{name}', '{value}', $target)
     Write-Output 'SUCCESS:已保存'
 }} catch {{
     Write-Output "ERROR:$($_.Exception.Message)"
 }}"#,
-        reg_path = reg_path,
         name = ps_escape(name),
         value = ps_escape(value),
+        scope = scope,
     )
 }
 
 /// 删除环境变量
 fn build_delete_script(name: &str, scope: &str) -> String {
-    let reg_path = match scope {
-        "system" => r"HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
-        _ => r"HKCU:\Environment",
-    };
     format!(
         r#"$ErrorActionPreference = 'Stop'
-
-Add-Type -Name User32 -Namespace Win32 -MemberDefinition @'
-[DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
-public static extern IntPtr SendMessageTimeout(
-    IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam,
-    uint fuFlags, uint uTimeout, out IntPtr lpdwResult);
-'@
-
 try {{
-    $regPath = '{reg_path}'
-    $name = '{name}'
-    Remove-ItemProperty -Path $regPath -Name $name -Force -ErrorAction Stop
-    # 广播环境变量变更通知
-    $HWND_BROADCAST = [IntPtr]0xffff
-    $WM_SETTINGCHANGE = 0x001a
-    $SMTO_ABORTIFHUNG = 0x0002
-    $result = [System.IntPtr]::Zero
-    [User32]::SendMessageTimeout($HWND_BROADCAST, $WM_SETTINGCHANGE, [IntPtr]::Zero, [IntPtr]::Zero, $SMTO_ABORTIFHUNG, 5000, [ref]$result) | Out-Null
+    $target = if ('{scope}' -eq 'system') {{ [EnvironmentVariableTarget]::Machine }} else {{ [EnvironmentVariableTarget]::User }}
+    [Environment]::SetEnvironmentVariable('{name}', $null, $target)
     Write-Output 'SUCCESS:已删除'
 }} catch {{
     Write-Output "ERROR:$($_.Exception.Message)"
 }}"#,
-        reg_path = reg_path,
         name = ps_escape(name),
+        scope = scope,
     )
 }
 
@@ -315,20 +276,21 @@ mod tests {
     fn test_build_set_script_contains_name() {
         let script = build_set_script("MY_VAR", r"C:\test", "user");
         assert!(script.contains("MY_VAR"));
-        assert!(script.contains("HKCU"));
+        assert!(script.contains("SetEnvironmentVariable"));
     }
 
     #[test]
     fn test_build_set_script_system_scope() {
         let script = build_set_script("MY_VAR", r"C:\test", "system");
-        assert!(script.contains("HKLM"));
+        assert!(script.contains("Machine"));
     }
 
     #[test]
     fn test_build_delete_script_contains_name() {
         let script = build_delete_script("MY_VAR", "user");
         assert!(script.contains("MY_VAR"));
-        assert!(script.contains("Remove-ItemProperty"));
+        assert!(script.contains("SetEnvironmentVariable"));
+        assert!(script.contains("$null"));
     }
 
     #[test]
