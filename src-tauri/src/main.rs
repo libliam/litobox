@@ -24,6 +24,7 @@ mod network_connections;
 mod scheduled_tasks;
 mod startup_items;
 mod env_vars;
+mod boost;
 
 // ponytail: debug 模式输出日志到 stderr，release 模式编译时移除（零开销）
 macro_rules! debug_log {
@@ -144,6 +145,9 @@ fn main() {
             env_vars::get_env_vars,
             env_vars::set_env_var,
             env_vars::delete_env_var,
+            // 一键加速命令
+            boost::boost_scan,
+            boost::boost_execute,
             // SQLite 查看器命令
             sqlite_viewer::sqlite_list_tables,
             sqlite_viewer::sqlite_get_schema,

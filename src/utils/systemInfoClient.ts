@@ -429,6 +429,37 @@ export function deleteEnvVar(name: string, scope: string): Promise<EnvVarResult>
   return invoke<EnvVarResult>('delete_env_var', { name, scope })
 }
 
+// ============ 一键加速 ============
+
+export interface BoostScanResult {
+  memory_total: number
+  temp_size: number
+  temp_file_count: number
+  recycle_size: number
+}
+
+export interface BoostItemResult {
+  name: string
+  success: boolean
+  freed: number
+  duration_ms: number
+  message: string
+}
+
+export interface BoostExecuteResult {
+  items: BoostItemResult[]
+  total_freed: number
+  total_duration_ms: number
+}
+
+export function boostScan(): Promise<BoostScanResult> {
+  return invoke<BoostScanResult>('boost_scan')
+}
+
+export function boostExecute(): Promise<BoostExecuteResult> {
+  return invoke<BoostExecuteResult>('boost_execute')
+}
+
 /**
  * 前端镜像触发器格式化（与 Rust format_trigger_brief 一致），用于详情面板渲染
  */
