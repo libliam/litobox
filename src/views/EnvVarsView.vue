@@ -124,10 +124,12 @@
           <el-table-column label="操作" width="80" fixed="right" align="center">
             <template #default="{ row }">
               <el-button
+                v-if="row.name !== 'Path' && row.name !== 'PATH'"
                 type="danger" size="small" plain
                 :loading="deletingRow === row.rowKey"
                 @click="handleDelete(row)"
               >删除</el-button>
+              <span v-else class="path-protected" title="PATH 为系统关键变量，不可删除">受保护</span>
             </template>
           </el-table-column>
         </el-table>
@@ -522,6 +524,11 @@ onMounted(() => {
 .var-name { font-weight: 500; cursor: pointer; }
 .var-name.is-path { color: var(--accent-cyan); }
 .var-value { cursor: pointer; }
+
+.path-protected {
+  font-size: 12px;
+  color: var(--text-muted);
+}
 
 .path-preview {
   font-size: 12px;
