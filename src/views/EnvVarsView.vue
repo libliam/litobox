@@ -77,6 +77,7 @@
                 <span
                   class="var-name"
                   :class="{ 'is-path': row.name === 'Path' || row.name === 'PATH' }"
+                  title="双击编辑变量名"
                   @dblclick="startEdit(row, 'name')"
                 >{{ row.name }}</span>
               </template>
@@ -100,7 +101,7 @@
                     <el-button size="small" @click="pathExpanded = null">取消</el-button>
                   </div>
                 </div>
-                <span v-else class="path-preview" @dblclick="expandPath(row)">
+                <span v-else class="path-preview" title="双击展开逐行编辑 PATH" @dblclick="expandPath(row)">
                   {{ row.value.split(';').join(' ; ') }}
                 </span>
               </template>
@@ -116,7 +117,7 @@
                   />
                 </template>
                 <template v-else>
-                  <span class="var-value" @dblclick="startEdit(row, 'value')">{{ row.value }}</span>
+                  <span class="var-value" title="双击编辑变量值" @dblclick="startEdit(row, 'value')">{{ row.value }}</span>
                 </template>
               </template>
             </template>
@@ -140,7 +141,7 @@
     <div v-if="data.user.length || data.system.length" class="tool-card">
       <div class="card-body">
         <div class="bottom-bar">
-          <span class="group-label">双击变量名或值可编辑，PATH 变量双击可展开逐行编辑</span>
+          <span class="group-label">💡 鼠标悬停查看提示，双击变量名/值编辑，PATH 变量双击展开逐行编辑</span>
           <el-button size="small" @click="exportCsv">导出 CSV</el-button>
         </div>
       </div>
@@ -521,9 +522,32 @@ onMounted(() => {
 .tab-item:hover { color: var(--text-primary); }
 .tab-item.active { color: var(--accent-cyan); border-bottom-color: var(--accent-cyan); }
 
-.var-name { font-weight: 500; cursor: pointer; }
+.var-name {
+  font-weight: 500;
+  cursor: pointer;
+  position: relative;
+}
+.var-name:hover {
+  color: var(--accent-cyan);
+}
+.var-name:hover::after {
+  content: ' ✎';
+  font-size: 11px;
+  color: var(--text-muted);
+}
 .var-name.is-path { color: var(--accent-cyan); }
-.var-value { cursor: pointer; }
+.var-value {
+  cursor: pointer;
+  position: relative;
+}
+.var-value:hover {
+  color: var(--accent-cyan);
+}
+.var-value:hover::after {
+  content: ' ✎';
+  font-size: 11px;
+  color: var(--text-muted);
+}
 
 .path-protected {
   font-size: 12px;
@@ -536,8 +560,16 @@ onMounted(() => {
   font-family: 'Consolas', 'Courier New', monospace;
   cursor: pointer;
   word-break: break-all;
+  position: relative;
 }
-.path-preview:hover { color: var(--accent-cyan); }
+.path-preview:hover {
+  color: var(--accent-cyan);
+}
+.path-preview:hover::after {
+  content: ' ✎ 展开编辑';
+  font-size: 11px;
+  color: var(--text-muted);
+}
 
 .path-editor {
   background: var(--bg-input);
