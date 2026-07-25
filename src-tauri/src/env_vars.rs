@@ -122,34 +122,40 @@ $sysVars = Get-EnvFromReg 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manage
 
 /// 设置/新增环境变量
 fn build_set_script(name: &str, value: &str, scope: &str) -> String {
+    let reg_path = match scope {
+        "system" => r"HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
+        _ => r"HKCU:\Environment",
+    };
     format!(
         r#"$ErrorActionPreference = 'Stop'
 try {{
-    $target = if ('{scope}' -eq 'system') {{ [EnvironmentVariableTarget]::Machine }} else {{ [EnvironmentVariableTarget]::User }}
-    [Environment]::SetEnvironmentVariable('{name}', '{value}', $target)
+    Set-ItemProperty -Path '{reg_path}' -Name '{name}' -Value '{value}' -Type String -Force
     Write-Output 'SUCCESS:已保存'
 }} catch {{
     Write-Output "ERROR:$($_.Exception.Message)"
 }}"#,
+        reg_path = reg_path,
         name = ps_escape(name),
         value = ps_escape(value),
-        scope = scope,
     )
 }
 
 /// 删除环境变量
 fn build_delete_script(name: &str, scope: &str) -> String {
+    let reg_path = match scope {
+        "system" => r"HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
+        _ => r"HKCU:\Environment",
+    };
     format!(
         r#"$ErrorActionPreference = 'Stop'
 try {{
-    $target = if ('{scope}' -eq 'system') {{ [EnvironmentVariableTarget]::Machine }} else {{ [EnvironmentVariableTarget]::User }}
-    [Environment]::SetEnvironmentVariable('{name}', $null, $target)
+    Remove-ItemProperty -Path '{reg_path}' -Name '{name}' -Force -ErrorAction Stop
     Write-Output 'SUCCESS:已删除'
 }} catch {{
     Write-Output "ERROR:$($_.Exception.Message)"
 }}"#,
+        reg_path = reg_path,
         name = ps_escape(name),
-        scope = scope,
     )
 }
 
@@ -276,21 +282,21 @@ mod tests {
     fn test_build_set_script_contains_name() {
         let script = build_set_script("MY_VAR", r"C:\test", "user");
         assert!(script.contains("MY_VAR"));
-        assert!(script.contains("SetEnvironmentVariable"));
+        assert!(script.contains("Set-ItemProperty"));
+        assert!(script.contains("HKCU"));
     }
 
     #[test]
     fn test_build_set_script_system_scope() {
         let script = build_set_script("MY_VAR", r"C:\test", "system");
-        assert!(script.contains("Machine"));
+        assert!(script.contains("HKLM"));
     }
 
     #[test]
     fn test_build_delete_script_contains_name() {
         let script = build_delete_script("MY_VAR", "user");
         assert!(script.contains("MY_VAR"));
-        assert!(script.contains("SetEnvironmentVariable"));
-        assert!(script.contains("$null"));
+        assert!(script.contains("Remove-ItemProperty"));
     }
 
     #[test]
