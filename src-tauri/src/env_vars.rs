@@ -128,6 +128,14 @@ fn build_set_script(name: &str, value: &str, scope: &str) -> String {
     };
     format!(
         r#"$ErrorActionPreference = 'Stop'
+
+Add-Type -Name User32 -Namespace Win32 -MemberDefinition @'
+[DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+public static extern IntPtr SendMessageTimeout(
+    IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam,
+    uint fuFlags, uint uTimeout, out IntPtr lpdwResult);
+'@
+
 try {{
     $regPath = '{reg_path}'
     $name = '{name}'
@@ -142,14 +150,7 @@ try {{
     Write-Output 'SUCCESS:已保存'
 }} catch {{
     Write-Output "ERROR:$($_.Exception.Message)"
-}}
-
-Add-Type -Name User32 -Namespace Win32 -MemberDefinition @'
-[DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
-public static extern IntPtr SendMessageTimeout(
-    IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam,
-    uint fuFlags, uint uTimeout, out IntPtr lpdwResult);
-'@"#,
+}}"#,
         reg_path = reg_path,
         name = ps_escape(name),
         value = ps_escape(value),
@@ -164,6 +165,14 @@ fn build_delete_script(name: &str, scope: &str) -> String {
     };
     format!(
         r#"$ErrorActionPreference = 'Stop'
+
+Add-Type -Name User32 -Namespace Win32 -MemberDefinition @'
+[DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+public static extern IntPtr SendMessageTimeout(
+    IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam,
+    uint fuFlags, uint uTimeout, out IntPtr lpdwResult);
+'@
+
 try {{
     $regPath = '{reg_path}'
     $name = '{name}'
@@ -177,14 +186,7 @@ try {{
     Write-Output 'SUCCESS:已删除'
 }} catch {{
     Write-Output "ERROR:$($_.Exception.Message)"
-}}
-
-Add-Type -Name User32 -Namespace Win32 -MemberDefinition @'
-[DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
-public static extern IntPtr SendMessageTimeout(
-    IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam,
-    uint fuFlags, uint uTimeout, out IntPtr lpdwResult);
-'@"#,
+}}"#,
         reg_path = reg_path,
         name = ps_escape(name),
     )
