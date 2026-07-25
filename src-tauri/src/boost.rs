@@ -283,31 +283,36 @@ try {
 // ============ Tauri 命令 ============
 
 #[tauri::command]
-pub fn boost_scan() -> Result<BoostScanResult, String> {
-    debug_log!("[boost] 开始扫描");
+pub async fn boost_scan() -> Result<BoostScanResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        debug_log!("[boost] 开始扫描");
 
-    let memory_total = memory_ops::get_total_working_set();
-    let (temp_size, temp_file_count) = scan_temp_files();
-    let recycle_size = recycle_bin_scan().unwrap_or(0);
+        let memory_total = memory_ops::get_total_working_set();
+        let (temp_size, temp_file_count) = scan_temp_files();
+        let recycle_size = recycle_bin_scan().unwrap_or(0);
 
-    debug_log!(
-        "[boost] 扫描完成: memory={}, temp={}, temp_files={}, recycle={}",
-        memory_total,
-        temp_size,
-        temp_file_count,
-        recycle_size
-    );
+        debug_log!(
+            "[boost] 扫描完成: memory={}, temp={}, temp_files={}, recycle={}",
+            memory_total,
+            temp_size,
+            temp_file_count,
+            recycle_size
+        );
 
-    Ok(BoostScanResult {
-        memory_total,
-        temp_size,
-        temp_file_count,
-        recycle_size,
+        Ok(BoostScanResult {
+            memory_total,
+            temp_size,
+            temp_file_count,
+            recycle_size,
+        })
     })
+    .await
+    .map_err(|e| format!("扫描失败: {}", e))?
 }
 
 #[tauri::command]
-pub fn boost_execute() -> Result<BoostExecuteResult, String> {
+pub async fn boost_execute() -> Result<BoostExecuteResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
     debug_log!("[boost] 开始执行一键加速");
 
     let start = std::time::Instant::now();
@@ -382,6 +387,9 @@ pub fn boost_execute() -> Result<BoostExecuteResult, String> {
         total_freed,
         total_duration_ms: total_duration,
     })
+    })
+    .await
+    .map_err(|e| format!("加速失败: {}", e))?
 }
 
 // ============ 单元测试 ============
