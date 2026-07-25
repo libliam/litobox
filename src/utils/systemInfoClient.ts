@@ -431,11 +431,18 @@ export function deleteEnvVar(name: string, scope: string): Promise<EnvVarResult>
 
 // ============ 一键加速 ============
 
+export interface ProcessMemoryInfo {
+  name: string
+  pid: number
+  working_set: number
+}
+
 export interface BoostScanResult {
   memory_total: number
   temp_size: number
   temp_file_count: number
   recycle_size: number
+  processes: ProcessMemoryInfo[]
 }
 
 export interface BoostItemResult {

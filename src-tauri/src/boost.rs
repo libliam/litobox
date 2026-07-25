@@ -25,11 +25,19 @@ macro_rules! debug_log {
 // ============ 数据结构 ============
 
 #[derive(Debug, Clone, Serialize)]
+pub struct ProcessMemoryInfo {
+    pub name: String,
+    pub pid: u32,
+    pub working_set: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct BoostScanResult {
     pub memory_total: u64,       // 所有进程工作集总和（字节）
     pub temp_size: u64,          // 临时文件总大小（字节）
     pub temp_file_count: u32,    // 临时文件数量
     pub recycle_size: u64,       // 回收站大小（字节）
+    pub processes: Vec<ProcessMemoryInfo>, // 进程内存详情列表
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -144,6 +152,45 @@ mod memory_ops {
             CloseHandle(snapshot);
         }
         total
+    }
+
+    /// 获取所有进程的内存信息列表
+    pub fn get_process_memory_list() -> Vec<super::ProcessMemoryInfo> {
+        let mut list = Vec::new();
+        unsafe {
+            let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+            if snapshot as isize == -1 {
+                return list;
+            }
+            let mut pe: PROCESSENTRY32 = mem::zeroed();
+            pe.dwSize = mem::size_of::<PROCESSENTRY32>() as u32;
+            if Process32First(snapshot, &mut pe) != 0 {
+                loop {
+                    let pid = pe.th32ProcessID;
+                    if pid != 0 {
+                        let ws = get_process_working_set(pid);
+                        if ws > 0 {
+                            let name = pe.szExeFile
+                                .iter()
+                                .take_while(|&&c| c != 0)
+                                .map(|&c| c as u8 as char)
+                                .collect::<String>();
+                            list.push(super::ProcessMemoryInfo {
+                                name,
+                                pid,
+                                working_set: ws,
+                            });
+                        }
+                    }
+                    if Process32Next(snapshot, &mut pe) == 0 {
+                        break;
+                    }
+                }
+            }
+            CloseHandle(snapshot);
+        }
+        list.sort_by(|a, b| b.working_set.cmp(&a.working_set));
+        list
     }
 
     /// 对所有进程调用 EmptyWorkingSet，返回释放的内存总量（字节）
@@ -325,16 +372,18 @@ pub async fn boost_scan() -> Result<BoostScanResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
         debug_log!("[boost] 开始扫描");
 
-        let memory_total = memory_ops::get_total_working_set();
+        let processes = memory_ops::get_process_memory_list();
+        let memory_total: u64 = processes.iter().map(|p| p.working_set).sum();
         let (temp_size, temp_file_count) = scan_temp_files();
         let recycle_size = recycle_bin_scan().unwrap_or(0);
 
         debug_log!(
-            "[boost] 扫描完成: memory={}, temp={}, temp_files={}, recycle={}",
+            "[boost] 扫描完成: memory={}, temp={}, temp_files={}, recycle={}, processes={}",
             memory_total,
             temp_size,
             temp_file_count,
-            recycle_size
+            recycle_size,
+            processes.len()
         );
 
         Ok(BoostScanResult {
@@ -342,6 +391,7 @@ pub async fn boost_scan() -> Result<BoostScanResult, String> {
             temp_size,
             temp_file_count,
             recycle_size,
+            processes,
         })
     })
     .await

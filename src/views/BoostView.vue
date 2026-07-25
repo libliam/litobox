@@ -2,10 +2,11 @@
   <div class="tool-container">
     <!-- 统计卡片 -->
     <div v-if="scanResult" class="stats-row">
-      <div class="stat-card memory">
+      <div class="stat-card memory" @click="showMemoryDetail = !showMemoryDetail">
         <span class="stat-icon">💾</span>
         <span class="stat-number">{{ formatBytes(scanResult.memory_total) }}</span>
         <span class="stat-label">可释放内存</span>
+        <span class="stat-arrow">{{ showMemoryDetail ? '▼' : '▶' }}</span>
       </div>
       <div class="stat-card temp">
         <span class="stat-icon">📁</span>
@@ -16,6 +17,26 @@
         <span class="stat-icon">🗑️</span>
         <span class="stat-number">{{ formatBytes(scanResult.recycle_size) }}</span>
         <span class="stat-label">回收站</span>
+      </div>
+    </div>
+
+    <!-- 内存详情表格 -->
+    <div v-if="showMemoryDetail && scanResult" class="tool-card">
+      <div class="card-header">
+        <span class="card-title">进程内存详情</span>
+        <span class="card-sub">{{ scanResult.processes.length }} 个进程</span>
+      </div>
+      <div class="card-body">
+        <el-table :data="scanResult.processes" max-height="400" size="small" border stripe>
+          <el-table-column prop="name" label="进程名称" width="200" />
+          <el-table-column prop="pid" label="PID" width="80" />
+          <el-table-column prop="working_set" label="工作集" width="140">
+            <template #default="{ row }">{{ formatBytes(row.working_set) }}</template>
+          </el-table-column>
+          <el-table-column label="占比" width="100">
+            <template #default="{ row }">{{ ((row.working_set / scanResult.memory_total) * 100).toFixed(1) }}%</template>
+          </el-table-column>
+        </el-table>
       </div>
     </div>
 
@@ -89,6 +110,7 @@ const executing = ref(false)
 const scanResult = ref<BoostScanResult | null>(null)
 const executeResult = ref<BoostExecuteResult | null>(null)
 const error = ref('')
+const showMemoryDetail = ref(false)
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B'
@@ -146,6 +168,14 @@ async function handleExecute() {
   border: 1px solid var(--border-color);
 }
 
+.stat-card.memory {
+  cursor: pointer;
+}
+
+.stat-card.memory:hover {
+  border-color: var(--accent-color);
+}
+
 .stat-icon {
   font-size: 24px;
   margin-bottom: 8px;
@@ -161,6 +191,12 @@ async function handleExecute() {
 .stat-label {
   font-size: 12px;
   color: var(--text-secondary);
+  margin-top: 4px;
+}
+
+.stat-arrow {
+  font-size: 12px;
+  color: var(--accent-color);
   margin-top: 4px;
 }
 
