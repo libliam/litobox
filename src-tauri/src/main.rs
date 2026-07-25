@@ -23,6 +23,7 @@ mod hosts_manager;
 mod network_connections;
 mod scheduled_tasks;
 mod startup_items;
+mod env_vars;
 
 // ponytail: debug 模式输出日志到 stderr，release 模式编译时移除（零开销）
 macro_rules! debug_log {
@@ -140,6 +141,9 @@ fn main() {
             startup_items::disable_startup_item,
             startup_items::delete_startup_item,
             startup_items::add_startup_item,
+            env_vars::get_env_vars,
+            env_vars::set_env_var,
+            env_vars::delete_env_var,
             // SQLite 查看器命令
             sqlite_viewer::sqlite_list_tables,
             sqlite_viewer::sqlite_get_schema,

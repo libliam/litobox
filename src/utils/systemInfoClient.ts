@@ -400,6 +400,35 @@ export function addStartupItem(name: string, command: string, source: string): P
   return invoke<StartupOpResult>('add_startup_item', { name, command, source })
 }
 
+// ============ 环境变量管理 ============
+
+export interface EnvVarInfo {
+  name: string
+  value: string
+}
+
+export interface EnvVarList {
+  user: EnvVarInfo[]
+  system: EnvVarInfo[]
+}
+
+export interface EnvVarResult {
+  success: boolean
+  message: string
+}
+
+export function getEnvVars(): Promise<EnvVarList> {
+  return invoke<EnvVarList>('get_env_vars')
+}
+
+export function setEnvVar(name: string, value: string, scope: string): Promise<EnvVarResult> {
+  return invoke<EnvVarResult>('set_env_var', { name, value, scope })
+}
+
+export function deleteEnvVar(name: string, scope: string): Promise<EnvVarResult> {
+  return invoke<EnvVarResult>('delete_env_var', { name, scope })
+}
+
 /**
  * 前端镜像触发器格式化（与 Rust format_trigger_brief 一致），用于详情面板渲染
  */
