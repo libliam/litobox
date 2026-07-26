@@ -351,7 +351,7 @@ try {
         $size = $item.ExtendedProperty("System.Size")
         if ($size) { $totalSize += [int64]$size }
     }
-    $recycleBin.Items() | ForEach-Object { Remove-Item $_.Path -Force -ErrorAction SilentlyContinue }
+    Clear-RecycleBin -Force -ErrorAction SilentlyContinue
     Write-Output $totalSize
 } catch {
     Write-Output "0"

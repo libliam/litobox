@@ -141,6 +141,7 @@ async function handleExecute() {
   try {
     executeResult.value = await boostExecute()
     ElMessage.success(`加速完成，总计释放 ${formatBytes(executeResult.value.total_freed)}`)
+    await handleScan()
   } catch (e) {
     error.value = String(e)
     ElMessage.error('加速失败: ' + String(e))
