@@ -585,6 +585,37 @@ body {
   border-color: var(--accent-red) !important;
 }
 
+/* Descriptions 描述列表（深色主题覆盖） */
+.el-descriptions {
+  --el-descriptions-item-label-bg-color: var(--bg-card);
+  --el-descriptions-bg-color: transparent;
+  --el-descriptions-text-color: var(--text-primary);
+  --el-border-color: var(--border-color);
+  --el-text-color-primary: var(--text-primary);
+  --el-text-color-secondary: var(--text-secondary);
+  --el-fill-color-light: var(--bg-input);
+}
+.el-descriptions__body {
+  background-color: transparent !important;
+}
+.el-descriptions .el-descriptions__label {
+  background-color: var(--bg-card) !important;
+  color: var(--text-secondary) !important;
+  font-weight: 500;
+}
+.el-descriptions .el-descriptions__cell {
+  color: var(--text-primary) !important;
+  background-color: transparent !important;
+}
+html.light .el-descriptions .el-descriptions__label {
+  background-color: #f8fafc !important;
+  color: #475569 !important;
+}
+html.light .el-descriptions .el-descriptions__cell {
+  background-color: #ffffff !important;
+  color: #1e293b !important;
+}
+
 
 
 /* 原生输入框样式（用于首页搜索框） */

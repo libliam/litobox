@@ -25,6 +25,7 @@ mod scheduled_tasks;
 mod startup_items;
 mod env_vars;
 mod boost;
+mod cert_reader;
 
 // ponytail: debug 模式输出日志到 stderr，release 模式编译时移除（零开销）
 macro_rules! debug_log {
@@ -148,6 +149,9 @@ fn main() {
             // 一键加速命令
             boost::boost_scan,
             boost::boost_execute,
+            cert_reader::read_cert_store,
+            cert_reader::get_cert_detail,
+            cert_reader::parse_cert_file,
             // SQLite 查看器命令
             sqlite_viewer::sqlite_list_tables,
             sqlite_viewer::sqlite_get_schema,

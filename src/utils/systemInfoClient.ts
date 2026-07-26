@@ -481,6 +481,58 @@ export function boostExecute(items?: string[]): Promise<BoostExecuteResult> {
   return invoke<BoostExecuteResult>('boost_execute', { items: items ?? null })
 }
 
+// ============ 证书查看器 ============
+
+export interface CertInfo {
+  subject: string
+  issuer: string
+  not_before: string
+  not_after: string
+  serial_number: string
+  thumbprint: string
+  store_name: string
+  has_private_key: boolean
+  is_expired: boolean
+}
+
+export interface CertStoreList {
+  personal: CertInfo[]
+  root: CertInfo[]
+  ca: CertInfo[]
+}
+
+export interface CertDetail {
+  subject: string
+  issuer: string
+  not_before: string
+  not_after: string
+  serial_number: string
+  version: string
+  thumbprint: string
+  thumbprint_sha256: string
+  san: string[]
+  key_usage: string[]
+  enhanced_key_usage: string[]
+  basic_constraints: string
+  signature_algorithm: string
+  public_key: string
+  raw_pem: string
+  is_expired: boolean
+  days_until_expiry: number
+}
+
+export function readCertStore(): Promise<CertStoreList> {
+  return invoke<CertStoreList>('read_cert_store')
+}
+
+export function getCertDetail(thumbprint: string, storeName: string): Promise<CertDetail> {
+  return invoke<CertDetail>('get_cert_detail', { thumbprint, storeName })
+}
+
+export function parseCertFile(filePath: string, password?: string): Promise<CertDetail> {
+  return invoke<CertDetail>('parse_cert_file', { filePath, password: password ?? null })
+}
+
 /**
  * 前端镜像触发器格式化（与 Rust format_trigger_brief 一致），用于详情面板渲染
  */

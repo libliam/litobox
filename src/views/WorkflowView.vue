@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="tool-container">
     <!-- Tab切换 -->
     <el-tabs v-model="activeTab" class="workflow-tabs">
@@ -715,9 +715,17 @@ async function executeStep(tool: string, action: string, input: string): Promise
     }
     case 'calculator':
       return executeCalculatorAction(action, input)
+    case 'certViewer':
+      return executeCertAction(action, input)
     default:
       return input
   }
+}
+
+// 证书查看器执行
+function executeCertAction(_action: string, input: string): string {
+  if (!input.trim()) return ''
+  return input
 }
 
 // 字符串处理 — 复用 stringUtils
