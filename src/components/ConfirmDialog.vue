@@ -44,11 +44,13 @@ const emit = defineEmits<{
 }>()
 
 const handleCancel = () => {
+  console.log('[ConfirmDialog.vue] handleCancel, emit update:visible + cancel')
   emit('update:visible', false)
   emit('cancel')
 }
 
 const handleConfirm = () => {
+  console.log('[ConfirmDialog.vue] handleConfirm, emit update:visible + confirm')
   emit('update:visible', false)
   emit('confirm')
 }

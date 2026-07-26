@@ -1276,7 +1276,7 @@ $synth.Dispose()
     Ok(())
 }
 
-fn tts_winrt_generate(text: &str, voice_name: Option<&str>, rate: i32, volume: i32, output_path: &str) -> Result<(), String> {
+fn tts_winrt_generate(text: &str, voice_name: Option<&str>, rate: i32, _volume: i32, output_path: &str) -> Result<(), String> {
     debug_log!("[tts_winrt] 开始生成, text_len={}, voice={:?}, rate={}, output={}",
         text.len(), voice_name, rate, output_path);
 

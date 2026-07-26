@@ -437,11 +437,25 @@ export interface ProcessMemoryInfo {
   working_set: number
 }
 
+export interface RecycleItemInfo {
+  name: string
+  size: number
+  path: string
+}
+
+export interface TempFileInfo {
+  name: string
+  size: number
+  path: string
+}
+
 export interface BoostScanResult {
   memory_total: number
   temp_size: number
   temp_file_count: number
+  temp_items: TempFileInfo[]
   recycle_size: number
+  recycle_items: RecycleItemInfo[]
   processes: ProcessMemoryInfo[]
 }
 
@@ -463,8 +477,8 @@ export function boostScan(): Promise<BoostScanResult> {
   return invoke<BoostScanResult>('boost_scan')
 }
 
-export function boostExecute(): Promise<BoostExecuteResult> {
-  return invoke<BoostExecuteResult>('boost_execute')
+export function boostExecute(items?: string[]): Promise<BoostExecuteResult> {
+  return invoke<BoostExecuteResult>('boost_execute', { items: items ?? null })
 }
 
 /**
