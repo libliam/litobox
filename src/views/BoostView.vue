@@ -48,10 +48,10 @@
       <div class="card-body">
         <div class="action-grid">
           <div class="action-group">
-            <el-button type="primary" @click="handleScan" :loading="scanning" :disabled="executing">
+            <el-button type="primary" @click="handleScan" :loading="scanning || executing" :disabled="executing">
               🔍 {{ scanning ? '扫描中...' : '扫描' }}
             </el-button>
-            <el-button type="success" @click="handleExecute" :loading="executing" :disabled="!scanResult">
+            <el-button type="success" @click="handleExecute" :loading="executing">
               ⚡ {{ executing ? '加速中...' : '一键加速' }}
             </el-button>
           </div>
@@ -135,7 +135,10 @@ async function handleScan() {
 }
 
 async function handleExecute() {
-  if (!scanResult.value) return
+  if (!scanResult.value) {
+    await handleScan()
+    if (!scanResult.value) return
+  }
   executing.value = true
   error.value = ''
   try {
