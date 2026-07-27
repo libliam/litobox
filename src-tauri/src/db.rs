@@ -22,7 +22,7 @@ fn do_init() -> Result<Connection, String> {
     Ok(conn)
 }
 
-fn with_conn<T, F: FnOnce(&mut Connection) -> Result<T, String>>(f: F) -> Result<T, String> {
+pub fn with_conn<T, F: FnOnce(&mut Connection) -> Result<T, String>>(f: F) -> Result<T, String> {
     let lock = get_conn()?;
     let mut conn = lock.lock().map_err(|e| e.to_string())?;
     f(&mut conn)
@@ -221,6 +221,18 @@ fn init_tables(conn: &Connection) -> Result<()> {
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS password_vault (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            url TEXT DEFAULT '',
+            username TEXT NOT NULL,
+            encrypted_password TEXT NOT NULL,
+            notes TEXT DEFAULT '',
+            salt TEXT NOT NULL,
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_password_vault_name ON password_vault(name);
     "#)?;
 
     // 迁移：旧版 snippets 表有 category 列但无 lang/note 列

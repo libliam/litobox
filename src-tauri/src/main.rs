@@ -26,6 +26,7 @@ mod startup_items;
 mod env_vars;
 mod boost;
 mod cert_reader;
+mod password_vault;
 
 // ponytail: debug 模式输出日志到 stderr，release 模式编译时移除（零开销）
 macro_rules! debug_log {
@@ -152,6 +153,18 @@ fn main() {
             cert_reader::read_cert_store,
             cert_reader::get_cert_detail,
             cert_reader::parse_cert_file,
+            // 密码保管箱命令
+            password_vault::pv_has_master_password,
+            password_vault::pv_set_master_password,
+            password_vault::pv_verify_master_password,
+            password_vault::pv_list_credentials,
+            password_vault::pv_search_credentials,
+            password_vault::pv_add_credential,
+            password_vault::pv_update_credential,
+            password_vault::pv_delete_credential,
+            password_vault::pv_reset_master_password,
+            password_vault::pv_import_credentials,
+            password_vault::pv_change_master_password,
             // SQLite 查看器命令
             sqlite_viewer::sqlite_list_tables,
             sqlite_viewer::sqlite_get_schema,
