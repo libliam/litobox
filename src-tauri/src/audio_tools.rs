@@ -1,8 +1,8 @@
+use encoding_rs;
 use serde::{Deserialize, Serialize};
 use std::io::Cursor;
 use std::os::windows::process::CommandExt;
 use tauri::Emitter;
-
 // ============ 数据结构 ============
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,6 +39,77 @@ pub struct CropResult {
     pub duration: f64,
 }
 
+// ============ 格式转换 ============
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConvertOptions {
+    pub output_format: String,
+    pub bitrate: Option<u32>,
+    pub sample_rate: Option<u32>,
+    pub channels: Option<u16>,
+    pub output_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConvertResult {
+    pub output_path: String,
+    pub output_size: u64,
+}
+
+// ============ 音频压缩 ============
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompressOptions {
+    pub mode: String,
+    pub bitrate: Option<u32>,
+    pub quality: Option<String>,
+    pub sample_rate: Option<u32>,
+    pub output_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompressResult {
+    pub output_path: String,
+    pub output_size: u64,
+    pub original_size: u64,
+}
+
+// ============ 音频合并 ============
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MergeOptions {
+    pub input_paths: Vec<String>,
+    pub output_format: String,
+    pub bitrate: u32,
+    pub mode: String,
+    pub output_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MergeResult {
+    pub output_path: String,
+    pub output_size: u64,
+    pub duration: f64,
+}
+
+// ============ 变速变调 ============
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpeedChangeOptions {
+    pub speed: f64,
+    pub keep_pitch: bool,
+    pub output_format: String,
+    pub bitrate: u32,
+    pub output_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpeedChangeResult {
+    pub output_path: String,
+    pub output_size: u64,
+    pub duration: f64,
+}
+
 // ============ 内部函数 ============
 
 /// 快速探测音频元信息（不完整解码，仅读取头部/首帧）
@@ -53,7 +124,7 @@ fn probe_audio(path: &str) -> Result<(u32, u16, f64), String> {
         return Ok((spec.sample_rate, spec.channels, duration));
     }
 
-    // MP3: 用 symphonia 探测首帧获取参数
+    // 非 WAV 格式: 用 symphonia 探测首帧获取参数
     let file = std::fs::File::open(path)
         .map_err(|e| format!("无法打开文件: {}", e))?;
     let mss = symphonia::core::io::MediaSourceStream::new(Box::new(file), Default::default());
@@ -95,7 +166,7 @@ fn decode_audio_full(path: &str) -> Result<(Vec<f32>, u32, u16), String> {
 
     let probed = symphonia::default::get_probe()
         .format(&hint, mss, &format_opts, &metadata_opts)
-        .map_err(|e| format!("不支持的音频格式，仅支持 MP3/WAV: {}", e))?;
+        .map_err(|e| format!("不支持的音频格式，仅支持 MP3/WAV/M4A: {}", e))?;
 
     let mut format = probed.format;
     let track = format.default_track().ok_or("未找到音频轨道")?;
@@ -290,6 +361,8 @@ fn guess_format(path: &str) -> String {
         "wav".to_string()
     } else if lower.ends_with(".mp3") {
         "mp3".to_string()
+    } else if lower.ends_with(".m4a") || lower.ends_with(".mp4") {
+        "m4a".to_string()
     } else {
         "unknown".to_string()
     }
@@ -300,6 +373,7 @@ fn guess_format(path: &str) -> String {
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 fn ffmpeg_available() -> bool {
+    crate::video_tools::ensure_ffmpeg_in_path();
     std::process::Command::new("ffmpeg")
         .arg("-version")
         .stdout(std::process::Stdio::null())
@@ -311,6 +385,7 @@ fn ffmpeg_available() -> bool {
 }
 
 fn ffprobe_available() -> bool {
+    crate::video_tools::ensure_ffmpeg_in_path();
     std::process::Command::new("ffprobe")
         .arg("-version")
         .stdout(std::process::Stdio::null())
@@ -439,7 +514,7 @@ fn do_get_audio_info(path: &str, use_ffmpeg: bool) -> Result<AudioInfo, String> 
 
     let format = guess_format(path);
     if format == "unknown" {
-        return Err("不支持的音频格式，仅支持 MP3/WAV".to_string());
+        return Err("不支持的音频格式，仅支持 MP3/WAV/M4A".to_string());
     }
 
     let (sample_rate, channels, duration) = probe_audio(path)?;
@@ -580,4 +655,845 @@ fn do_get_audio_preview(path: &str, start: f64, end: f64) -> Result<String, Stri
     let (samples, sample_rate, channels) = decode_audio_segment(path, start, end)?;
     let wav_bytes = encode_wav(&samples, sample_rate, channels)?;
     Ok(BASE64.encode(&wav_bytes))
+}
+
+// ============ 格式转换实现 ============
+
+fn convert_via_ffmpeg(app_handle: &tauri::AppHandle, path: &str, options: &ConvertOptions) -> Result<ConvertResult, String> {
+    // 检查文件存在
+    if !std::path::Path::new(path).exists() {
+        return Err("输入文件不存在".to_string());
+    }
+
+    let ext = &options.output_format;
+    let input_stem = std::path::Path::new(path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("audio");
+    let output_path = if let Some(ref custom_path) = options.output_path {
+        std::path::PathBuf::from(custom_path)
+    } else {
+        std::path::Path::new(path)
+            .parent()
+            .unwrap_or(std::path::Path::new("."))
+            .join(format!("{}_converted.{}", input_stem, ext))
+    };
+
+    let _ = app_handle.emit("audio-convert-progress", serde_json::json!({ "progress": 10.0 }));
+
+    let mut cmd = std::process::Command::new("ffmpeg");
+    cmd.arg("-y")
+        .arg("-i").arg(path)
+        .creation_flags(CREATE_NO_WINDOW);
+
+    // 编码器选择
+    match options.output_format.as_str() {
+        "mp3" => {
+            cmd.arg("-acodec").arg("libmp3lame");
+            if let Some(br) = options.bitrate {
+                cmd.arg("-b:a").arg(format!("{}k", br));
+            }
+        }
+        "wav" => {
+            cmd.arg("-acodec").arg("pcm_s16le");
+        }
+        "m4a" | "aac" => {
+            cmd.arg("-acodec").arg("aac");
+            if let Some(br) = options.bitrate {
+                cmd.arg("-b:a").arg(format!("{}k", br));
+            }
+        }
+        "flac" => {
+            cmd.arg("-acodec").arg("flac");
+            // FLAC 是无损格式，不支持比特率参数
+        }
+        "ogg" => {
+            cmd.arg("-acodec").arg("libvorbis");
+            // OGG Vorbis 使用质量参数更合适
+            if let Some(br) = options.bitrate {
+                cmd.arg("-b:a").arg(format!("{}k", br));
+            }
+        }
+        _ => return Err("不支持的输出格式".to_string()),
+    }
+
+    // 采样率
+    if let Some(sr) = options.sample_rate {
+        cmd.arg("-ar").arg(sr.to_string());
+    }
+
+    // 声道
+    if let Some(ch) = options.channels {
+        cmd.arg("-ac").arg(ch.to_string());
+    }
+
+    cmd.arg(output_path.to_string_lossy().to_string());
+
+    let _ = app_handle.emit("audio-convert-progress", serde_json::json!({ "progress": 30.0 }));
+
+    let output = cmd.output()
+        .map_err(|e| format!("ffmpeg 执行失败: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        // 提取关键错误信息
+        let error_msg = stderr.lines()
+            .find(|line| line.contains("Error") || line.contains("error"))
+            .unwrap_or(&stderr);
+        return Err(format!("转换失败: {}", error_msg));
+    }
+
+    let _ = app_handle.emit("audio-convert-progress", serde_json::json!({ "progress": 100.0 }));
+
+    let output_size = std::fs::metadata(&output_path).map(|m| m.len()).unwrap_or(0);
+
+    Ok(ConvertResult {
+        output_path: output_path.to_string_lossy().to_string(),
+        output_size,
+    })
+}
+
+#[tauri::command]
+pub async fn audio_convert(
+    app_handle: tauri::AppHandle,
+    path: String,
+    options: ConvertOptions,
+) -> Result<ConvertResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::video_tools::ensure_ffmpeg_in_path();
+        convert_via_ffmpeg(&app_handle, &path, &options)
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
+}
+
+// ============ 音频压缩实现 ============
+
+fn compress_via_ffmpeg(app_handle: &tauri::AppHandle, path: &str, options: &CompressOptions) -> Result<CompressResult, String> {
+    // 检查文件存在
+    if !std::path::Path::new(path).exists() {
+        return Err("输入文件不存在".to_string());
+    }
+
+    let format = guess_format(path);
+    let ext = &format;
+    let input_stem = std::path::Path::new(path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("audio");
+    let output_path = if let Some(ref custom_path) = options.output_path {
+        std::path::PathBuf::from(custom_path)
+    } else {
+        std::path::Path::new(path)
+            .parent()
+            .unwrap_or(std::path::Path::new("."))
+            .join(format!("{}_compressed.{}", input_stem, ext))
+    };
+
+    let original_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+
+    let _ = app_handle.emit("audio-compress-progress", serde_json::json!({ "progress": 10.0 }));
+
+    let mut cmd = std::process::Command::new("ffmpeg");
+    cmd.arg("-y")
+        .arg("-i").arg(path)
+        .creation_flags(CREATE_NO_WINDOW);
+
+    // 根据模式设置参数
+    match options.mode.as_str() {
+        "bitrate" => {
+            if let Some(br) = options.bitrate {
+                match format.as_str() {
+                    "mp3" => {
+                        cmd.arg("-acodec").arg("libmp3lame");
+                        cmd.arg("-b:a").arg(format!("{}k", br));
+                    }
+                    "m4a" | "aac" => {
+                        cmd.arg("-acodec").arg("aac");
+                        cmd.arg("-b:a").arg(format!("{}k", br));
+                    }
+                    "ogg" => {
+                        cmd.arg("-acodec").arg("libvorbis");
+                        cmd.arg("-b:a").arg(format!("{}k", br));
+                    }
+                    _ => {
+                        cmd.arg("-b:a").arg(format!("{}k", br));
+                    }
+                }
+            }
+        }
+        "quality" => {
+            let quality = options.quality.as_deref().unwrap_or("medium");
+            match format.as_str() {
+                "mp3" => {
+                    cmd.arg("-acodec").arg("libmp3lame");
+                    // VBR 质量等级: 0=最好, 9=最差
+                    let q = match quality {
+                        "low" => "7",
+                        "medium" => "5",
+                        "high" => "2",
+                        _ => "5",
+                    };
+                    cmd.arg("-q:a").arg(q);
+                }
+                _ => {
+                    // 其他格式用比特率映射
+                    let br = match quality {
+                        "low" => 64,
+                        "medium" => 128,
+                        "high" => 192,
+                        _ => 128,
+                    };
+                    cmd.arg("-b:a").arg(format!("{}k", br));
+                }
+            }
+        }
+        _ => return Err("不支持的压缩模式".to_string()),
+    }
+
+    // 采样率
+    if let Some(sr) = options.sample_rate {
+        cmd.arg("-ar").arg(sr.to_string());
+    }
+
+    cmd.arg(output_path.to_string_lossy().to_string());
+
+    let _ = app_handle.emit("audio-compress-progress", serde_json::json!({ "progress": 30.0 }));
+
+    let output = cmd.output()
+        .map_err(|e| format!("ffmpeg 执行失败: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let error_msg = stderr.lines()
+            .find(|line| line.contains("Error") || line.contains("error"))
+            .unwrap_or(&stderr);
+        return Err(format!("压缩失败: {}", error_msg));
+    }
+
+    let _ = app_handle.emit("audio-compress-progress", serde_json::json!({ "progress": 100.0 }));
+
+    let output_size = std::fs::metadata(&output_path).map(|m| m.len()).unwrap_or(0);
+
+    Ok(CompressResult {
+        output_path: output_path.to_string_lossy().to_string(),
+        output_size,
+        original_size,
+    })
+}
+
+#[tauri::command]
+pub async fn audio_compress(
+    app_handle: tauri::AppHandle,
+    path: String,
+    options: CompressOptions,
+) -> Result<CompressResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::video_tools::ensure_ffmpeg_in_path();
+        compress_via_ffmpeg(&app_handle, &path, &options)
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
+}
+
+// ============ 音频合并实现 ============
+
+fn merge_via_ffmpeg(app_handle: &tauri::AppHandle, options: &MergeOptions) -> Result<MergeResult, String> {
+    if options.input_paths.is_empty() {
+        return Err("至少需要两个音频文件".to_string());
+    }
+
+    // 检查所有文件存在
+    for path in &options.input_paths {
+        if !std::path::Path::new(path).exists() {
+            return Err(format!("输入文件不存在: {}", path));
+        }
+    }
+
+    let ext = &options.output_format;
+    let output_path = if let Some(ref custom_path) = options.output_path {
+        std::path::PathBuf::from(custom_path)
+    } else {
+        let first_stem = std::path::Path::new(&options.input_paths[0])
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("audio");
+        std::path::Path::new(&options.input_paths[0])
+            .parent()
+            .unwrap_or(std::path::Path::new("."))
+            .join(format!("{}_merged.{}", first_stem, ext))
+    };
+
+    let _ = app_handle.emit("audio-merge-progress", serde_json::json!({ "progress": 10.0 }));
+
+    // 创建临时 filelist.txt
+    let temp_dir = std::env::temp_dir();
+    let filelist_path = temp_dir.join(format!("litobox_merge_{}.txt", std::process::id()));
+
+    let mut filelist_content = String::new();
+    for path in &options.input_paths {
+        // Windows 路径转换为 ffmpeg 兼容格式（正斜杠）
+        let normalized_path = path.replace('\\', "/");
+        filelist_content.push_str(&format!("file '{}'\n", normalized_path));
+    }
+    std::fs::write(&filelist_path, &filelist_content)
+        .map_err(|e| format!("创建临时文件失败: {}", e))?;
+
+    let mut cmd = std::process::Command::new("ffmpeg");
+    cmd.arg("-y")
+        .creation_flags(CREATE_NO_WINDOW);
+
+    match options.mode.as_str() {
+        "auto" => {
+            // 检查是否所有文件格式相同
+            let formats: Vec<String> = options.input_paths.iter()
+                .map(|p| guess_format(p))
+                .collect();
+            let all_same = formats.iter().all(|f| f == &formats[0]) && formats[0] == *ext;
+
+            if all_same {
+                // 同格式 concat (快速)
+                cmd.arg("-f").arg("concat")
+                    .arg("-safe").arg("0")
+                    .arg("-i").arg(&filelist_path)
+                    .arg("-c").arg("copy");
+            } else {
+                // 跨格式转码合并
+                let inputs: Vec<String> = options.input_paths.iter()
+                    .map(|p| format!("-i {}", p))
+                    .collect();
+                cmd.args(inputs.join(" ").split_whitespace());
+
+                let filter = format!("[0:a]{}", (1..options.input_paths.len())
+                    .map(|i| format!("[{}:a]", i))
+                    .collect::<Vec<_>>()
+                    .join(""));
+                let filter_complex = format!("{}concat=n={}:v=0:a=1[out]", filter, options.input_paths.len());
+                cmd.arg("-filter_complex").arg(filter_complex)
+                    .arg("-map").arg("[out]");
+            }
+        }
+        "force_transcode" => {
+            // 强制转码合并
+            let inputs: Vec<String> = options.input_paths.iter()
+                .map(|p| format!("-i {}", p))
+                .collect();
+            cmd.args(inputs.join(" ").split_whitespace());
+
+            let filter_complex = format!("{}concat=n={}:v=0:a=1[out]",
+                (0..options.input_paths.len())
+                    .map(|i| format!("[{}:a]", i))
+                    .collect::<Vec<_>>()
+                    .join(""),
+                options.input_paths.len()
+            );
+            cmd.arg("-filter_complex").arg(filter_complex)
+                .arg("-map").arg("[out]");
+        }
+        _ => return Err("不支持的合并模式".to_string()),
+    }
+
+    // 输出编码器
+    match options.output_format.as_str() {
+        "mp3" => {
+            if options.mode == "force_transcode" || options.mode == "auto" {
+                cmd.arg("-acodec").arg("libmp3lame");
+                cmd.arg("-b:a").arg(format!("{}k", options.bitrate));
+            }
+        }
+        "wav" => {
+            if options.mode == "force_transcode" || options.mode == "auto" {
+                cmd.arg("-acodec").arg("pcm_s16le");
+            }
+        }
+        "m4a" | "aac" => {
+            if options.mode == "force_transcode" || options.mode == "auto" {
+                cmd.arg("-acodec").arg("aac");
+                cmd.arg("-b:a").arg(format!("{}k", options.bitrate));
+            }
+        }
+        _ => {}
+    }
+
+    cmd.arg(output_path.to_string_lossy().to_string());
+
+    let _ = app_handle.emit("audio-merge-progress", serde_json::json!({ "progress": 30.0 }));
+
+    let output = cmd.output()
+        .map_err(|e| format!("ffmpeg 执行失败: {}", e))?;
+
+    // 清理临时文件
+    let _ = std::fs::remove_file(&filelist_path);
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("ffmpeg 合并失败: {}", stderr));
+    }
+
+    let _ = app_handle.emit("audio-merge-progress", serde_json::json!({ "progress": 100.0 }));
+
+    let output_size = std::fs::metadata(&output_path).map(|m| m.len()).unwrap_or(0);
+
+    // 获取合并后时长
+    let duration = if let Ok(info) = get_audio_info_via_ffprobe(&output_path.to_string_lossy()) {
+        info.duration
+    } else {
+        0.0
+    };
+
+    Ok(MergeResult {
+        output_path: output_path.to_string_lossy().to_string(),
+        output_size,
+        duration,
+    })
+}
+
+#[tauri::command]
+pub async fn audio_merge(
+    app_handle: tauri::AppHandle,
+    options: MergeOptions,
+) -> Result<MergeResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::video_tools::ensure_ffmpeg_in_path();
+        merge_via_ffmpeg(&app_handle, &options)
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
+}
+
+// ============ 变速变调实现 ============
+
+fn speed_change_via_ffmpeg(app_handle: &tauri::AppHandle, path: &str, options: &SpeedChangeOptions) -> Result<SpeedChangeResult, String> {
+    if options.speed < 0.5 || options.speed > 4.0 {
+        return Err("速度必须在 0.5x 到 4.0x 之间".to_string());
+    }
+
+    // 检查文件存在
+    if !std::path::Path::new(path).exists() {
+        return Err("输入文件不存在".to_string());
+    }
+
+    let ext = &options.output_format;
+    let input_stem = std::path::Path::new(path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("audio");
+    let output_path = if let Some(ref custom_path) = options.output_path {
+        std::path::PathBuf::from(custom_path)
+    } else {
+        std::path::Path::new(path)
+            .parent()
+            .unwrap_or(std::path::Path::new("."))
+            .join(format!("{}_{}x.{}", input_stem, options.speed, ext))
+    };
+
+    let _ = app_handle.emit("audio-speed-progress", serde_json::json!({ "progress": 10.0 }));
+
+    let mut cmd = std::process::Command::new("ffmpeg");
+    cmd.arg("-y")
+        .arg("-i").arg(path)
+        .creation_flags(CREATE_NO_WINDOW);
+
+    // 构建滤镜
+    let filter = if options.keep_pitch {
+        // atempo 只支持 0.5~2.0，超出需链式
+        if options.speed >= 0.5 && options.speed <= 2.0 {
+            format!("atempo={}", options.speed)
+        } else if options.speed > 2.0 && options.speed <= 4.0 {
+            // 2.0x~4.0x = atempo=2.0,atempo=X
+            let half = options.speed / 2.0;
+            format!("atempo=2.0,atempo={}", half)
+        } else {
+            // 0.25x~0.5x = atempo=0.5,atempo=X
+            let double = options.speed * 2.0;
+            format!("atempo=0.5,atempo={}", double)
+        }
+    } else {
+        // 不保持音调 (asetrate + aresample)
+        // 需要获取原始采样率
+        let info = get_audio_info_via_ffprobe(path)?;
+        let new_rate = (info.sample_rate as f64 * options.speed) as u32;
+        format!("asetrate={},aresample={}", new_rate, info.sample_rate)
+    };
+
+    cmd.arg("-filter:a").arg(filter);
+
+    // 输出编码器
+    match options.output_format.as_str() {
+        "mp3" => {
+            cmd.arg("-acodec").arg("libmp3lame");
+            cmd.arg("-b:a").arg(format!("{}k", options.bitrate));
+        }
+        "wav" => {
+            cmd.arg("-acodec").arg("pcm_s16le");
+        }
+        "m4a" | "aac" => {
+            cmd.arg("-acodec").arg("aac");
+            cmd.arg("-b:a").arg(format!("{}k", options.bitrate));
+        }
+        "flac" => {
+            cmd.arg("-acodec").arg("flac");
+            // FLAC 是无损格式，不支持比特率参数
+        }
+        "ogg" => {
+            cmd.arg("-acodec").arg("libvorbis");
+            cmd.arg("-b:a").arg(format!("{}k", options.bitrate));
+        }
+        _ => {}
+    }
+
+    cmd.arg(output_path.to_string_lossy().to_string());
+
+    let _ = app_handle.emit("audio-speed-progress", serde_json::json!({ "progress": 30.0 }));
+
+    let output = cmd.output()
+        .map_err(|e| format!("ffmpeg 执行失败: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("ffmpeg 变速失败: {}", stderr));
+    }
+
+    let _ = app_handle.emit("audio-speed-progress", serde_json::json!({ "progress": 100.0 }));
+
+    let output_size = std::fs::metadata(&output_path).map(|m| m.len()).unwrap_or(0);
+
+    // 获取新时长
+    let duration = if let Ok(info) = get_audio_info_via_ffprobe(&output_path.to_string_lossy()) {
+        info.duration
+    } else {
+        0.0
+    };
+
+    Ok(SpeedChangeResult {
+        output_path: output_path.to_string_lossy().to_string(),
+        output_size,
+        duration,
+    })
+}
+
+#[tauri::command]
+pub async fn audio_speed_change(
+    app_handle: tauri::AppHandle,
+    path: String,
+    options: SpeedChangeOptions,
+) -> Result<SpeedChangeResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::video_tools::ensure_ffmpeg_in_path();
+        speed_change_via_ffmpeg(&app_handle, &path, &options)
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
+}
+
+// ========== TTS 文字转语音 ==========
+
+// ponytail: debug 模式输出日志到 stderr，release 模式编译时移除（零开销）
+macro_rules! debug_log {
+    ($($arg:tt)*) => {
+        if cfg!(debug_assertions) {
+            eprintln!($($arg)*)
+        }
+    };
+}
+
+fn run_powershell(script: &str) -> Result<String, String> {
+    let mut cmd = std::process::Command::new("powershell");
+    cmd.args(["-NoProfile", "-NonInteractive", "-Command", script]);
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    let output = cmd
+        .output()
+        .map_err(|e| format!("PowerShell 执行失败: {}", e))?;
+    if !output.status.success() {
+        let (stderr, _, _) = encoding_rs::GBK.decode(&output.stderr);
+        let (stdout, _, _) = encoding_rs::GBK.decode(&output.stdout);
+        debug_log!("[run_powershell] FAILED - exit code: {:?}", output.status);
+        debug_log!("[run_powershell] stderr: {}", stderr);
+        debug_log!("[run_powershell] stdout: {}", stdout);
+        return Err(format!("PowerShell 错误: {}", stderr));
+    }
+    let (text, _, _) = encoding_rs::GBK.decode(&output.stdout);
+    Ok(text.into_owned())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TtsVoice {
+    pub name: String,
+    pub language: String,
+    pub engine: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TtsOptions {
+    pub text: String,
+    pub voice_name: Option<String>,
+    pub rate: i32,
+    pub volume: i32,
+    pub engine: String,
+    pub output_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TtsResult {
+    pub output_path: String,
+    pub output_size: u64,
+}
+
+fn escape_ps_string(s: &str) -> String {
+    s.replace('\'', "''")
+}
+
+fn tts_sapi_generate(text: &str, voice_name: Option<&str>, rate: i32, volume: i32, output_path: &str) -> Result<(), String> {
+    if text.contains('\0') {
+        return Err("文本中包含非法字符".to_string());
+    }
+    let escaped_text = escape_ps_string(text);
+    let escaped_path = escape_ps_string(output_path);
+
+    let voice_script = if let Some(vn) = voice_name {
+        let escaped_vn = escape_ps_string(vn);
+        format!(
+            "$synth.SelectVoice('{}')\nWrite-Output \"SAPI_VOICE: $($synth.Voice.Name)\"",
+            escaped_vn
+        )
+    } else {
+        String::from("Write-Output \"SAPI_VOICE: $($synth.Voice.Name) (default)\"")
+    };
+
+    let script = format!(r#"
+Add-Type -AssemblyName System.Speech
+$synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
+$synth.Rate = {rate}
+$synth.Volume = {volume}
+{voice_script}
+$synth.SetOutputToWaveFile('{escaped_path}')
+$synth.Speak('{escaped_text}')
+$synth.Dispose()
+"#, rate = rate, volume = volume, voice_script = voice_script, escaped_path = escaped_path, escaped_text = escaped_text);
+
+    let output = run_powershell(&script)?;
+    debug_log!("[tts_sapi] 输出: {}", output.trim());
+    Ok(())
+}
+
+fn tts_winrt_generate(text: &str, voice_name: Option<&str>, rate: i32, _volume: i32, output_path: &str) -> Result<(), String> {
+    debug_log!("[tts_winrt] 开始生成, text_len={}, voice={:?}, rate={}, output={}",
+        text.len(), voice_name, rate, output_path);
+
+    if text.contains('\0') {
+        return Err("文本中包含非法字符".to_string());
+    }
+    let escaped_text = escape_ps_string(text);
+    let escaped_path = escape_ps_string(output_path);
+
+    let rate_norm = (rate as f64) / 10.0;
+
+    let voice_filter = if let Some(vn) = voice_name {
+        let escaped_vn = escape_ps_string(vn);
+        format!(
+            "$voice = $null; foreach ($v in [Windows.Media.SpeechSynthesis.SpeechSynthesizer]::AllVoices) {{ if ($v.DisplayName -eq '{}') {{ $voice = $v; break }} }}",
+            escaped_vn
+        )
+    } else {
+        String::from("$voice = $null")
+    };
+
+    let script = format!(r#"
+Add-Type -AssemblyName System.Runtime.WindowsRuntime
+$null = [Windows.Media.SpeechSynthesis.SpeechSynthesizer, Windows.Media.SpeechSynthesis, ContentType=WindowsRuntime]
+Write-Output 'STEP: assemblies loaded'
+
+$synth = New-Object Windows.Media.SpeechSynthesis.SpeechSynthesizer
+Write-Output 'STEP: synth created'
+
+# 选择语音
+{voice_filter}
+if ($voice) {{
+    $synth.Voice = $voice
+    Write-Output \"STEP: voice selected: $($voice.DisplayName)\"
+}} else {{
+    Write-Output 'STEP: using default voice'
+}}
+
+# 设置语速（WinRT 的 Rate 是相对值 0.5~2.0，1.0 为正常）
+$synth.Options.Rate = {rate_norm}
+Write-Output \"STEP: rate set to $($synth.Options.Rate)\"
+
+# 合成
+$asyncOp = $synth.SynthesizeTextToStreamAsync('{escaped_text}')
+Write-Output 'STEP: starting synthesis...'
+
+# 反射调用 AsTask<IAsyncOperation<SpeechSynthesisStream>>
+$asTaskGeneric = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {{ $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' }} | Select-Object -First 1)
+Write-Output \"STEP: AsTask methods found: $($asTaskGeneric.Count)\"
+$closedType = $asTaskGeneric.MakeGenericMethod([Windows.Media.SpeechSynthesis.SpeechSynthesisStream])
+$taskResult = $closedType.Invoke($null, @($asyncOp))
+Write-Output \"STEP: task type: $($taskResult.GetType().FullName)\"
+$stream = $taskResult.Result
+Write-Output \"STEP: stream obtained, size: $($stream.Size)\"
+
+# 写入文件：将 WinRT 流转换为 .NET 流后复制
+# 注意：扩展方法在 PowerShell 中需显式调用静态类
+$netStream = [System.IO.WindowsRuntimeStreamExtensions]::AsStream($stream)
+Write-Output \"STEP: netStream created, canRead: $($netStream.CanRead)\"
+$fileStream = [System.IO.File]::Create('{escaped_path}')
+$netStream.CopyTo($fileStream)
+$fileStream.Flush()
+$fileStream.Close()
+$netStream.Dispose()
+$stream.Dispose()
+$synth.Dispose()
+Write-Output 'STEP: done, file written'
+"#, rate_norm = rate_norm, voice_filter = voice_filter, escaped_path = escaped_path, escaped_text = escaped_text);
+
+    debug_log!("[tts_winrt] 执行 PowerShell 脚本");
+    let output = run_powershell(&script)?;
+    debug_log!("[tts_winrt] 脚本输出: {}", output.trim());
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn list_tts_voices() -> Result<Vec<TtsVoice>, String> {
+    let mut all_voices = Vec::new();
+
+    // SAPI 语音
+    match list_sapi_voices() {
+        Ok(mut v) => all_voices.append(&mut v),
+        Err(e) => debug_log!("[list_tts_voices] SAPI 失败: {}", e),
+    }
+
+    // WinRT 语音
+    match list_winrt_voices() {
+        Ok(mut v) => all_voices.append(&mut v),
+        Err(e) => debug_log!("[list_tts_voices] WinRT 失败: {}", e),
+    }
+
+    Ok(all_voices)
+}
+
+fn list_sapi_voices() -> Result<Vec<TtsVoice>, String> {
+    let script = r#"
+Add-Type -AssemblyName System.Speech
+$synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
+$synth.GetInstalledVoices() | ForEach-Object {
+    @{
+        name = $_.VoiceInfo.Name
+        language = $_.VoiceInfo.Culture.DisplayName
+        engine = 'sapi'
+    }
+} | ConvertTo-Json -Compress
+"#;
+    let output = run_powershell(script)?;
+    let trimmed = output.trim();
+    if trimmed.is_empty() {
+        return Ok(vec![]);
+    }
+    let voices: Vec<TtsVoice> = serde_json::from_str(trimmed)
+        .map_err(|e| format!("解析 SAPI 语音列表失败: {}", e))?;
+    Ok(voices)
+}
+
+fn list_winrt_voices() -> Result<Vec<TtsVoice>, String> {
+    let script = r#"
+Add-Type -AssemblyName System.Runtime.WindowsRuntime
+$null = [Windows.Media.SpeechSynthesis.SpeechSynthesizer, Windows.Media.SpeechSynthesis, ContentType=WindowsRuntime]
+$voices = [Windows.Media.SpeechSynthesis.SpeechSynthesizer]::AllVoices
+$voices | ForEach-Object {
+    @{
+        name = $_.DisplayName
+        language = $_.Language
+        engine = 'winrt'
+    }
+} | ConvertTo-Json -Compress
+"#;
+    let output = run_powershell(script)?;
+    let trimmed = output.trim();
+    if trimmed.is_empty() {
+        return Ok(vec![]);
+    }
+    let voices: Vec<TtsVoice> = serde_json::from_str(trimmed)
+        .map_err(|e| format!("解析 WinRT 语音列表失败: {}", e))?;
+    Ok(voices)
+}
+
+#[tauri::command]
+pub async fn get_downloads_dir() -> Result<String, String> {
+    let script = r#"
+$downloads = [Environment]::GetFolderPath('UserProfile') + '\Downloads'
+if (Test-Path $downloads) {
+    $downloads
+} else {
+    [Environment]::GetFolderPath('MyDocuments')
+}
+"#;
+    let output = run_powershell(script)?;
+    let trimmed = output.trim().to_string();
+    if trimmed.is_empty() {
+        return Err("无法获取下载目录".to_string());
+    }
+    Ok(trimmed)
+}
+
+#[tauri::command]
+pub async fn tts_generate(
+    options: TtsOptions,
+) -> Result<TtsResult, String> {
+    if options.text.trim().is_empty() {
+        return Err("请输入要转换的文字".to_string());
+    }
+    if options.rate < -10 || options.rate > 10 {
+        return Err("语速范围 -10 到 10".to_string());
+    }
+    if options.volume < 0 || options.volume > 100 {
+        return Err("音量范围 0 到 100".to_string());
+    }
+
+    let output_path = if let Some(ref custom_path) = options.output_path {
+        std::path::PathBuf::from(custom_path)
+    } else {
+        // 默认保存到临时目录
+        let temp_dir = std::env::temp_dir();
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        temp_dir.join(format!("tts_{}.wav", timestamp))
+    };
+
+    let output_path_str = output_path.to_string_lossy().to_string();
+    let voice_name: Option<String> = options.voice_name.clone();
+    let text = options.text.clone();
+    let rate = options.rate;
+    let volume = options.volume;
+    let engine = options.engine.clone();
+    let path_clone = output_path_str.clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        match engine.as_str() {
+            "winrt" => {
+                match tts_winrt_generate(&text, voice_name.as_deref(), rate, volume, &path_clone) {
+                    Ok(_) => {
+                        debug_log!("[tts_generate] WinRT 引擎生成成功");
+                    }
+                    Err(e) => {
+                        debug_log!("[tts_generate] WinRT 失败({})，回退到 SAPI 引擎", e);
+                        tts_sapi_generate(&text, None, rate, volume, &path_clone)?;
+                    }
+                }
+            }
+            _ => {
+                tts_sapi_generate(&text, voice_name.as_deref(), rate, volume, &path_clone)?;
+            }
+        }
+        let output_size = std::fs::metadata(&path_clone)
+            .map(|m| m.len())
+            .map_err(|e| format!("无法读取输出文件: {}", e))?;
+        Ok(TtsResult {
+            output_path: path_clone,
+            output_size,
+        })
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
 }

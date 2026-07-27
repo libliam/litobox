@@ -220,11 +220,4 @@ onActivated(() => collectIfEmpty())
 .card-actions { display: flex; align-items: center; gap: 8px; }
 .refresh-time { font-size: 12px; color: var(--text-muted); }
 .error-message { padding: 12px; background: rgba(239, 68, 68, 0.1); border: 1px solid var(--accent-red); border-radius: 4px; color: var(--accent-red); font-size: 13px; }
-:deep(.el-table) { background: var(--bg-card); color: var(--text-primary); }
-:deep(.el-table th) { background: var(--bg-input) !important; color: var(--accent-cyan) !important; font-weight: 600; }
-:deep(.el-table td) { background: var(--bg-card) !important; color: var(--text-primary) !important; }
-:deep(.el-table--border) { border-color: var(--border-color) !important; }
-:deep(.el-table tr) { background: var(--bg-card) !important; }
-:deep(.el-table__body tr:hover > td) { background: rgba(0, 212, 255, 0.15) !important; }
-:deep(.el-table__inner-wrapper::before) { background-color: var(--border-color) !important; }
 </style>

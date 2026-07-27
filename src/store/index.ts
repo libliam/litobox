@@ -25,6 +25,7 @@ export interface HistoryRecord {
 
 export interface HistoryRestoreState {
   tool: string
+  action?: string
   input: string
   output: string
   options: Record<string, any>
@@ -65,14 +66,16 @@ export const TOOL_LIST: ToolItem[] = [
   { id: 'sql', name: 'SQL工具', icon: 'SQL', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M4 9h16"/><path d="M9 4v16"/></svg>`, description: '字符串列表转SQL IN查询条件', keywords: ['sql', 'in', '查询', '转换'], category: 'dev' },
   { id: 'xmlYaml', name: 'XML/YAML', icon: 'XML', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H6a2 2 0 00-2 2v4"/><path d="M16 3h2a2 2 0 012 2v4"/><path d="M14 17l-3 3-3-3"/><path d="M4 21h16"/></svg>`, description: 'XML/YAML格式化、校验、JSON互转', keywords: ['xml', 'yaml', '格式化', '校验', '转换'], category: 'dev' },
   { id: 'csv', name: 'CSV工具', icon: 'CSV', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M4 9h16"/><path d="M9 4v16"/></svg>`, description: 'CSV解析、表格预览、导出JSON/SQL', keywords: ['csv', '表格', '解析', '导出'], category: 'dev' },
-  { id: 'pdf', name: 'PDF工具', icon: 'PDF', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 15v-2a2 2 0 014 0v2"/><path d="M9 13h4"/></svg>`, description: 'PDF转图片、图片转PDF、文本提取、合并拆分', keywords: ['pdf', '转换', '合并', '拆分', '提取'], category: 'utility' },
+  { id: 'pdf', name: 'PDF工具', icon: 'PDF', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 15v-2a2 2 0 014 0v2"/><path d="M9 13h4"/></svg>`, description: 'PDF转图片、图片转PDF、文本提取、合并拆分、压缩', keywords: ['pdf', '转换', '合并', '拆分', '提取', '压缩'], category: 'utility' },
   { id: 'http', name: 'HTTP 请求', icon: '🌐', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M5 5h14l-7 7 7 7H5"/></svg>`, description: 'HTTP 请求测试，支持 GET/POST/PUT/DELETE，绕过 CORS 限制', keywords: ['http', '请求', 'api', 'get', 'post', 'put', 'delete', 'cors'], category: 'dev' },
   { id: 'password', name: '密码工具', icon: '🔑', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/><circle cx="12" cy="16" r="1"/></svg>`, description: '随机密码生成、API Key 生成、密码强度检测', keywords: ['密码', 'password', '随机', '生成', '强度', 'api key', 'token'], category: 'security' },
   { id: 'calculator', name: '计算器', icon: '∑', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="10" x2="16" y2="10"/><line x1="8" y1="14" x2="12" y2="14"/><line x1="14" y1="14" x2="16" y2="14"/><line x1="8" y1="18" x2="12" y2="18"/><line x1="14" y1="18" x2="16" y2="18"/></svg>`, description: '表达式计算、单位换算、日期计算、时间戳转换', keywords: ['计算器', '计算', '单位换算', '日期', '时间戳'], category: 'utility' },
   { id: 'qr', name: '二维码', icon: 'QR', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="8" height="8" rx="1"/><rect x="14" y="2" width="8" height="8" rx="1"/><rect x="2" y="14" width="8" height="8" rx="1"/><rect x="14" y="14" width="4" height="4"/><rect x="20" y="14" width="2" height="2"/><rect x="14" y="20" width="2" height="2"/><rect x="20" y="20" width="2" height="2"/></svg>`, description: '二维码生成与解码，支持文本/URL转二维码、图片解码', keywords: ['二维码', 'qr', 'qrcode', '生成', '解码', '扫码'], category: 'utility' },
   { id: 'image', name: '图片工具', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>`, description: '图片压缩、尺寸缩放、转Base64', keywords: ['图片', '压缩', '缩放', 'base64', 'image'], category: 'utility' },
   { id: 'imageToolEnhanced', name: '图片增强', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>`, description: '批量压缩/格式转换、图片拼接、加水印、调色板提取', keywords: ['图片', '压缩', '拼接', '水印', '调色板', '格式转换', 'image'], category: 'utility' },
-  { id: 'audioTool', name: '音频裁剪', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>`, description: '音频裁剪，支持 MP3/WAV 格式，波形可视化、实时预览', keywords: ['音频', '裁剪', 'mp3', 'wav', '波形', 'audio'], category: 'utility' },
+  { id: 'audioTool', name: '音频工具', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>`, description: '音频裁剪、格式转换，支持 MP3/WAV/M4A，波形可视化、实时预览', keywords: ['音频', '裁剪', 'mp3', 'wav', 'm4a', '波形', 'audio'], category: 'utility' },
+  { id: 'videoTool', name: '视频工具', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>`, description: '视频裁剪/转码/音频提取/压缩/合并，支持 ffmpeg 增强', keywords: ['视频', '裁剪', '转码', '音频提取', '压缩', '合并', 'mp4', 'video', 'ffmpeg'], category: 'utility' },
+  { id: 'mediaInfo', name: '媒体信息', icon: 'ℹ️', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`, description: '查看音视频文件的详细信息（编解码器、分辨率、比特率、元数据等）', keywords: ['媒体', '信息', 'ffprobe', '视频', '音频', 'metadata'], category: 'utility' },
   { id: 'iconGenerator', name: '图标生成', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><rect x="7" y="7" width="3" height="3" rx="0.5"/><rect x="14" y="7" width="3" height="3" rx="0.5"/><rect x="7" y="14" width="3" height="3" rx="0.5"/><rect x="14" y="14" width="3" height="3" rx="0.5"/></svg>`, description: '一张图生成多尺寸图标（favicon/icon set），支持 PNG/ICO 格式', keywords: ['图标', 'icon', 'favicon', 'ico', '生成', '尺寸'], category: 'utility' },
   { id: 'ocr', name: 'OCR识别', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>`, description: '图片文字识别，支持上传和剪贴板粘贴', keywords: ['ocr', '文字识别', '图片', '识别'], category: 'utility' },
   { id: 'mockData', name: '随机数据', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/><circle cx="8" cy="8" r="1" fill="currentColor"/><circle cx="16" cy="8" r="1" fill="currentColor"/><circle cx="8" cy="16" r="1" fill="currentColor"/><circle cx="16" cy="16" r="1" fill="currentColor"/></svg>`, description: '姓名、身份证、手机号等随机生成', keywords: ['随机', '假数据', 'mock', '测试数据'], category: 'utility' },
@@ -84,11 +87,20 @@ export const TOOL_LIST: ToolItem[] = [
   { id: 'systemInfo', name: '系统信息', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>`, description: '查看操作系统、CPU、内存、磁盘信息', keywords: ['系统', 'cpu', '内存', '磁盘', 'system'], category: 'system' },
   { id: 'networkInfo', name: '网络信息', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>`, description: '查看网络接口、IP、连接、端口', keywords: ['网络', 'ip', 'mac', '端口', 'netstat'], category: 'system' },
   { id: 'processList', name: '进程列表', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>`, description: '查看运行中的进程及资源占用', keywords: ['进程', 'process', '任务管理器'], category: 'system' },
+  { id: 'serviceList', name: '服务管理', icon: '⚙️', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>`, description: '查看和管理 Windows 系统服务，支持启动/停止/重启', keywords: ['服务', 'service', '启动', '停止', '重启'], category: 'system' },
   { id: 'hardwareInfo', name: '硬件外设', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>`, description: '查看GPU、显示器、音频设备', keywords: ['硬件', 'gpu', '显卡', '显示器', '音频'], category: 'system' },
   { id: 'softwareEnv', name: '软件环境', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>`, description: '已安装软件、环境变量、启动项', keywords: ['软件', '环境变量', '启动项', 'env'], category: 'system' },
   { id: 'sqliteViewer', name: 'SQLite查看器', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 5v6c0 1.66-4.03 3-9 3s-9-1.34-9-3V5"/><path d="M21 11v6c0 1.66-4.03 3-9 3s-9-1.34-9-3v-6"/></svg>`, description: '浏览本地SQLite数据库表结构和数据，执行SELECT查询，导出CSV', keywords: ['sqlite', '数据库', 'db', '查询', '查看', 'database'], category: 'dev' },
   { id: 'diskAnalyzer', name: '磁盘分析', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>`, description: '分析磁盘空间占用，查找大文件和重复文件', keywords: ['磁盘', '空间', '重复', '清理', 'disk', 'space', 'duplicate'], category: 'system' },
   { id: 'fileSearcher', name: '全文搜索', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`, description: '按文件名或内容搜索，支持正则表达式，类似 Everything + grep', keywords: ['搜索', '全文', '文件名', '内容', 'grep', 'find', 'search'], category: 'system' },
+  { id: 'hotkeyViewer', name: '快捷键占用', icon: '⌨', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M18 14h.01M10 14h4"/></svg>`, description: '探测 Windows 已注册的全局快捷键，标注占用进程', keywords: ['快捷键', '热键', 'hotkey', '冲突', '占用'], category: 'system' },
+  { id: 'hostsManager', name: 'Hosts管理', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>`, description: '编辑 hosts 文件，多环境 profile 切换，自动备份恢复', keywords: ['hosts', '域名', 'dns', '解析', 'profile'], category: 'system' },
+  { id: 'networkConnections', name: '网络连接', icon: '🔌', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M8 8h8v8H8z"/><line x1="12" y1="4" x2="12" y2="8"/><line x1="12" y1="16" x2="12" y2="20"/><line x1="4" y1="12" x2="8" y2="12"/><line x1="16" y1="12" x2="20" y2="12"/></svg>`, description: '查看所有 TCP/UDP 连接，关联进程，支持筛选/结束进程/释放端口/导出', keywords: ['网络连接', 'tcp', 'udp', 'netstat', '端口', '连接', 'network'], category: 'system' },
+  { id: 'scheduledTasks', name: '计划任务', icon: '🗓', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><circle cx="8" cy="15" r="1.5"/><circle cx="12" cy="15" r="1.5"/><circle cx="16" cy="15" r="1.5"/></svg>`, description: '查看 Windows 计划任务列表，支持启用/禁用/立即运行/删除', keywords: ['计划任务', 'scheduled', 'task', 'schtasks', '定时', 'task scheduler'], category: 'system' },
+  { id: 'startupItems', name: '开机启动项', icon: '🚀', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg>`, description: '查看和管理 Windows 开机启动项，支持启用/禁用/删除/新增', keywords: ['启动项', 'startup', '开机', '自启动', 'autorun', '启动'], category: 'system' },
+  { id: 'envVars', name: '环境变量', icon: '📝', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/><path d="M14 14l-2-4-2 4"/><path d="M14 13h-4"/></svg>`, description: '查看和管理 Windows 环境变量，支持新增/修改/删除，PATH 逐行编辑', keywords: ['环境变量', 'env', 'PATH', '变量', 'environment'], category: 'system' },
+  { id: 'certViewer', name: '证书查看器', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/><circle cx="12" cy="16" r="1"/></svg>`, description: '查看 Windows 证书存储，解析 .cer/.crt/.pfx 证书文件，查看 SSL 证书详情', keywords: ['证书', 'cert', 'ssl', 'tls', 'x509', 'pfx', 'cer', 'crt', '密钥', '指纹'], category: 'system' },
+  { id: 'boost', name: '一键加速', icon: '⚡', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`, description: '一键释放内存、清理临时文件、清空回收站，让电脑更流畅', keywords: ['加速', '清理', 'boost', '内存', '释放', '临时文件', '回收站', 'clean'], category: 'system' },
 ]
 
 const MAX_HISTORY = 100
@@ -105,12 +117,18 @@ export const useToolboxStore = defineStore('toolbox', () => {
       json: 'CmdOrCtrl+Alt+J',
       string: 'CmdOrCtrl+Alt+S',
       devtools: 'CmdOrCtrl+Alt+D',
-      fileprocessing: 'CmdOrCtrl+Alt+F'
-    }
+      fileprocessing: 'CmdOrCtrl+Alt+F',
+      __palette__: 'CmdOrCtrl+Alt+P',
+    },
   })
 
   const history = ref<HistoryRecord[]>([])
   const recentTools = ref<string[]>([])
+
+  // ============ 命令面板 ============
+  const isCommandPaletteOpen = ref(false)
+  const openCommandPalette = () => { isCommandPaletteOpen.value = true }
+  const closeCommandPalette = () => { isCommandPaletteOpen.value = false }
 
   // ============ 后台采集状态 ============
   type CollectKind = 'system' | 'network' | 'process' | 'hardware' | 'software'
@@ -123,6 +141,10 @@ export const useToolboxStore = defineStore('toolbox', () => {
 
   const pendingHistoryRestore = ref<HistoryRestoreState | null>(null)
   let restoreTimeout: ReturnType<typeof setTimeout> | null = null
+
+  // 快捷键占用查看器：上次探测结果缓存（仅内存，不持久化 — 探测结果是实时快照）
+  const hotkeyLastResult = ref<any[]>([])
+  const hotkeyLastStats = ref<any | null>(null)
 
   // ============ 多 Tab 状态 ============
   interface Tab {
@@ -350,6 +372,8 @@ export const useToolboxStore = defineStore('toolbox', () => {
     addRecentTool,
     toggleFavorite,
     pendingHistoryRestore,
+    hotkeyLastResult,
+    hotkeyLastStats,
     triggerHistoryRestore,
     clearHistoryRestore,
     activeTool,
@@ -366,5 +390,9 @@ export const useToolboxStore = defineStore('toolbox', () => {
     // 后台采集
     collectResults,
     collecting,
+    // 命令面板
+    isCommandPaletteOpen,
+    openCommandPalette,
+    closeCommandPalette,
   }
 })

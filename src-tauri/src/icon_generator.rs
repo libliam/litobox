@@ -1,35 +1,42 @@
-use base64::{Engine as _, engine::general_purpose::STANDARD};
+﻿use base64::{Engine as _, engine::general_purpose::STANDARD};
 use image::{ImageFormat, imageops::FilterType};
 use std::io::Cursor;
 
-/// 单个尺寸的图标生成结果
+/// 鍗曚釜灏哄鐨勫浘鏍囩敓鎴愮粨鏋?
 #[derive(serde::Serialize, Clone)]
 pub struct IconPreview {
     pub size: u32,
     pub base64: String, // PNG base64
 }
 
-/// 图标生成结果
+/// 鍥炬爣鐢熸垚缁撴灉
 #[derive(serde::Serialize)]
 pub struct IconResult {
     pub previews: Vec<IconPreview>,
-    pub ico_base64: String, // 多尺寸 ICO 文件 base64
+    pub ico_base64: String, // 澶氬昂瀵?ICO 鏂囦欢 base64
 }
 
-/// 读取文件并返回 base64（用于前端预览本地文件）
+/// 璇诲彇鏂囦欢骞惰繑鍥?base64锛堢敤浜庡墠绔瑙堟湰鍦版枃浠讹級
 #[tauri::command]
 pub fn read_file_base64(file_path: String) -> Result<String, String> {
     let bytes = std::fs::read(&file_path)
-        .map_err(|e| format!("读取文件失败: {}", e))?;
+        .map_err(|e| format!("璇诲彇鏂囦欢澶辫触: {}", e))?;
     Ok(STANDARD.encode(&bytes))
 }
+/// 复制文件到目标路径
+#[tauri::command]
+pub fn copy_file(from: String, to: String) -> Result<String, String> {
+    std::fs::copy(&from, &to)
+        .map_err(|e| format!("文件复制失败: {}", e))?;
+    Ok(to)
+}
 
-/// 生成多尺寸图标（PNG + ICO）
+/// 鐢熸垚澶氬昂瀵稿浘鏍囷紙PNG + ICO锛?
 #[tauri::command]
 pub fn generate_icon(file_path: String, sizes: Vec<u32>) -> Result<IconResult, String> {
-    // 读取并解码图片
+    // 璇诲彇骞惰В鐮佸浘鐗?
     let img = image::open(&file_path)
-        .map_err(|e| format!("无法读取图片: {}", e))?;
+        .map_err(|e| format!("鏃犳硶璇诲彇鍥剧墖: {}", e))?;
 
     let mut previews: Vec<IconPreview> = Vec::new();
     let mut png_data_list: Vec<(u32, Vec<u8>)> = Vec::new();
@@ -37,18 +44,18 @@ pub fn generate_icon(file_path: String, sizes: Vec<u32>) -> Result<IconResult, S
     for &size in &sizes {
         let resized = img.resize_exact(size, size, FilterType::Lanczos3);
 
-        // 编码为 PNG
+        // 缂栫爜涓?PNG
         let mut png_bytes = Vec::new();
         resized
             .write_to(&mut Cursor::new(&mut png_bytes), ImageFormat::Png)
-            .map_err(|e| format!("PNG 编码失败 ({}x{}): {}", size, size, e))?;
+            .map_err(|e| format!("PNG 缂栫爜澶辫触 ({}x{}): {}", size, size, e))?;
 
         let base64 = STANDARD.encode(&png_bytes);
         previews.push(IconPreview { size, base64 });
         png_data_list.push((size, png_bytes));
     }
 
-    // 生成多尺寸 ICO
+    // 鐢熸垚澶氬昂瀵?ICO
     let ico_bytes = build_ico(&png_data_list)?;
     let ico_base64 = STANDARD.encode(&ico_bytes);
 
@@ -58,14 +65,14 @@ pub fn generate_icon(file_path: String, sizes: Vec<u32>) -> Result<IconResult, S
     })
 }
 
-/// 构建多尺寸 ICO 文件（PNG 编码，兼容 Vista+）
+/// 鏋勫缓澶氬昂瀵?ICO 鏂囦欢锛圥NG 缂栫爜锛屽吋瀹?Vista+锛?
 fn build_ico(pngs: &[(u32, Vec<u8>)]) -> Result<Vec<u8>, String> {
     let count = pngs.len();
     if count == 0 {
-        return Err("没有可生成的图标尺寸".into());
+        return Err("娌℃湁鍙敓鎴愮殑鍥炬爣灏哄".into());
     }
     if count > u16::MAX as usize {
-        return Err(format!("图标数量超过上限 {}", u16::MAX));
+        return Err(format!("鍥炬爣鏁伴噺瓒呰繃涓婇檺 {}", u16::MAX));
     }
 
     let mut ico = Vec::new();
@@ -75,7 +82,7 @@ fn build_ico(pngs: &[(u32, Vec<u8>)]) -> Result<Vec<u8>, String> {
     ico.extend_from_slice(&1u16.to_le_bytes()); // type: 1=ICO
     ico.extend_from_slice(&(count as u16).to_le_bytes()); // count
 
-    // 计算总偏移
+    // 璁＄畻鎬诲亸绉?
     let header_size = 6 + 16 * count;
     let mut offset = header_size as u32;
 

@@ -124,6 +124,54 @@ pub struct KillBatchResult {
     pub message: String,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct ServiceItem {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub display_name: String,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub start_type: String,
+    #[serde(default)]
+    pub description: String,
+}
+
+#[derive(Deserialize)]
+struct PsServiceItem {
+    #[serde(rename = "Name")]
+    name: Option<String>,
+    #[serde(rename = "DisplayName")]
+    display_name: Option<String>,
+    #[serde(rename = "State")]
+    status: Option<String>,
+    #[serde(rename = "StartMode")]
+    start_type: Option<String>,
+    #[serde(rename = "Description")]
+    description: Option<String>,
+}
+
+impl From<PsServiceItem> for ServiceItem {
+    fn from(ps: PsServiceItem) -> Self {
+        ServiceItem {
+            name: ps.name.unwrap_or_default(),
+            display_name: ps.display_name.unwrap_or_default(),
+            status: ps.status.unwrap_or_default(),
+            start_type: ps.start_type.unwrap_or_default(),
+            description: ps.description.unwrap_or_default(),
+        }
+    }
+}
+
+#[derive(Serialize, Debug)]
+pub struct ServiceResult {
+    pub success: bool,
+    pub service_name: String,
+    pub action: String,
+    pub message: String,
+}
+
 #[derive(Serialize)]
 pub struct HardwareInfo {
     pub cpu: CpuSummary,
@@ -938,6 +986,129 @@ pub fn kill_process_by_name(process_name: String) -> Result<KillBatchResult, Str
     let result = parse_taskkill_im_output(exit_code, &stdout, &stderr, &process_name);
     debug_log!("kill_process_by_name result: {:?}", result);
 
+    Ok(result)
+}
+
+// ============ 服务管理命令 ============
+
+fn parse_service_result(output: &str, service_name: &str, action: &str) -> ServiceResult {
+    let trimmed = output.trim();
+    if trimmed.starts_with("SUCCESS") {
+        let action_cn = match action {
+            "start" => "已启动",
+            "stop" => "已停止",
+            "restart" => "已重启",
+            _ => action,
+        };
+        ServiceResult {
+            success: true,
+            service_name: service_name.to_string(),
+            action: action.to_string(),
+            message: format!("{} 服务 \"{}\"", action_cn, service_name),
+        }
+    } else if trimmed.starts_with("ERROR:") {
+        let err_msg = trimmed.strip_prefix("ERROR:").unwrap_or("未知错误").trim();
+        let (friendly, known) = if err_msg.contains("denied") || err_msg.contains("拒绝") || err_msg.contains("拒绝访问") || err_msg.contains("无法打开") {
+            ("拒绝访问，可能需要管理员权限", true)
+        } else if err_msg.contains("not found") || err_msg.contains("找不到") {
+            ("服务不存在", true)
+        } else if (err_msg.contains("cannot be stopped") || err_msg.contains("无法停止") || err_msg.contains("不能停止")) && !err_msg.contains("由于以下错误") {
+            ("该服务无法停止（可能被保护）", true)
+        } else if err_msg.contains("dependent") || err_msg.contains("依赖") {
+            ("该服务存在依赖关系，无法操作", true)
+        } else {
+            (err_msg, false)
+        };
+        let action_cn = match action {
+            "start" => "启动",
+            "stop" => "停止",
+            "restart" => "重启",
+            _ => action,
+        };
+        let msg = if known {
+            format!("{} 失败: {}（原始错误: {}）", action_cn, friendly, err_msg)
+        } else {
+            format!("{} 失败: {}", action_cn, friendly)
+        };
+        ServiceResult {
+            success: false,
+            service_name: service_name.to_string(),
+            action: action.to_string(),
+            message: msg,
+        }
+    } else {
+        let action_cn = match action {
+            "start" => "启动",
+            "stop" => "停止",
+            "restart" => "重启",
+            _ => action,
+        };
+        ServiceResult {
+            success: false,
+            service_name: service_name.to_string(),
+            action: action.to_string(),
+            message: format!("{} 失败: {}", action_cn, trimmed),
+        }
+    }
+}
+
+#[tauri::command]
+pub fn get_services() -> Result<Vec<ServiceItem>, String> {
+    debug_log!("get_services: 开始获取服务列表");
+
+    let script = r#"Get-CimInstance Win32_Service | Select-Object Name, DisplayName, State, StartMode, Description | ConvertTo-Json"#;
+    let ps_services: Vec<PsServiceItem> = run_powershell_json::<PsServiceItem>(script)?;
+    let services: Vec<ServiceItem> = ps_services.into_iter().map(Into::into).collect();
+
+    debug_log!("get_services: 获取到 {} 个服务", services.len());
+    Ok(services)
+}
+
+#[tauri::command]
+pub fn start_service(name: String) -> Result<ServiceResult, String> {
+    debug_log!("start_service: name={}", name);
+
+    let escaped = name.replace('\'', "''");
+    let script = format!(
+        r#"try {{ Start-Service -Name '{}' -ErrorAction Stop; Write-Output 'SUCCESS' }} catch {{ Write-Output "ERROR:$($_.Exception.Message)" }}"#,
+        escaped
+    );
+
+    let output = run_powershell(&script)?;
+    let result = parse_service_result(&output, &name, "start");
+    debug_log!("start_service result: {:?}", result);
+    Ok(result)
+}
+
+#[tauri::command]
+pub fn stop_service(name: String) -> Result<ServiceResult, String> {
+    debug_log!("stop_service: name={}", name);
+
+    let escaped = name.replace('\'', "''");
+    let script = format!(
+        r#"try {{ Stop-Service -Name '{}' -Force -ErrorAction Stop; Write-Output 'SUCCESS' }} catch {{ Write-Output "ERROR:$($_.Exception.Message)" }}"#,
+        escaped
+    );
+
+    let output = run_powershell(&script)?;
+    let result = parse_service_result(&output, &name, "stop");
+    debug_log!("stop_service result: {:?}", result);
+    Ok(result)
+}
+
+#[tauri::command]
+pub fn restart_service(name: String) -> Result<ServiceResult, String> {
+    debug_log!("restart_service: name={}", name);
+
+    let escaped = name.replace('\'', "''");
+    let script = format!(
+        r#"try {{ Restart-Service -Name '{}' -Force -ErrorAction Stop; Write-Output 'SUCCESS' }} catch {{ Write-Output "ERROR:$($_.Exception.Message)" }}"#,
+        escaped
+    );
+
+    let output = run_powershell(&script)?;
+    let result = parse_service_result(&output, &name, "restart");
+    debug_log!("restart_service result: {:?}", result);
     Ok(result)
 }
 

@@ -18,6 +18,8 @@
         <span>© 2026 栗的百宝箱 · Made by liam</span>
       </div>
     </div>
+    <CommandPalette />
+    <ConfirmDialogWrapper />
   </div>
 </template>
 
@@ -76,6 +78,19 @@ import FileSearcher from '@/views/FileSearcher.vue'
 import IconGenerator from '@/views/IconGenerator.vue'
 import ImageToolEnhanced from '@/views/ImageToolEnhanced.vue'
 import AudioTool from '@/views/AudioTool.vue'
+import VideoTool from '@/views/VideoTool.vue'
+import MediaInfoTool from '@/views/MediaInfoTool.vue'
+import ServiceListView from '@/views/ServiceListView.vue'
+import HotkeyView from '@/views/HotkeyView.vue'
+import HostsView from '@/views/HostsView.vue'
+import NetworkConnections from '@/views/NetworkConnections.vue'
+import ScheduledTasksView from '@/views/ScheduledTasksView.vue'
+import StartupItemsView from '@/views/StartupItemsView.vue'
+import EnvVarsView from '@/views/EnvVarsView.vue'
+import CertViewer from '@/views/CertViewer.vue'
+import BoostView from '@/views/BoostView.vue'
+import CommandPalette from '@/components/CommandPalette.vue'
+import { ConfirmDialogWrapper } from '@/composables/useConfirmDialog'
 
 // toolId → 组件 映射表（替代 v-if 链）
 const toolComponentMap: Record<string, any> = {
@@ -127,6 +142,17 @@ const toolComponentMap: Record<string, any> = {
   iconGenerator: IconGenerator,
   imageToolEnhanced: ImageToolEnhanced,
   audioTool: AudioTool,
+  videoTool: VideoTool,
+  mediaInfo: MediaInfoTool,
+  serviceList: ServiceListView,
+  hotkeyViewer: HotkeyView,
+  hostsManager: HostsView,
+  networkConnections: NetworkConnections,
+  scheduledTasks: ScheduledTasksView,
+  startupItems: StartupItemsView,
+  envVars: EnvVarsView,
+  certViewer: CertViewer,
+  boost: BoostView,
 }
 
 const store = useToolboxStore()
@@ -142,6 +168,8 @@ const activeTool = computed({
 store.openTab(store.config.lastTool || 'home')
 
 let unlistenShortcut: (() => void) | null = null
+let unlistenPalette: (() => void) | null = null
+let globalKeydownHandler: ((e: KeyboardEvent) => void) | null = null
 
 const handleSelectTool = (toolId: string) => {
   store.openTab(toolId)
@@ -187,11 +215,39 @@ onMounted(async () => {
       store.addRecentTool(toolId)
     }
   })
+
+  unlistenPalette = await listen('command-palette-triggered', () => {
+    // 全局热键也是 toggle 行为，与应用内 Ctrl+P 保持一致
+    if (store.isCommandPaletteOpen) {
+      store.closeCommandPalette()
+    } else {
+      store.openCommandPalette()
+    }
+  })
+
+  // 应用内 Ctrl+P toggle 命令面板（仅应用激活时生效）
+  globalKeydownHandler = (e: KeyboardEvent) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
+      e.preventDefault()
+      if (store.isCommandPaletteOpen) {
+        store.closeCommandPalette()
+      } else {
+        store.openCommandPalette()
+      }
+    }
+  }
+  window.addEventListener('keydown', globalKeydownHandler)
 })
 
 onUnmounted(() => {
   if (unlistenShortcut) {
     unlistenShortcut()
+  }
+  if (unlistenPalette) {
+    unlistenPalette()
+  }
+  if (globalKeydownHandler) {
+    window.removeEventListener('keydown', globalKeydownHandler)
   }
 })
 </script>

@@ -194,6 +194,7 @@ const handleJumpToTool = async (record: any) => {
 
     store.triggerHistoryRestore({
       tool: record.tool,
+      action: record.action,
       input: detail.input_full || '',
       output: detail.output_full || '',
       options,

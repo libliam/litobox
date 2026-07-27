@@ -28,6 +28,7 @@ Rules:
 - Mark intentional simplifications with a `ponytail:` comment. If the shortcut has a known ceiling (global lock, O(n²) scan, naive heuristic), the comment names the ceiling and the upgrade path.
 - **版本号更新必须同步更新 README**：每次更新版本号意味着新增了功能，必须在 README.md 的功能阶段记录中添加新功能条目。
 - **经验总结注重通用性**：当需要总结经验、提炼解决方法时，要考虑通用性和可复用性，避免只针对特定场景。
+- **开发新功能时主动沟通确认**：在实现过程中遇到模糊需求、多种可行方案、或需要做取舍决策时，主动向用户提问确认，而不是自行猜测。宁可多问一句，也不要做出不符合用户预期的实现。沟通内容包括但不限于：功能边界确认、UI交互细节、参数默认值、异常场景处理策略。目标是确保最终交付的功能真正满足用户需求，减少返工。
 
 Not lazy about: understanding the problem (read it fully and trace the real flow before picking a rung, a small diff you don't understand is just laziness dressed up as efficiency), input validation at trust boundaries, error handling that prevents data loss, security, accessibility, the calibration real hardware needs (the platform is never the spec ideal, a clock drifts, a sensor reads off), anything explicitly requested. Lazy code without its check is unfinished: non-trivial logic leaves ONE runnable check behind, the smallest thing that fails if the logic breaks (an assert-based demo/self-check or one small test file; no frameworks, no fixtures). Trivial one-liners need no test.
 
@@ -114,6 +115,33 @@ litobox/
 - 配置数据持久化到localStorage
 - 操作历史最多保留10条
 
+### 公共组件索引（开发新功能时优先复用）
+
+| 组件/Composable | 文件路径 | 用途 | 使用场景 |
+|----------------|----------|------|----------|
+| `ConfirmDialog` | `src/components/ConfirmDialog.vue` | 确认弹窗组件 | 删除/结束进程/危险操作前确认 |
+| `useConfirmDialog` | `src/composables/useConfirmDialog.ts` | 弹窗调用 composable | `const { confirm } = useConfirmDialog(); const ok = await confirm.ask('标题', '消息', { type: 'danger' })` |
+| `DataTable` | `src/components/DataTable.vue` | 表格组件（el-table薄封装） | 数据列表展示，默认 border+stripe+small |
+| `ToolInput` | `src/components/ToolInput.vue` | 工具输入区 | 单输入工具页的输入区域 |
+| `ToolOutput` | `src/components/ToolOutput.vue` | 工具输出区 | 工具页的输出展示区域 |
+| `ToolActions` | `src/components/ToolActions.vue` | 工具操作按钮组 | 输入/输出区的操作按钮（清空/粘贴/复制） |
+| `VariablePicker` | `src/components/VariablePicker.vue` | 变量选择器 | 输入区插入变量池变量 |
+| `TabBar` | `src/components/TabBar.vue` | 顶部标签栏 | 多Tab页面的标签管理 |
+
+**使用示例**：
+
+```vue
+<!-- 表格 -->
+<DataTable :data="list" max-height="600">
+  <el-table-column prop="name" label="名称" />
+</DataTable>
+
+<!-- 确认弹窗 -->
+const { confirm } = useConfirmDialog()
+const ok = await confirm.ask('删除确认', '确定删除吗？', { type: 'danger', confirmText: '删除' })
+if (!ok) return
+```
+
 ### 通用注意事项
 - **禁止添加网络请求相关代码**
 - **禁止引入广告/推荐内容**
@@ -122,6 +150,13 @@ litobox/
 - 打包时不生成安装包 — `bundle.targets` 保持为空数组
 - 耗时操作必须显示加载提示 — 使用 `ElLoading.service()` + `finally` 确保关闭
 - **历史记录必须传 `inputFull` / `outputFull`** — `store.addHistory()` 调用时必须同时传入完整输入输出（`inputFull: 完整输入, outputFull: 完整输出`），否则操作历史页面的双击跳转功能无法还原数据。`inputPreview`/`outputPreview` 仅用于列表展示（截断50字符），`inputFull`/`outputFull` 用于详情还原
+
+### CSV 导出规范（所有导出功能必须遵循）
+
+- 使用 `save_text_with_dialog` 后端命令弹出保存对话框，**禁止**浏览器 blob 自动下载
+- 必须显示完整保存路径：`ElMessage.success(\`已导出到: ${savedPath}\`)`
+- BOM 前缀 `\uFEFF` 确保 Excel 正确识别 UTF-8
+- 文件名带时间戳到秒，避免覆盖；含逗号/换行的字段用双引号包裹并转义
 
 ## 后端开发指南
 
@@ -162,13 +197,14 @@ Tauri 2.x 子进程（`Command::new("powershell")` / `Command::new("reg")`）受
 13. **Windows 路径展示前必须去掉 `\\?\` 前缀**：Rust 的 `Path::canonicalize()` 在 Windows 上会自动加上 `\\?\` 长路径前缀（支持 32767 字符路径），展示给用户时不友好。所有 canonicalize 后的路径在存入状态/返回前端前，统一用 `strip_prefix(r"\\?\")` 去掉
 14. **二进制文件检测优先用扩展名而非内容嗅探**：仅靠 BOM 和 `\0` 字节检测会误判 PDF（开头是 `%PDF-1.x` 纯文本）、ZIP（开头是 `PK`）等格式。模式：扩展名匹配常见二进制格式（pdf/zip/jpg/mp3/avi 等）优先返回 true → BOM 检测 → `\0` 字节检测，三级判断
 15. **Rust 图片处理命令必须用 async + spawn_blocking**：`image` crate 的解码/合成操作会阻塞主线程导致 UI 卡死（未响应）。所有图片处理命令必须用 `async fn` + `tauri::async_runtime::spawn_blocking(move || { do_xxx(...) })` 在后台线程执行。禁止同步执行大图操作。
-16. **Rust 结构体字段名不会自动转 camelCase**：Tauri 不会将 Rust 的 snake_case 字段名自动转为 JS 的 camelCase。前端接口定义和模板必须使用与 Rust 结构体完全一致的 snake_case 命名（如 `original_size` 而非 `originalSize`）。
+16. **Rust 结构体字段名不会自动转 camelCase**：Tauri 不会将 Rust 的 snake_case 字段名自动转为 JS 的 camelCase。前端接口定义和模板必须使用与 Rust 结构体完全一致的 snake_case 命名（如 `original_size` 而非 `originalSize`）。**但命令函数参数相反**：Rust 侧用 snake_case（如 `time_point`），前端 invoke 时必须传 camelCase（如 `timePoint`）。两者规则不同，注意区分。
 17. **获取文件信息用专用轻量命令**：不要调用处理命令（如 `image_compress`）来获取文件大小。应新增专用的 `get_file_info` 命令，只用 `metadata().len()` 获取大小，避免解码图片导致卡顿。
 18. **耗时操作不要用 ElLoading 全屏锁**：`ElLoading.service({ lock: true })` 会锁住整个 UI 导致无法切换工具。改用按钮自身的 `loading` 属性（`:loading="isProcessing"`），不影响其他功能切换。
 19. **文件预览用 read_file_base64 后端命令**：Tauri asset scope 限制可能导致 `URL.createObjectURL()` 无法展示本地文件。应通过后端命令读取文件内容并返回 base64 字符串，前端用 `data:image/xxx;base64,...` 展示。
 20. **多 Tab 页面布局规范**：Tab 栏放在独立的 `.tool-card.sticky-card` 中，使用自定义 class（如 `pdf-tabs`/`image-tabs`），在 scoped 样式中定义完整 Tab 样式。各 Tab 内容用 `v-if="activeTab === 'xxx'"` 的 `.tool-card` 独立渲染，不要放在 `el-tab-pane` 内。参考 `_ToolTemplate.vue`、PdfTool.vue。
 21. **scoped 样式中禁止重复定义全局类名**：在 `<style scoped>` 中重复定义 `.tool-card`/`.card-header`/`.card-body` 等全局类名会导致样式冲突（padding 被覆盖等）。只定义页面特有样式，全局样式由 `theme.css` 提供。如需强制覆盖，用非 scoped `<style>` 块 + `!important`。
 22. **侧边栏菜单顺序由 `TOOL_LIST` 数组顺序决定**：`SidebarNav.vue` 按 `category` 分组，同组内按 `TOOL_LIST` 中的先后顺序排列。调整菜单顺序 = 在 `src/store/index.ts` 的 `TOOL_LIST` 中移动对应条目的位置（同 category 内调整），不是改 `SidebarNav.vue` 的渲染逻辑。
+23. **ffmpeg 实时进度必须用 `-progress pipe:1`**：ffmpeg 默认把进度输出到 stderr，且用 `\r`（回车）刷新同一行。Rust 的 `BufReader::lines()` 按 `\n` 分割，会导致所有进度更新堆积成一行直到进程退出，进度条从 0% 直接跳到 100%。正确做法：加 `-progress pipe:1 -nostats` 参数，让 ffmpeg 把结构化进度输出到 stdout（每行 `\n` 分隔），解析 `out_time_us=` 字段计算百分比。同时注意：同时捕获 stdout 和 stderr 时，必须用独立线程读取其中一个流，避免管道缓冲区满导致 ffmpeg 阻塞死锁。
 
 ## 工作流与变量池集成
 

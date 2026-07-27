@@ -14,6 +14,27 @@ mod file_searcher;
 mod icon_generator;
 mod image_tools;
 mod audio_tools;
+mod video_tools;
+mod pdf_tools;
+mod media_info;
+mod hotkey_probe;
+mod hotkey_data;
+mod hosts_manager;
+mod network_connections;
+mod scheduled_tasks;
+mod startup_items;
+mod env_vars;
+mod boost;
+mod cert_reader;
+
+// ponytail: debug 模式输出日志到 stderr，release 模式编译时移除（零开销）
+macro_rules! debug_log {
+    ($($arg:tt)*) => {
+        if cfg!(debug_assertions) {
+            eprintln!($($arg)*)
+        }
+    };
+}
 
 use tauri::{Manager, Emitter};
 use tauri_plugin_dialog::{DialogExt, MessageDialogBuilder, MessageDialogButtons, MessageDialogKind};
@@ -105,6 +126,32 @@ fn main() {
             system_info::get_collect_status,
             system_info::kill_process,
             system_info::kill_process_by_name,
+            // 服务管理命令
+            system_info::get_services,
+            system_info::start_service,
+            system_info::stop_service,
+            system_info::restart_service,
+            network_connections::get_network_connections,
+            // 计划任务管理命令
+            scheduled_tasks::get_scheduled_tasks,
+            scheduled_tasks::enable_scheduled_task,
+            scheduled_tasks::disable_scheduled_task,
+            scheduled_tasks::run_scheduled_task,
+            scheduled_tasks::delete_scheduled_task,
+            startup_items::get_startup_items,
+            startup_items::enable_startup_item,
+            startup_items::disable_startup_item,
+            startup_items::delete_startup_item,
+            startup_items::add_startup_item,
+            env_vars::get_env_vars,
+            env_vars::set_env_var,
+            env_vars::delete_env_var,
+            // 一键加速命令
+            boost::boost_scan,
+            boost::boost_execute,
+            cert_reader::read_cert_store,
+            cert_reader::get_cert_detail,
+            cert_reader::parse_cert_file,
             // SQLite 查看器命令
             sqlite_viewer::sqlite_list_tables,
             sqlite_viewer::sqlite_get_schema,
@@ -134,6 +181,7 @@ fn main() {
             // 图标生成命令
             icon_generator::generate_icon,
             icon_generator::read_file_base64,
+            icon_generator::copy_file,
             // 图片工具增强命令
             image_tools::get_file_info,
             image_tools::get_thumbnail,
@@ -144,9 +192,56 @@ fn main() {
             image_tools::image_palette,
             audio_tools::check_ffmpeg,
             audio_tools::get_audio_info,
+            video_tools::get_video_info,
+            video_tools::extract_thumbnails,
+            video_tools::video_crop,
+            video_tools::video_transcode,
+            video_tools::audio_extract,
+            video_tools::video_compress,
+            video_tools::video_merge,
+            video_tools::video_extract_frame,
+            video_tools::video_preview_frame,
+            video_tools::calc_crop_preset,
+            video_tools::video_crop_region,
+            video_tools::video_speed_change,
+            video_tools::video_rotate_flip,
+            video_tools::video_volume,
             audio_tools::generate_waveform,
             audio_tools::audio_crop,
             audio_tools::get_audio_preview,
+            audio_tools::audio_convert,
+            audio_tools::audio_compress,
+            audio_tools::audio_merge,
+            audio_tools::audio_speed_change,
+            audio_tools::list_tts_voices,
+            audio_tools::tts_generate,
+            audio_tools::get_downloads_dir,
+            pdf_tools::detect_ghostscript,
+            pdf_tools::get_pdf_page_count,
+            pdf_tools::compress_pdf,
+            pdf_tools::save_temp_file,
+            media_info::get_media_info,
+            media_info::extract_cover_art,
+            // 全局快捷键占用查看器命令
+            hotkey_probe::hotkey_probe_start,
+            hotkey_probe::hotkey_probe_cancel,
+            hotkey_probe::hotkey_probe_status,
+            hotkey_probe::hotkey_probe_get_results,
+            hotkey_probe::hotkey_probe_export_csv,
+            // Hosts 文件管理器命令
+            hosts_manager::hosts_read,
+            hosts_manager::hosts_save,
+            hosts_manager::hosts_check_admin,
+            hosts_manager::hosts_list_backups,
+            hosts_manager::hosts_preview_backup,
+            hosts_manager::hosts_restore_backup,
+            hosts_manager::hosts_delete_backup,
+            hosts_manager::hosts_create_backup,
+            hosts_manager::hosts_profile_list,
+            hosts_manager::hosts_profile_load,
+            hosts_manager::hosts_profile_save,
+            hosts_manager::hosts_profile_delete,
+            hosts_manager::hosts_profile_apply,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -173,7 +268,6 @@ fn main() {
             });
             
             let shortcuts = db::db_read_shortcuts();
-            
             let manager = app.global_shortcut();
             
             for (tool_id, shortcut_str) in shortcuts {
@@ -187,7 +281,23 @@ fn main() {
                 manager.on_shortcut(shortcut, move |_app, _sc, event| {
                     if let tauri_plugin_global_shortcut::ShortcutState::Pressed = event.state {
                         if let Some(window) = h.get_webview_window("main") {
-                            let _ = window.emit("global-shortcut-triggered", &tool);
+                            if tool == "__palette__" {
+                                // 命令面板：先唤起窗口到前台（最小化状态也能正确恢复）
+                                #[cfg(target_os = "windows")]
+                                if let Ok(hwnd) = window.hwnd() {
+                                    use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SetForegroundWindow, SW_RESTORE};
+                                    unsafe {
+                                        let _ = ShowWindow(hwnd.0, SW_RESTORE);
+                                        let _ = SetForegroundWindow(hwnd.0);
+                                    }
+                                }
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                                debug_log!("[command_palette] global hotkey triggered, window shown");
+                                let _ = window.emit("command-palette-triggered", ());
+                            } else {
+                                let _ = window.emit("global-shortcut-triggered", &tool);
+                            }
                         }
                     }
                 }).unwrap_or_else(|e| {

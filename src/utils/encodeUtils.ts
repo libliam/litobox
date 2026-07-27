@@ -12,6 +12,19 @@ export function urlDecode(text: string): string {
   }
 }
 
+export function urlDoubleDecode(text: string): string {
+  try {
+    const first = decodeURIComponent(text)
+    try {
+      return decodeURIComponent(first)
+    } catch {
+      return first + '\n\n（注：输入仅编码了一层，第二次解码无变化）'
+    }
+  } catch {
+    return '解码失败：无效的URL编码'
+  }
+}
+
 export function base64Encode(text: string): string {
   const bytes = new TextEncoder().encode(text)
   return Base64.fromUint8Array(bytes)

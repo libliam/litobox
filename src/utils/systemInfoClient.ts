@@ -240,6 +240,39 @@ export function getCollectStatus(kind: CollectKind): Promise<TaskState | null> {
   return invoke<TaskState | null>('get_collect_status', { kind })
 }
 
+// ============ 服务管理类型 ============
+
+export interface ServiceItem {
+  name: string
+  display_name: string
+  status: string
+  start_type: string
+  description: string
+}
+
+export interface ServiceResult {
+  success: boolean
+  service_name: string
+  action: string
+  message: string
+}
+
+export function getServices(): Promise<ServiceItem[]> {
+  return invoke<ServiceItem[]>('get_services')
+}
+
+export function startService(name: string): Promise<ServiceResult> {
+  return invoke<ServiceResult>('start_service', { name })
+}
+
+export function stopService(name: string): Promise<ServiceResult> {
+  return invoke<ServiceResult>('stop_service', { name })
+}
+
+export function restartService(name: string): Promise<ServiceResult> {
+  return invoke<ServiceResult>('restart_service', { name })
+}
+
 // ============ 格式化工具函数 ============
 
 export function formatBytes(bytes: number): string {
@@ -267,6 +300,262 @@ export function formatTimestamp(): string {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
+// ============ 网络连接查看器 ============
+
+export interface NetworkConnection {
+  protocol: string
+  local_addr: string
+  remote_addr: string
+  state: string
+  pid: number
+  process_name: string
+  process_path: string
+}
+
+export function getNetworkConnections(): Promise<NetworkConnection[]> {
+  return invoke<NetworkConnection[]>('get_network_connections')
+}
+
+// ============ 计划任务管理器 ============
+
+export interface ScheduledTask {
+  task_name: string
+  task_path: string
+  state: string         // "Ready" / "Running" / "Disabled" / "Unknown"
+  description: string
+  author: string
+  last_run_time: string
+  last_task_result: number
+  next_run_time: string
+  trigger_brief: string
+  action_brief: string
+  principal: string
+  is_system: boolean
+  triggers_json: string
+  actions_json: string
+}
+
+export interface TaskOpResult {
+  success: boolean
+  task_name: string
+  action: string
+  message: string
+}
+
+export function getScheduledTasks(includeSystem: boolean): Promise<ScheduledTask[]> {
+  return invoke<ScheduledTask[]>('get_scheduled_tasks', { includeSystem })
+}
+
+export function enableScheduledTask(taskName: string, taskPath: string): Promise<TaskOpResult> {
+  return invoke<TaskOpResult>('enable_scheduled_task', { taskName, taskPath })
+}
+
+export function disableScheduledTask(taskName: string, taskPath: string): Promise<TaskOpResult> {
+  return invoke<TaskOpResult>('disable_scheduled_task', { taskName, taskPath })
+}
+
+export function runScheduledTask(taskName: string, taskPath: string): Promise<TaskOpResult> {
+  return invoke<TaskOpResult>('run_scheduled_task', { taskName, taskPath })
+}
+
+export function deleteScheduledTask(taskName: string, taskPath: string): Promise<TaskOpResult> {
+  return invoke<TaskOpResult>('delete_scheduled_task', { taskName, taskPath })
+}
+
+// ============ 开机启动项管理 ============
+
+export interface StartupItemInfo {
+  name: string
+  command: string
+  location: string
+  source: string       // "registry" | "startup_folder"
+  enabled: boolean
+  is_system: boolean
+}
+
+export interface StartupOpResult {
+  success: boolean
+  item_name: string
+  action: string
+  message: string
+}
+
+export function getStartupItems(): Promise<StartupItemInfo[]> {
+  return invoke<StartupItemInfo[]>('get_startup_items')
+}
+
+export function enableStartupItem(name: string, location: string, source: string): Promise<StartupOpResult> {
+  return invoke<StartupOpResult>('enable_startup_item', { name, location, source })
+}
+
+export function disableStartupItem(name: string, location: string, source: string): Promise<StartupOpResult> {
+  return invoke<StartupOpResult>('disable_startup_item', { name, location, source })
+}
+
+export function deleteStartupItem(name: string, location: string, source: string): Promise<StartupOpResult> {
+  return invoke<StartupOpResult>('delete_startup_item', { name, location, source })
+}
+
+export function addStartupItem(name: string, command: string, source: string): Promise<StartupOpResult> {
+  return invoke<StartupOpResult>('add_startup_item', { name, command, source })
+}
+
+// ============ 环境变量管理 ============
+
+export interface EnvVarInfo {
+  name: string
+  value: string
+}
+
+export interface EnvVarList {
+  user: EnvVarInfo[]
+  system: EnvVarInfo[]
+}
+
+export interface EnvVarResult {
+  success: boolean
+  message: string
+}
+
+export function getEnvVars(): Promise<EnvVarList> {
+  return invoke<EnvVarList>('get_env_vars')
+}
+
+export function setEnvVar(name: string, value: string, scope: string): Promise<EnvVarResult> {
+  return invoke<EnvVarResult>('set_env_var', { name, value, scope })
+}
+
+export function deleteEnvVar(name: string, scope: string): Promise<EnvVarResult> {
+  return invoke<EnvVarResult>('delete_env_var', { name, scope })
+}
+
+// ============ 一键加速 ============
+
+export interface ProcessMemoryInfo {
+  name: string
+  pid: number
+  working_set: number
+}
+
+export interface RecycleItemInfo {
+  name: string
+  size: number
+  path: string
+}
+
+export interface TempFileInfo {
+  name: string
+  size: number
+  path: string
+}
+
+export interface BoostScanResult {
+  memory_total: number
+  temp_size: number
+  temp_file_count: number
+  temp_items: TempFileInfo[]
+  recycle_size: number
+  recycle_items: RecycleItemInfo[]
+  processes: ProcessMemoryInfo[]
+}
+
+export interface BoostItemResult {
+  name: string
+  success: boolean
+  freed: number
+  duration_ms: number
+  message: string
+}
+
+export interface BoostExecuteResult {
+  items: BoostItemResult[]
+  total_freed: number
+  total_duration_ms: number
+}
+
+export function boostScan(): Promise<BoostScanResult> {
+  return invoke<BoostScanResult>('boost_scan')
+}
+
+export function boostExecute(items?: string[]): Promise<BoostExecuteResult> {
+  return invoke<BoostExecuteResult>('boost_execute', { items: items ?? null })
+}
+
+// ============ 证书查看器 ============
+
+export interface CertInfo {
+  subject: string
+  issuer: string
+  not_before: string
+  not_after: string
+  serial_number: string
+  thumbprint: string
+  store_name: string
+  has_private_key: boolean
+  is_expired: boolean
+}
+
+export interface CertStoreList {
+  personal: CertInfo[]
+  root: CertInfo[]
+  ca: CertInfo[]
+}
+
+export interface CertDetail {
+  subject: string
+  issuer: string
+  not_before: string
+  not_after: string
+  serial_number: string
+  version: string
+  thumbprint: string
+  thumbprint_sha256: string
+  san: string[]
+  key_usage: string[]
+  enhanced_key_usage: string[]
+  basic_constraints: string
+  signature_algorithm: string
+  public_key: string
+  raw_pem: string
+  is_expired: boolean
+  days_until_expiry: number
+}
+
+export function readCertStore(): Promise<CertStoreList> {
+  return invoke<CertStoreList>('read_cert_store')
+}
+
+export function getCertDetail(thumbprint: string, storeName: string): Promise<CertDetail> {
+  return invoke<CertDetail>('get_cert_detail', { thumbprint, storeName })
+}
+
+export function parseCertFile(filePath: string, password?: string): Promise<CertDetail> {
+  return invoke<CertDetail>('parse_cert_file', { filePath, password: password ?? null })
+}
+
+/**
+ * 前端镜像触发器格式化（与 Rust format_trigger_brief 一致），用于详情面板渲染
+ */
+export function formatTriggerBrief(triggerType: string, startBoundary: string): string {
+  const time = extractTimeFromBoundary(startBoundary)
+  switch (triggerType) {
+    case 'MSFT_TaskDailyTrigger': return `每日 ${time}`
+    case 'MSFT_TaskWeeklyTrigger': return `每周 ${time}`
+    case 'MSFT_TaskLogonTrigger': return '登录时'
+    case 'MSFT_TaskBootTrigger': return '启动时'
+    case 'MSFT_TaskTimeTrigger': return `${time} 一次性`
+    default: return '自定义'
+  }
+}
+
+function extractTimeFromBoundary(boundary: string): string {
+  if (!boundary) return '—'
+  const parts = boundary.split('T')
+  if (parts.length < 2) return '—'
+  const timePart = parts[1].split('+')[0]
+  return timePart.length >= 5 ? timePart.slice(0, 5) : '—'
+}
+
 // ============ 自检 ============
 // ponytail: 纯函数自检，确保格式化逻辑正确
 console.assert(formatBytes(0) === '0 B', 'formatBytes(0)')
@@ -274,3 +563,13 @@ console.assert(formatBytes(1024) === '1.0 KB', 'formatBytes(1024)')
 console.assert(formatBytes(1073741824) === '1.0 GB', 'formatBytes(1GB)')
 console.assert(formatUptime(3661) === '1小时1分钟', 'formatUptime(3661)')
 console.assert(formatUptime(90061) === '1天1小时1分钟', 'formatUptime(90061)')
+console.assert(formatTriggerBrief('MSFT_TaskDailyTrigger', '2026-07-23T09:00:00') === '每日 09:00', 'daily trigger')
+console.assert(formatTriggerBrief('MSFT_TaskWeeklyTrigger', '2026-07-23T08:30:00') === '每周 08:30', 'weekly trigger')
+console.assert(formatTriggerBrief('MSFT_TaskLogonTrigger', '') === '登录时', 'logon trigger')
+console.assert(formatTriggerBrief('MSFT_TaskBootTrigger', '') === '启动时', 'boot trigger')
+console.assert(formatTriggerBrief('MSFT_TaskTimeTrigger', '2026-07-23T15:00:00') === '15:00 一次性', 'time trigger')
+console.assert(formatTriggerBrief('', '') === '自定义', 'empty trigger')
+console.assert(formatTriggerBrief('MSFT_TaskUnknown', '2026-07-23T09:00:00') === '自定义', 'unknown trigger')
+console.assert(extractTimeFromBoundary('') === '—', 'empty boundary')
+console.assert(extractTimeFromBoundary('invalid') === '—', 'malformed boundary')
+console.assert(extractTimeFromBoundary('2026-07-23T09:00:00+08:00') === '09:00', 'boundary with tz')
