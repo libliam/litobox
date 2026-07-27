@@ -11,6 +11,7 @@
             <div class="group-buttons">
               <el-button size="small" @click="handleEncode(encodeUtils.urlEncode)">URL编码</el-button>
               <el-button size="small" @click="handleEncode(encodeUtils.urlDecode)">URL解码</el-button>
+              <el-button size="small" @click="handleEncode(encodeUtils.urlDoubleDecode)">URL双重解码</el-button>
             </div>
           </div>
           <div class="action-group">
@@ -71,7 +72,7 @@
       </div>
     </div>
     
-    <div class="tool-card">
+    <div v-if="showTimestampOptions" class="tool-card">
       <div class="card-header">
         <span class="card-title">时间戳选项</span>
       </div>
@@ -98,6 +99,7 @@ const outputValue = ref('')
 const errorMessage = ref('')
 const isError = ref(false)
 const timestampMode = ref<'ms' | 's'>('ms')
+const showTimestampOptions = ref(false)
 
 const handleEncode = (encodeFn: (text: string) => string) => {
   if (!inputValue.value.trim()) {
@@ -123,6 +125,7 @@ const handleEncode = (encodeFn: (text: string) => string) => {
 }
 
 const handleTimestampToDatetime = () => {
+  showTimestampOptions.value = true
   const timestamp = Number(inputValue.value)
   if (isNaN(timestamp)) {
     errorMessage.value = '请输入有效的时间戳'
@@ -137,6 +140,7 @@ const handleTimestampToDatetime = () => {
 }
 
 const handleDatetimeToTimestamp = () => {
+  showTimestampOptions.value = true
   const result = encodeUtils.datetimeToTimestamp(inputValue.value, timestampMode.value === 'ms')
   if (typeof result === 'string') {
     errorMessage.value = result
