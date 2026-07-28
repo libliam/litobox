@@ -27,6 +27,7 @@ mod env_vars;
 mod boost;
 mod cert_reader;
 mod password_vault;
+mod file_renamer;
 
 // ponytail: debug 模式输出日志到 stderr，release 模式编译时移除（零开销）
 macro_rules! debug_log {
@@ -167,6 +168,12 @@ fn main() {
             password_vault::pv_change_master_password,
             password_vault::pv_check_duplicates,
             password_vault::pv_batch_delete,
+            // 文件批量重命名命令
+            file_renamer::rename_list_files,
+            file_renamer::rename_preview,
+            file_renamer::rename_execute,
+            file_renamer::rename_undo,
+            file_renamer::rename_pick_folder,
             // SQLite 查看器命令
             sqlite_viewer::sqlite_list_tables,
             sqlite_viewer::sqlite_get_schema,

@@ -90,6 +90,7 @@ import EnvVarsView from '@/views/EnvVarsView.vue'
 import CertViewer from '@/views/CertViewer.vue'
 import BoostView from '@/views/BoostView.vue'
 import PasswordVault from '@/views/PasswordVault.vue'
+import FileRenamer from '@/views/FileRenamer.vue'
 import CommandPalette from '@/components/CommandPalette.vue'
 import { ConfirmDialogWrapper } from '@/composables/useConfirmDialog'
 
@@ -155,6 +156,7 @@ const toolComponentMap: Record<string, any> = {
   certViewer: CertViewer,
   boost: BoostView,
   passwordVault: PasswordVault,
+  fileRenamer: FileRenamer,
 }
 
 const store = useToolboxStore()

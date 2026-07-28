@@ -717,6 +717,10 @@ async function executeStep(tool: string, action: string, input: string): Promise
       return executeCalculatorAction(action, input)
     case 'certViewer':
       return executeCertAction(action, input)
+    case 'fileRenamer':
+    case 'boost':
+    case 'passwordVault':
+      return input  // 文件/系统操作类工具，工作流中透传输入
     default:
       return input
   }
