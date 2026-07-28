@@ -103,11 +103,6 @@ pub fn pv_set_master_password(password: String) -> Result<(), String> {
              ON CONFLICT(key) DO UPDATE SET value = ?1",
             params![salt],
         ).map_err(|e| e.to_string())?;
-        conn.execute(
-            "INSERT INTO config (key, value) VALUES ('password_vault_master_plain', ?1)
-             ON CONFLICT(key) DO UPDATE SET value = ?1",
-            params![password],
-        ).map_err(|e| e.to_string())?;
         Ok(())
     })
 }
@@ -491,10 +486,6 @@ pub fn pv_change_master_password(old_password: String, new_password: String) -> 
             conn.execute(
                 "UPDATE config SET value = ?1 WHERE key = 'password_vault_salt'",
                 params![new_salt],
-            ).map_err(|e| e.to_string())?;
-            conn.execute(
-                "UPDATE config SET value = ?1 WHERE key = 'password_vault_master_plain'",
-                params![new_password],
             ).map_err(|e| e.to_string())?;
         }
 

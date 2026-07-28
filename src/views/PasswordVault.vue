@@ -48,6 +48,7 @@
             </el-tooltip>
           </div>
           <div class="card-actions">
+            <el-button size="small" @click="handleExport">导出</el-button>
             <div class="import-wrapper">
               <el-button size="small" @click="handleImport">批量导入</el-button>
               <el-tooltip placement="bottom" effect="dark">
@@ -330,10 +331,6 @@ const handleReset = async () => {
   const ok = await confirm.ask(
     '重置主密码',
     '⚠️ 警告：此操作将删除所有已保存的凭据！\n\n' +
-    '如果您只是忘记了主密码，可以尝试在数据库文件中找回：\n' +
-    '📁 %APPDATA%\\com.dev.toolbox\\litobox.db\n\n' +
-    '使用 SQLite 查看工具打开后执行：\n' +
-    'SELECT value FROM config WHERE key = "password_vault_master_plain"\n\n' +
     '❌ 确定要重置吗？所有凭据数据将被永久删除！',
     { type: 'danger', confirmText: '确认重置', cancelText: '取消' }
   )
@@ -378,6 +375,38 @@ const handleCopy = async (password: string) => {
 
 const handleImport = () => {
   fileInputRef.value?.click()
+}
+
+const escapeCSV = (value: string): string => {
+  if (!value) return ''
+  if (value.includes(',') || value.includes('"') || value.includes('\n') || value.includes('\r')) {
+    return '"' + value.replace(/"/g, '""') + '"'
+  }
+  return value
+}
+
+const handleExport = async () => {
+  if (credentials.value.length === 0) {
+    ElMessage.warning('没有凭据可导出')
+    return
+  }
+
+  const header = 'name,url,username,password,notes'
+  const rows = credentials.value.map(c =>
+    [c.name, c.url, c.username, c.password, c.notes].map(escapeCSV).join(',')
+  )
+  const csv = '\uFEFF' + header + '\n' + rows.join('\n')
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+  const filename = `password_vault_${timestamp}.csv`
+
+  try {
+    const savedPath = await invoke<string>('save_text_with_dialog', { content: csv, filename })
+    if (savedPath !== 'cancelled') {
+      ElMessage.success(`已导出到: ${savedPath}`)
+    }
+  } catch (e) {
+    ElMessage.error('导出失败: ' + String(e))
+  }
 }
 
 const splitCSVLine = (line: string): string[] => {
