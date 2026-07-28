@@ -165,6 +165,8 @@ fn main() {
             password_vault::pv_reset_master_password,
             password_vault::pv_import_credentials,
             password_vault::pv_change_master_password,
+            password_vault::pv_check_duplicates,
+            password_vault::pv_batch_delete,
             // SQLite 查看器命令
             sqlite_viewer::sqlite_list_tables,
             sqlite_viewer::sqlite_get_schema,

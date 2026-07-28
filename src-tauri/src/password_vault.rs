@@ -463,3 +463,67 @@ pub fn pv_change_master_password(old_password: String, new_password: String) -> 
         Ok(())
     })
 }
+
+/// 导入时检测重复：基于 (name + username) 匹配已有数据
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ImportCredential {
+    pub name: String,
+    pub url: String,
+    pub username: String,
+    pub password: String,
+    pub notes: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct DuplicateResult {
+    pub index: usize,
+    pub name: String,
+    pub url: String,
+    pub username: String,
+}
+
+#[tauri::command]
+pub fn pv_check_duplicates(credentials: Vec<ImportCredential>) -> Result<Vec<DuplicateResult>, String> {
+    with_conn(|conn| {
+        let mut stmt = conn
+            .prepare("SELECT name, url, username FROM password_vault")
+            .map_err(|e| e.to_string())?;
+        let existing: Vec<(String, String, String)> = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
+            })
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        let mut duplicates = Vec::new();
+        for (i, cred) in credentials.iter().enumerate() {
+            for (ename, _eurl, euser) in &existing {
+                if &cred.name == ename && &cred.username == euser {
+                    duplicates.push(DuplicateResult {
+                        index: i,
+                        name: cred.name.clone(),
+                        url: cred.url.clone(),
+                        username: cred.username.clone(),
+                    });
+                    break;
+                }
+            }
+        }
+        Ok(duplicates)
+    })
+}
+
+#[tauri::command]
+pub fn pv_batch_delete(ids: Vec<i64>) -> Result<usize, String> {
+    if ids.is_empty() {
+        return Ok(0);
+    }
+    with_conn(|conn| {
+        let placeholders: Vec<String> = ids.iter().map(|_| "?".to_string()).collect();
+        let sql = format!("DELETE FROM password_vault WHERE id IN ({})", placeholders.join(","));
+        let params: Vec<&dyn rusqlite::types::ToSql> = ids.iter().map(|id| id as &dyn rusqlite::types::ToSql).collect();
+        let count = conn.execute(&sql, params.as_slice()).map_err(|e| e.to_string())?;
+        Ok(count)
+    })
+}

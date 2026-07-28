@@ -83,10 +83,16 @@
       <div class="tool-card">
         <div class="card-header">
           <span class="card-title">凭据列表</span>
-          <span class="count-badge">{{ credentials.length }} 条</span>
+          <div class="header-right">
+            <span class="count-badge">{{ credentials.length }} 条</span>
+            <el-button v-if="selectedIds.length > 0" size="small" type="danger" @click="handleBatchDelete">
+              批量删除 ({{ selectedIds.length }})
+            </el-button>
+          </div>
         </div>
         <div class="card-body">
-          <DataTable :data="credentials" max-height="600">
+          <DataTable ref="tableRef" :data="credentials" max-height="600" @selection-change="onSelectionChange">
+            <el-table-column type="selection" width="40" />
             <el-table-column prop="name" label="网站" min-width="150" />
             <el-table-column prop="url" label="网址" min-width="200" />
             <el-table-column prop="username" label="用户名" min-width="120" />
@@ -199,6 +205,12 @@ const credentials = ref<Credential[]>([])
 const searchQuery = ref('')
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const isImporting = ref(false)
+const tableRef = ref<any>(null)
+const selectedIds = ref<number[]>([])
+
+const onSelectionChange = (rows: Credential[]) => {
+  selectedIds.value = rows.map(r => r.id)
+}
 
 const changePwdVisible = ref(false)
 const isChangingPwd = ref(false)
@@ -368,12 +380,38 @@ const handleImport = () => {
   fileInputRef.value?.click()
 }
 
+const splitCSVLine = (line: string): string[] => {
+  const fields: string[] = []
+  let current = ''
+  let inQuotes = false
+
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i]
+    if (ch === '"') {
+      // 处理转义的双引号 ""
+      if (inQuotes && i + 1 < line.length && line[i + 1] === '"') {
+        current += '"'
+        i++ // 跳过下一个双引号
+      } else {
+        inQuotes = !inQuotes
+      }
+    } else if (ch === ',' && !inQuotes) {
+      fields.push(current)
+      current = ''
+    } else {
+      current += ch
+    }
+  }
+  fields.push(current)
+  return fields
+}
+
 const parseCSV = (text: string): Array<{ name: string; url: string; username: string; password: string; notes: string }> => {
   const lines = text.trim().split('\n')
   if (lines.length < 2) return []
 
   const headerLine = lines[0].trim()
-  const headers = headerLine.split(',').map(h => h.trim().toLowerCase())
+  const headers = splitCSVLine(headerLine).map(h => h.trim().toLowerCase().replace(/^"/, '').replace(/"$/, ''))
 
   const nameIdx = headers.findIndex(h => h === 'name' || h === '网站名称' || h === '显示名称')
   const urlIdx = headers.findIndex(h => h === 'url' || h === '网址' || h === '登录URL')
@@ -387,12 +425,12 @@ const parseCSV = (text: string): Array<{ name: string; url: string; username: st
     const line = lines[i].trim()
     if (!line) continue
 
-    const fields = line.split(',')
-    const name = nameIdx >= 0 ? (fields[nameIdx] || '').trim() : ''
-    const url = urlIdx >= 0 ? (fields[urlIdx] || '').trim() : ''
-    const username = userIdx >= 0 ? (fields[userIdx] || '').trim() : ''
-    const password = pwdIdx >= 0 ? (fields[pwdIdx] || '').trim() : ''
-    const notes = noteIdx >= 0 ? (fields[noteIdx] || '').trim() : ''
+    const fields = splitCSVLine(line)
+    const name = nameIdx >= 0 ? (fields[nameIdx] || '').trim().replace(/^"/, '').replace(/"$/, '') : ''
+    const url = urlIdx >= 0 ? (fields[urlIdx] || '').trim().replace(/^"/, '').replace(/"$/, '') : ''
+    const username = userIdx >= 0 ? (fields[userIdx] || '').trim().replace(/^"/, '').replace(/"$/, '') : ''
+    const password = pwdIdx >= 0 ? (fields[pwdIdx] || '').trim().replace(/^"/, '').replace(/"$/, '') : ''
+    const notes = noteIdx >= 0 ? (fields[noteIdx] || '').trim().replace(/^"/, '').replace(/"$/, '') : ''
 
     if (name && password) {
       result.push({ name, url, username, password, notes })
@@ -417,19 +455,46 @@ const handleFileSelect = async (e: Event) => {
       return
     }
 
-    const ok = await confirm.ask(
-      '批量导入',
-      `检测到 ${parsed.length} 条凭据，确定要导入吗？`,
-      { type: 'info', confirmText: '确认导入', cancelText: '取消' }
-    )
-    if (!ok) return
-
-    const count = await invoke<number>('pv_import_credentials', {
-      masterPassword: masterPassword.value,
+    // 检查重复
+    const duplicates = await invoke<Array<{ index: number; name: string; url: string; username: string }>>('pv_check_duplicates', {
       credentials: parsed
     })
 
-    ElMessage.success(`成功导入 ${count} 条凭据`)
+    let toImport = parsed
+    if (duplicates.length > 0) {
+      const maxShow = 20
+      const dupNames = duplicates.slice(0, maxShow).map(d => `  ${d.name} - ${d.username}`).join('\n')
+      const suffix = duplicates.length > maxShow ? `\n  ... 及其他 ${duplicates.length - maxShow} 条` : ''
+      const ok = await confirm.ask(
+        '发现重复数据',
+        `检测到 ${duplicates.length} 条重复凭据（基于网站名称+用户名判断）：\n\n${dupNames}${suffix}\n\n跳过重复项，只导入新数据？`,
+        { type: 'warning', confirmText: '跳过重复导入', cancelText: '取消' }
+      )
+      if (!ok) return
+      const dupIndices = new Set(duplicates.map(d => d.index))
+      toImport = parsed.filter((_, i) => !dupIndices.has(i))
+    }
+
+    if (toImport.length === 0) {
+      ElMessage.warning('无新数据可导入')
+      return
+    }
+
+    if (duplicates.length === 0) {
+      const ok = await confirm.ask(
+        '批量导入',
+        `检测到 ${parsed.length} 条凭据，确定要导入吗？`,
+        { type: 'info', confirmText: '确认导入', cancelText: '取消' }
+      )
+      if (!ok) return
+    }
+
+    const count = await invoke<number>('pv_import_credentials', {
+      masterPassword: masterPassword.value,
+      credentials: toImport
+    })
+
+    ElMessage.success(`成功导入 ${count} 条凭据` + (duplicates.length > 0 ? `，已跳过 ${duplicates.length} 条重复` : ''))
     await loadCredentials()
   } catch (e) {
     ElMessage.error('导入失败: ' + String(e))
@@ -473,6 +538,24 @@ const handleDelete = async (id: number) => {
     ElMessage.success('删除成功')
   } catch (e) {
     ElMessage.error('删除失败: ' + String(e))
+  }
+}
+
+const handleBatchDelete = async () => {
+  const ok = await confirm.ask(
+    '批量删除',
+    `确定要删除选中的 ${selectedIds.value.length} 条凭据吗？此操作不可恢复。`,
+    { type: 'danger', confirmText: '确认删除', cancelText: '取消' }
+  )
+  if (!ok) return
+
+  try {
+    const count = await invoke<number>('pv_batch_delete', { ids: selectedIds.value })
+    selectedIds.value = []
+    await loadCredentials()
+    ElMessage.success(`已删除 ${count} 条凭据`)
+  } catch (e) {
+    ElMessage.error('批量删除失败: ' + String(e))
   }
 }
 
@@ -612,6 +695,12 @@ onMounted(async () => {
   background: var(--bg-input);
   padding: 4px 12px;
   border-radius: 12px;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .change-pwd-error {
