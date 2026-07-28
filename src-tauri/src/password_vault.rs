@@ -163,30 +163,56 @@ pub fn pv_list_credentials(master_password: String) -> Result<Vec<VaultCredentia
             .map_err(|e| e.to_string())?;
         let rows = stmt
             .query_map([], |row| {
-                let encrypted_password: String = row.get(4)?;
-                let credential_salt: String = row.get(8)?;
-                
-                let mut hasher = Sha256::new();
-                hasher.update(&key);
-                hasher.update(credential_salt.as_bytes());
-                let credential_key = hasher.finalize().to_vec();
-                
-                let password = decrypt(&encrypted_password, &credential_key)
-                    .map_err(|e| rusqlite::Error::InvalidColumnType(4, e, rusqlite::types::Type::Text))?;
-                
-                Ok(VaultCredential {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    url: row.get(2)?,
-                    username: row.get(3)?,
-                    password,
-                    notes: row.get(5)?,
-                    created_at: row.get(6)?,
-                    updated_at: row.get(7)?,
-                })
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, String>(6)?,
+                    row.get::<_, String>(7)?,
+                    row.get::<_, String>(8)?,
+                ))
             })
             .map_err(|e| e.to_string())?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+        
+        let mut credentials = Vec::new();
+        for row in rows {
+            let (id, name, url, username, encrypted_password, notes, created_at, updated_at, credential_salt) = match row {
+                Ok(r) => r,
+                Err(e) => {
+                    eprintln!("pv_list_credentials: 读取凭据行失败: {}", e);
+                    continue;
+                }
+            };
+            
+            let mut hasher = Sha256::new();
+            hasher.update(&key);
+            hasher.update(credential_salt.as_bytes());
+            let credential_key = hasher.finalize().to_vec();
+            
+            let password = match decrypt(&encrypted_password, &credential_key) {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("pv_list_credentials: 解密凭据失败 (id={}): {}", id, e);
+                    continue;
+                }
+            };
+            
+            credentials.push(VaultCredential {
+                id,
+                name,
+                url,
+                username,
+                password,
+                notes,
+                created_at,
+                updated_at,
+            });
+        }
+        
+        Ok(credentials)
     })
 }
 
@@ -214,30 +240,56 @@ pub fn pv_search_credentials(master_password: String, query: String) -> Result<V
             .map_err(|e| e.to_string())?;
         let rows = stmt
             .query_map(params![like], |row| {
-                let encrypted_password: String = row.get(4)?;
-                let credential_salt: String = row.get(8)?;
-                
-                let mut hasher = Sha256::new();
-                hasher.update(&key);
-                hasher.update(credential_salt.as_bytes());
-                let credential_key = hasher.finalize().to_vec();
-                
-                let password = decrypt(&encrypted_password, &credential_key)
-                    .map_err(|e| rusqlite::Error::InvalidColumnType(4, e, rusqlite::types::Type::Text))?;
-                
-                Ok(VaultCredential {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    url: row.get(2)?,
-                    username: row.get(3)?,
-                    password,
-                    notes: row.get(5)?,
-                    created_at: row.get(6)?,
-                    updated_at: row.get(7)?,
-                })
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, String>(6)?,
+                    row.get::<_, String>(7)?,
+                    row.get::<_, String>(8)?,
+                ))
             })
             .map_err(|e| e.to_string())?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+        
+        let mut credentials = Vec::new();
+        for row in rows {
+            let (id, name, url, username, encrypted_password, notes, created_at, updated_at, credential_salt) = match row {
+                Ok(r) => r,
+                Err(e) => {
+                    eprintln!("pv_search_credentials: 读取凭据行失败: {}", e);
+                    continue;
+                }
+            };
+            
+            let mut hasher = Sha256::new();
+            hasher.update(&key);
+            hasher.update(credential_salt.as_bytes());
+            let credential_key = hasher.finalize().to_vec();
+            
+            let password = match decrypt(&encrypted_password, &credential_key) {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("pv_search_credentials: 解密凭据失败 (id={}): {}", id, e);
+                    continue;
+                }
+            };
+            
+            credentials.push(VaultCredential {
+                id,
+                name,
+                url,
+                username,
+                password,
+                notes,
+                created_at,
+                updated_at,
+            });
+        }
+        
+        Ok(credentials)
     })
 }
 
@@ -418,8 +470,10 @@ pub fn pv_change_master_password(old_password: String, new_password: String) -> 
             hasher.update(&old_key);
             hasher.update(cred_salt.as_bytes());
             let cred_key = hasher.finalize().to_vec();
-            let decrypted = decrypt(enc_pwd, &cred_key)?;
-            decrypted_credentials.push((*id, decrypted));
+            match decrypt(enc_pwd, &cred_key) {
+                Ok(p) => decrypted_credentials.push((*id, p)),
+                Err(e) => eprintln!("pv_change_master_password: 跳过解密失败的凭据 (id={}): {}", id, e),
+            }
         }
 
         // 3. 更新主密码配置
