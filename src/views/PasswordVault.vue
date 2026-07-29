@@ -172,12 +172,49 @@
       />
     </div>
   </div>
+
+  <el-dialog v-model="resetConfirmVisible" title="⚠️ 重置主密码" width="480px" :close-on-click-modal="false" @open="generateResetChallenge">
+    <div class="reset-warning">
+      <p class="reset-warning-title">此操作将删除所有已保存的凭据！</p>
+      <p class="reset-warning-desc">所有凭据数据将被永久删除，此操作不可撤销。</p>
+    </div>
+
+    <div class="reset-challenge-section">
+      <p class="reset-challenge-label">请在下方输入框中手动输入以下验证字符串：</p>
+      <div class="reset-challenge-code">
+        <code>{{ resetChallenge }}</code>
+        <el-tooltip content="刷新验证码" placement="top">
+          <el-button size="small" circle @click="generateResetChallenge" class="refresh-btn">
+            <el-icon><Refresh /></el-icon>
+          </el-button>
+        </el-tooltip>
+      </div>
+      <el-input
+        v-model="resetChallengeInput"
+        placeholder="请手动输入上方的验证字符串"
+        @paste="onResetInputPaste"
+        @input="watchResetInput"
+        :disabled="resetConfirmLoading"
+      />
+      <p v-if="resetInputError" class="reset-input-error">{{ resetInputError }}</p>
+    </div>
+
+    <template #footer>
+      <el-button @click="resetConfirmVisible = false" :disabled="resetConfirmLoading">取消</el-button>
+      <el-button
+        type="danger"
+        @click="handleConfirmReset"
+        :loading="resetConfirmLoading"
+        :disabled="resetChallengeInput.length === 0"
+      >确认重置</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { QuestionFilled } from '@element-plus/icons-vue'
+import { QuestionFilled, Refresh } from '@element-plus/icons-vue'
 import { invoke } from '@tauri-apps/api/core'
 import DataTable from '@/components/DataTable.vue'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
@@ -221,6 +258,32 @@ const changePwdForm = reactive({
   newPassword: '',
   confirmPassword: ''
 })
+
+// 重置密码二次确认
+const resetConfirmVisible = ref(false)
+const resetChallenge = ref('')
+const resetChallengeInput = ref('')
+const resetInputError = ref('')
+const resetConfirmLoading = ref(false)
+
+const generateResetChallenge = () => {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()-_=+'
+  let result = ''
+  for (let i = 0; i < 15; i++) {
+    result += chars[Math.floor(Math.random() * chars.length)]
+  }
+  resetChallenge.value = result
+  resetChallengeInput.value = ''
+  resetInputError.value = ''
+}
+
+const onResetInputPaste = (e: ClipboardEvent) => {
+  e.preventDefault()
+}
+
+const watchResetInput = () => {
+  resetInputError.value = ''
+}
 
 const dialogVisible = ref(false)
 const isEditing = ref(false)
@@ -327,24 +390,32 @@ const handleChangePassword = async () => {
   }
 }
 
-const handleReset = async () => {
-  const ok = await confirm.ask(
-    '重置主密码',
-    '⚠️ 警告：此操作将删除所有已保存的凭据！\n\n' +
-    '❌ 确定要重置吗？所有凭据数据将被永久删除！',
-    { type: 'danger', confirmText: '确认重置', cancelText: '取消' }
-  )
-  if (!ok) return
+const handleReset = () => {
+  generateResetChallenge()
+  resetConfirmVisible.value = true
+}
 
+const handleConfirmReset = async () => {
+  resetInputError.value = ''
+
+  if (resetChallengeInput.value !== resetChallenge.value) {
+    resetInputError.value = '输入的验证字符串不匹配，请仔细核对'
+    return
+  }
+
+  resetConfirmLoading.value = true
   try {
     await invoke('pv_reset_master_password')
     hasMasterPassword.value = false
     masterPassword.value = ''
     confirmPassword.value = ''
     errorMessage.value = ''
+    resetConfirmVisible.value = false
     ElMessage.success('已重置，请设置新的主密码')
   } catch (e) {
     ElMessage.error('重置失败: ' + String(e))
+  } finally {
+    resetConfirmLoading.value = false
   }
 }
 
@@ -761,5 +832,68 @@ onMounted(async () => {
 
 .tooltip-content {
   max-width: 300px;
+}
+
+.reset-warning {
+  background: var(--bg-active);
+  border: 1px solid var(--accent-red);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.reset-warning-title {
+  color: var(--accent-red);
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 6px 0;
+}
+
+.reset-warning-desc {
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin: 0;
+}
+
+.reset-challenge-section {
+  margin-bottom: 8px;
+}
+
+.reset-challenge-label {
+  color: var(--text-primary);
+  font-size: 14px;
+  margin: 0 0 12px 0;
+}
+
+.reset-challenge-code {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.reset-challenge-code code {
+  flex: 1;
+  display: block;
+  padding: 12px 16px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 18px;
+  letter-spacing: 2px;
+  text-align: center;
+  color: var(--accent-cyan);
+  user-select: all;
+}
+
+.refresh-btn {
+  flex-shrink: 0;
+}
+
+.reset-input-error {
+  color: var(--accent-red);
+  font-size: 13px;
+  margin-top: 8px;
 }
 </style>
