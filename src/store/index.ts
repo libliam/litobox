@@ -81,6 +81,7 @@ export const TOOL_LIST: ToolItem[] = [
   { id: 'mockData', name: '随机数据', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/><circle cx="8" cy="8" r="1" fill="currentColor"/><circle cx="16" cy="8" r="1" fill="currentColor"/><circle cx="8" cy="16" r="1" fill="currentColor"/><circle cx="16" cy="16" r="1" fill="currentColor"/></svg>`, description: '姓名、身份证、手机号等随机生成', keywords: ['随机', '假数据', 'mock', '测试数据'], category: 'utility' },
   { id: 'fileprocessing', name: '文件处理', icon: '📁', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>`, description: '批量文本处理、文件编码转换', keywords: ['文件', '编码', '转换', '批量', '替换'], category: 'utility' },
   { id: 'fileRenamer', name: '文件重命名', icon: '✏️', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>`, description: '批量文件重命名，支持替换/正则/前后缀/序号模式', keywords: ['重命名', 'rename', '批量', '文件', '替换', '正则', '序号'], category: 'utility' },
+  { id: 'quickLaunch', name: '快速启动', icon: '⚡', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`, description: '全盘文件名快速搜索，一键打开', keywords: ['快速启动', '文件搜索', 'Everything', '启动', '搜索文件', '打开', 'quick', 'launch'], category: 'utility' },
   { id: 'clipboard', name: '剪贴板', icon: '📋', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><path d="M9 14l2 2 4-4"/></svg>`, description: '系统剪贴板历史记录', keywords: ['剪贴板', '复制', '历史', 'clipboard'] },
   { id: 'snippet', name: '代码片段', icon: '<>', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>`, description: '代码片段管理，支持分类、搜索、导入导出', keywords: ['代码', '片段', 'snippet', '管理', '收藏', '模板'], category: 'utility' },
   { id: 'history', name: '历史记录', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/><path d="M3 12a9 9 0 0115.36-6.36L21 3"/></svg>`, description: '查看和清空操作历史', keywords: ['历史', '记录', '操作'] },
@@ -131,6 +132,9 @@ export const useToolboxStore = defineStore('toolbox', () => {
   const isCommandPaletteOpen = ref(false)
   const openCommandPalette = () => { isCommandPaletteOpen.value = true }
   const closeCommandPalette = () => { isCommandPaletteOpen.value = false }
+  const isQuickLaunchOpen = ref(false)
+  const openQuickLaunch = () => { isQuickLaunchOpen.value = true }
+  const closeQuickLaunch = () => { isQuickLaunchOpen.value = false }
 
   // ============ 后台采集状态 ============
   type CollectKind = 'system' | 'network' | 'process' | 'hardware' | 'software'
@@ -396,5 +400,9 @@ export const useToolboxStore = defineStore('toolbox', () => {
     isCommandPaletteOpen,
     openCommandPalette,
     closeCommandPalette,
+    // 快速启动浮层
+    isQuickLaunchOpen,
+    openQuickLaunch,
+    closeQuickLaunch,
   }
 })

@@ -28,6 +28,7 @@ mod boost;
 mod cert_reader;
 mod password_vault;
 mod file_renamer;
+mod quick_launch;
 
 // ponytail: debug 模式输出日志到 stderr，release 模式编译时移除（零开销）
 macro_rules! debug_log {
@@ -264,6 +265,13 @@ fn main() {
             hosts_manager::hosts_profile_save,
             hosts_manager::hosts_profile_delete,
             hosts_manager::hosts_profile_apply,
+            // 快速启动命令
+            quick_launch::ql_search,
+            quick_launch::ql_index_status,
+            quick_launch::ql_build_index,
+            quick_launch::ql_rebuild_index,
+            quick_launch::ql_cancel_index,
+            quick_launch::ql_open_file,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -303,8 +311,8 @@ fn main() {
                 manager.on_shortcut(shortcut, move |_app, _sc, event| {
                     if let tauri_plugin_global_shortcut::ShortcutState::Pressed = event.state {
                         if let Some(window) = h.get_webview_window("main") {
-                            if tool == "__palette__" {
-                                // 命令面板：先唤起窗口到前台（最小化状态也能正确恢复）
+                            if tool == "__palette__" || tool == "__quick_launch__" {
+                                // 命令面板/快速启动：先唤起窗口到前台（最小化状态也能正确恢复）
                                 #[cfg(target_os = "windows")]
                                 if let Ok(hwnd) = window.hwnd() {
                                     use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SetForegroundWindow, SW_RESTORE};
@@ -315,8 +323,11 @@ fn main() {
                                 }
                                 let _ = window.show();
                                 let _ = window.set_focus();
-                                debug_log!("[command_palette] global hotkey triggered, window shown");
-                                let _ = window.emit("command-palette-triggered", ());
+                                if tool == "__palette__" {
+                                    let _ = window.emit("command-palette-triggered", ());
+                                } else {
+                                    let _ = window.emit("global-shortcut-triggered", &tool);
+                                }
                             } else {
                                 let _ = window.emit("global-shortcut-triggered", &tool);
                             }

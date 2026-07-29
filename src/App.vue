@@ -19,6 +19,7 @@
       </div>
     </div>
     <CommandPalette />
+    <QuickLaunchOverlay v-model:visible="store.isQuickLaunchOpen" />
     <ConfirmDialogWrapper />
   </div>
 </template>
@@ -91,7 +92,9 @@ import CertViewer from '@/views/CertViewer.vue'
 import BoostView from '@/views/BoostView.vue'
 import PasswordVault from '@/views/PasswordVault.vue'
 import FileRenamer from '@/views/FileRenamer.vue'
+import QuickLaunchTool from '@/views/QuickLaunchTool.vue'
 import CommandPalette from '@/components/CommandPalette.vue'
+import QuickLaunchOverlay from '@/components/QuickLaunchOverlay.vue'
 import { ConfirmDialogWrapper } from '@/composables/useConfirmDialog'
 
 // toolId → 组件 映射表（替代 v-if 链）
@@ -157,6 +160,7 @@ const toolComponentMap: Record<string, any> = {
   boost: BoostView,
   passwordVault: PasswordVault,
   fileRenamer: FileRenamer,
+  quickLaunch: QuickLaunchTool,
 }
 
 const store = useToolboxStore()
@@ -214,7 +218,13 @@ onMounted(async () => {
 
   unlistenShortcut = await listen('global-shortcut-triggered', (event) => {
     const toolId = event.payload as string
-    if (toolId) {
+    if (toolId === '__quick_launch__') {
+      if (store.isQuickLaunchOpen) {
+        store.closeQuickLaunch()
+      } else {
+        store.openQuickLaunch()
+      }
+    } else if (toolId) {
       store.openTab(toolId)
       store.addRecentTool(toolId)
     }
