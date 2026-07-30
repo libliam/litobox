@@ -1,6 +1,6 @@
 {
   "productName": "LitoBox",
-  "version": "6.3.0",
+  "version": "6.9.0",
   "identifier": "com.dev.toolbox",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -27,6 +27,7 @@
   },
   "bundle": {
     "active": true,
+    "publisher": "栗的百宝箱 (lixm.top)",
     "targets": [],
     "icon": [
       "icons/32x32.png",
