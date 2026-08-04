@@ -2337,3 +2337,479 @@ fn do_video_volume(
         duration,
     })
 }
+
+// ============ F29: 视频加水印 ============
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoWatermarkOptions {
+    pub wm_type: String,           // "text" | "image" | "both"
+
+    // 文字水印
+    pub text: Option<String>,
+    pub font_file: Option<String>,
+    pub font_size: Option<u32>,
+    pub font_color: Option<String>,
+    pub font_border: Option<bool>,
+    pub font_border_color: Option<String>,
+    pub font_opacity: Option<f32>,
+
+    // 图片水印
+    pub image_path: Option<String>,
+    pub image_scale: Option<f32>,
+    pub image_opacity: Option<f32>,
+
+    // 公共
+    pub position: String,
+    pub offset_x: i32,
+    pub offset_y: i32,
+    pub use_time_range: bool,
+    pub start_time: f64,
+    pub end_time: f64,
+
+    // 输出
+    pub output_format: String,
+    pub output_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct VideoWatermarkResult {
+    pub output_path: String,
+    pub output_size: u64,
+}
+
+/// drawtext / movie 滤镜内文件路径转义
+/// - \ → /
+/// - ' → '\''
+/// - 盘符的 : → \:
+fn escape_ffmpeg_path(p: &str) -> String {
+    let p = p.replace('\\', "/");
+    let p = p.replace('\'', "'\\''");
+    p.replace(':', "\\:")
+}
+
+/// drawtext 文字内容转义: \ ' : %
+fn escape_drawtext_text(s: &str) -> String {
+    s.replace('\\', "\\\\")
+     .replace('\'', "'\\''")
+     .replace(':', "\\:")
+     .replace('%', "%%")
+}
+
+/// 9 宫格位置 → overlay 过滤器 x/y 表达式
+/// overlay 变量: W/H=主视频, w/h=叠加物
+fn calc_position_expr(pos: &str, ox: i32, oy: i32) -> (String, String) {
+    let ox_s = ox.to_string();
+    let oy_s = oy.to_string();
+    match pos {
+        "topLeft"     => (ox_s.clone(), oy_s.clone()),
+        "top"         => ("(W-w)/2".to_string(), oy_s.clone()),
+        "topRight"    => (format!("W-w-{}", ox_s), oy_s.clone()),
+        "left"        => (ox_s.clone(), "(H-h)/2".to_string()),
+        "center"      => ("(W-w)/2".to_string(), "(H-h)/2".to_string()),
+        "right"       => (format!("W-w-{}", ox_s), "(H-h)/2".to_string()),
+        "bottomLeft"  => (ox_s.clone(), format!("H-h-{}", oy_s)),
+        "bottom"      => ("(W-w)/2".to_string(), format!("H-h-{}", oy_s)),
+        "bottomRight" => (format!("W-w-{}", ox_s), format!("H-h-{}", oy_s)),
+        _             => (format!("W-w-{}", ox_s), format!("H-h-{}", oy_s)),
+    }
+}
+
+/// 9 宫格位置 → drawtext 过滤器 x/y 表达式
+/// drawtext 变量: w/h=输入视频宽高, text_w/text_h=文字宽高
+fn calc_text_position_expr(pos: &str, ox: i32, oy: i32) -> (String, String) {
+    let ox_s = ox.to_string();
+    let oy_s = oy.to_string();
+    match pos {
+        "topLeft"     => (ox_s.clone(), oy_s.clone()),
+        "top"         => ("(w-text_w)/2".to_string(), oy_s.clone()),
+        "topRight"    => (format!("w-text_w-{}", ox_s), oy_s.clone()),
+        "left"        => (ox_s.clone(), "(h-text_h)/2".to_string()),
+        "center"      => ("(w-text_w)/2".to_string(), "(h-text_h)/2".to_string()),
+        "right"       => (format!("w-text_w-{}", ox_s), "(h-text_h)/2".to_string()),
+        "bottomLeft"  => (ox_s.clone(), format!("h-text_h-{}", oy_s)),
+        "bottom"      => ("(w-text_w)/2".to_string(), format!("h-text_h-{}", oy_s)),
+        "bottomRight" => (format!("w-text_w-{}", ox_s), format!("h-text_h-{}", oy_s)),
+        _             => (format!("w-text_w-{}", ox_s), format!("h-text_h-{}", oy_s)),
+    }
+}
+
+/// ffmpeg enable='between(t,s,e)' 表达式（空字符串表示全程）
+fn build_enable_expr(use_range: bool, s: f64, e: f64) -> String {
+    if use_range && e > s {
+        format!("between(t\\,{}\\,{})", s, e)
+    } else {
+        String::new()
+    }
+}
+
+/// #RRGGBB + opacity → ffmpeg 0xRRGGBB@AA.AA 格式
+fn format_color_with_alpha(hex: &str, alpha: f32) -> String {
+    let hex = hex.trim_start_matches('#');
+    let alpha = alpha.clamp(0.0, 1.0);
+    format!("0x{}@{:.3}", hex, alpha)
+}
+
+/// 根据输出格式组装 ffmpeg 编码器参数
+fn push_encoder_args(args: &mut Vec<String>, ext: &str) {
+    match ext {
+        "mp4" | "mov" => {
+            args.push("-c:v".to_string()); args.push("libx264".to_string());
+            args.push("-c:a".to_string()); args.push("aac".to_string());
+            args.push("-movflags".to_string()); args.push("+faststart".to_string());
+        }
+        "mkv" => {
+            args.push("-c:v".to_string()); args.push("libx264".to_string());
+            args.push("-c:a".to_string()); args.push("libmp3lame".to_string());
+        }
+        "webm" => {
+            args.push("-c:v".to_string()); args.push("libvpx-vp9".to_string());
+            args.push("-c:a".to_string()); args.push("libopus".to_string());
+            args.push("-deadline".to_string()); args.push("realtime".to_string());
+            args.push("-cpu-used".to_string()); args.push("5".to_string());
+        }
+        "avi" => {
+            args.push("-c:v".to_string()); args.push("libx264".to_string());
+            args.push("-c:a".to_string()); args.push("libmp3lame".to_string());
+        }
+        _ => {
+            args.push("-c:v".to_string()); args.push("libx264".to_string());
+            args.push("-c:a".to_string()); args.push("aac".to_string());
+        }
+    }
+}
+
+fn do_video_watermark(
+    app_handle: &tauri::AppHandle,
+    path: &str,
+    opts: &VideoWatermarkOptions,
+) -> Result<VideoWatermarkResult, String> {
+    debug_log!("[WM] type={} position={} useTimeRange={}", opts.wm_type, opts.position, opts.use_time_range);
+
+    // 基础校验
+    let info = get_video_info_ffprobe(path)
+        .map_err(|e| format!("无法读取视频信息: {}", e))?;
+    let duration = info.duration;
+
+    // 校验文字水印
+    if opts.wm_type == "text" || opts.wm_type == "both" {
+        let text = opts.text.as_deref().unwrap_or("").trim();
+        if text.is_empty() {
+            return Err("文字水印内容不能为空".to_string());
+        }
+        let font = opts.font_file.as_deref().unwrap_or("");
+        if font.is_empty() || !std::path::Path::new(font).is_file() {
+            return Err(format!("字体文件不存在: {}", font));
+        }
+    }
+
+    // 校验图片水印
+    if opts.wm_type == "image" || opts.wm_type == "both" {
+        let img = opts.image_path.as_deref().unwrap_or("");
+        if img.is_empty() || !std::path::Path::new(img).is_file() {
+            return Err(format!("水印图片文件不存在: {}", img));
+        }
+        if let Err(e) = image::image_dimensions(img) {
+            debug_log!("[WM] 警告: 水印图片格式 probe 失败: {} (继续尝试 overlay)", e);
+        }
+    }
+
+    // 校验时间段
+    if opts.use_time_range && opts.end_time <= opts.start_time {
+        return Err(format!(
+            "时间段无效: start({}) >= end({})", opts.start_time, opts.end_time
+        ));
+    }
+    if opts.use_time_range && opts.end_time > duration {
+        debug_log!("[WM] end_time {} > duration {}, 截断到 duration", opts.end_time, duration);
+    }
+
+    // 输出路径
+    let input_path = std::path::Path::new(path);
+    let input_stem = input_path
+        .file_stem().and_then(|s| s.to_str()).unwrap_or("video");
+    let ext = opts.output_format.as_str();
+    let output_path = if let Some(ref custom) = opts.output_path {
+        std::path::PathBuf::from(custom)
+    } else {
+        input_path
+            .parent().unwrap_or(std::path::Path::new("."))
+            .join(format!("{}_watermarked.{}", input_stem, ext))
+    };
+    let output_path_str = output_path.to_string_lossy().to_string();
+    debug_log!("[WM] output = {}", output_path_str);
+
+    let _ = app_handle.emit("video-watermark-progress", serde_json::json!({ "progress": 5.0 }));
+
+    // drawtext 和 overlay 使用不同的 ffmpeg 变量名体系
+    let (dt_x, dt_y) = calc_text_position_expr(&opts.position, opts.offset_x, opts.offset_y);
+    let (ov_x, ov_y) = calc_position_expr(&opts.position, opts.offset_x, opts.offset_y);
+    let enable_expr = build_enable_expr(opts.use_time_range, opts.start_time, opts.end_time);
+    debug_log!("[WM] dt({}, {}) ov({}, {}) enable={}", dt_x, dt_y, ov_x, ov_y, enable_expr);
+
+    // 构造 filter_complex 各段
+    let mut filter_parts: Vec<String> = Vec::new();
+    let mut last_video_label = String::from("0:v");
+
+    // 4a. drawtext
+    if opts.wm_type == "text" || opts.wm_type == "both" {
+        let ff = escape_ffmpeg_path(opts.font_file.as_deref().unwrap_or(""));
+        let txt = escape_drawtext_text(opts.text.as_deref().unwrap_or("").trim());
+        let fs = opts.font_size.unwrap_or(32);
+        let alpha = opts.font_opacity.unwrap_or(1.0);
+        let fc = format_color_with_alpha(
+            opts.font_color.as_deref().unwrap_or("#ffffff"), alpha,
+        );
+
+        let mut dt = format!(
+            "drawtext=fontfile='{}':text='{}':fontsize={}:fontcolor={}:x={}:y={}",
+            ff, txt, fs, fc, dt_x, dt_y
+        );
+        if opts.font_border.unwrap_or(false) {
+            let bc = format_color_with_alpha(
+                opts.font_border_color.as_deref().unwrap_or("#000000"), alpha,
+            );
+            dt.push_str(&format!(":borderw=2:bordercolor={}", bc));
+        }
+        if !enable_expr.is_empty() {
+            dt.push_str(&format!(":enable='{}'", enable_expr));
+        }
+        filter_parts.push(format!("[{}]{}[v1]", last_video_label, dt));
+        last_video_label = String::from("v1");
+    }
+
+    // 4b. movie + overlay
+    if opts.wm_type == "image" || opts.wm_type == "both" {
+        let img = escape_ffmpeg_path(opts.image_path.as_deref().unwrap_or(""));
+        let scale = opts.image_scale.unwrap_or(1.0).clamp(0.1, 2.0);
+        let alpha = opts.image_opacity.unwrap_or(0.8).clamp(0.1, 1.0);
+        let wm_label = format!("wmimg");
+
+        filter_parts.push(format!(
+            "movie='{}',loop=loop=-1:size=32767:start=0,setpts=PTS-STARTPTS,scale=iw*{}:-1,format=rgba,colorchannelmixer=aa={}[{}]",
+            img, scale, alpha, wm_label
+        ));
+
+        let next_label = if opts.wm_type == "both" { "v2" } else { "v1" };
+        let mut ov = format!(
+            "[{}][{}]overlay=x={}:y={}:format=auto",
+            last_video_label, wm_label, ov_x, ov_y
+        );
+        if !enable_expr.is_empty() {
+            ov.push_str(&format!(":enable='{}'", enable_expr));
+        }
+        filter_parts.push(format!("{}[{}]", ov, next_label));
+        last_video_label = next_label.to_string();
+    }
+
+    let filter_complex = filter_parts.join(";");
+    debug_log!("[WM] filter_complex: {}", filter_complex);
+
+    let _ = app_handle.emit("video-watermark-progress", serde_json::json!({ "progress": 10.0 }));
+
+    // 组装 ffmpeg args
+    let mut args: Vec<String> = Vec::new();
+    args.push("-y".to_string());
+    args.push("-i".to_string());
+    args.push(path.to_string());
+
+    args.push("-filter_complex".to_string());
+    args.push(filter_complex);
+
+    args.push("-map".to_string());
+    args.push(format!("[{}]", last_video_label));
+    args.push("-map".to_string());
+    args.push("0:a?".to_string());
+
+    push_encoder_args(&mut args, ext);
+
+    args.push(output_path_str.clone());
+
+    debug_log!("[WM] ffmpeg args: {:?}", args);
+
+    // 执行
+    run_ffmpeg_with_progress(
+        app_handle,
+        &args,
+        "video-watermark-progress",
+        duration.max(0.1),
+    )?;
+
+    let output_size = std::fs::metadata(&output_path_str)
+        .map(|m| m.len()).unwrap_or(0);
+
+    let _ = app_handle.emit("video-watermark-progress", serde_json::json!({ "progress": 100.0 }));
+
+    Ok(VideoWatermarkResult {
+        output_path: output_path_str,
+        output_size,
+    })
+}
+
+#[tauri::command]
+pub async fn video_watermark(
+    app_handle: tauri::AppHandle,
+    path: String,
+    options: VideoWatermarkOptions,
+) -> Result<VideoWatermarkResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if !ffmpeg_available() {
+            return Err("视频加水印需要 ffmpeg，请先安装 ffmpeg".to_string());
+        }
+        do_video_watermark(&app_handle, &path, &options)
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
+}
+
+// ==================== F29: 水印预览 ====================
+
+/// 预览帧结果：base64 编码的 PNG + 预览时间点
+#[derive(Debug, Clone, Serialize)]
+pub struct WatermarkPreviewResult {
+    pub base64: String,
+    pub time_point: f64,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[tauri::command]
+pub async fn video_watermark_preview(
+    path: String,
+    options: VideoWatermarkOptions,
+    time_point: f64,
+) -> Result<WatermarkPreviewResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if !ffmpeg_available() {
+            return Err("预览需要 ffmpeg".to_string());
+        }
+        do_video_watermark_preview(&path, &options, time_point)
+    })
+    .await
+    .map_err(|e| format!("预览任务失败: {}", e))?
+}
+
+fn do_video_watermark_preview(
+    path: &str,
+    opts: &VideoWatermarkOptions,
+    time_point: f64,
+) -> Result<WatermarkPreviewResult, String> {
+    let info = get_video_info_ffprobe(path)
+        .map_err(|e| format!("无法读取视频信息: {}", e))?;
+    let (w, h) = (info.width, info.height);
+    let duration = info.duration;
+    let tp = time_point.clamp(0.0, (duration - 0.05).max(0.0));
+
+    // 复用位置 + enable 逻辑（enable 用 time_point 判断是否在时间段内）
+    let (dt_x, dt_y) = calc_text_position_expr(&opts.position, opts.offset_x, opts.offset_y);
+    let (ov_x, ov_y) = calc_position_expr(&opts.position, opts.offset_x, opts.offset_y);
+    let enabled = if opts.use_time_range {
+        tp >= opts.start_time && tp <= opts.end_time
+    } else {
+        true
+    };
+    let enable_expr = if enabled {
+        build_enable_expr(opts.use_time_range, opts.start_time, opts.end_time)
+    } else {
+        String::new()
+    };
+
+    let mut filter_parts: Vec<String> = Vec::new();
+    let mut last_video_label = String::from("0:v");
+
+    // drawtext
+    if opts.wm_type == "text" || opts.wm_type == "both" {
+        let ff = escape_ffmpeg_path(opts.font_file.as_deref().unwrap_or(""));
+        let txt = escape_drawtext_text(opts.text.as_deref().unwrap_or("").trim());
+        let fs = opts.font_size.unwrap_or(32);
+        let alpha = opts.font_opacity.unwrap_or(1.0);
+        let fc = format_color_with_alpha(
+            opts.font_color.as_deref().unwrap_or("#ffffff"), alpha,
+        );
+        let mut dt = format!(
+            "drawtext=fontfile='{}':text='{}':fontsize={}:fontcolor={}:x={}:y={}",
+            ff, txt, fs, fc, dt_x, dt_y
+        );
+        if opts.font_border.unwrap_or(false) {
+            let bc = format_color_with_alpha(
+                opts.font_border_color.as_deref().unwrap_or("#000000"), alpha,
+            );
+            dt.push_str(&format!(":borderw=2:bordercolor={}", bc));
+        }
+        if !enable_expr.is_empty() {
+            dt.push_str(&format!(":enable='{}'", enable_expr));
+        }
+        filter_parts.push(format!("[{}]{}[v1]", last_video_label, dt));
+        last_video_label = String::from("v1");
+    }
+
+    // movie + overlay
+    if opts.wm_type == "image" || opts.wm_type == "both" {
+        let img = escape_ffmpeg_path(opts.image_path.as_deref().unwrap_or(""));
+        let scale = opts.image_scale.unwrap_or(1.0).clamp(0.1, 2.0);
+        let alpha = opts.image_opacity.unwrap_or(0.8).clamp(0.1, 1.0);
+        let wm_label = "wmimg";
+        filter_parts.push(format!(
+            "movie='{}',loop=loop=-1:size=32767:start=0,setpts=PTS-STARTPTS,scale=iw*{}:-1,format=rgba,colorchannelmixer=aa={}[{}]",
+            img, scale, alpha, wm_label
+        ));
+        let next_label = if opts.wm_type == "both" { "v2" } else { "v1" };
+        let mut ov = format!(
+            "[{}][{}]overlay=x={}:y={}:format=auto",
+            last_video_label, wm_label, ov_x, ov_y
+        );
+        if !enable_expr.is_empty() {
+            ov.push_str(&format!(":enable='{}'", enable_expr));
+        }
+        filter_parts.push(format!("{}[{}]", ov, next_label));
+        last_video_label = next_label.to_string();
+    }
+
+    let filter_complex = filter_parts.join(";");
+    debug_log!("[WM-Preview] filter_complex: {}", filter_complex);
+
+    // 组装 args: -ss 在 -i 之前（更高效）+ filter_complex + 1 帧 + PNG
+    let mut args: Vec<String> = Vec::new();
+    args.push("-y".to_string());
+    args.push("-ss".to_string());
+    args.push(format!("{:.3}", tp));
+    args.push("-i".to_string());
+    args.push(path.to_string());
+    args.push("-filter_complex".to_string());
+    args.push(filter_complex);
+    args.push("-map".to_string());
+    args.push(format!("[{}]", last_video_label));
+    args.push("-frames:v".to_string());
+    args.push("1".to_string());
+    args.push("-c:v".to_string());
+    args.push("png".to_string());
+    args.push("-f".to_string());
+    args.push("image2pipe".to_string());
+    args.push("pipe:1".to_string());
+
+    debug_log!("[WM-Preview] args: {:?}", args);
+
+    let output = std::process::Command::new("ffmpeg")
+        .args(&args)
+        .creation_flags(CREATE_NO_WINDOW)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .map_err(|e| format!("ffmpeg 预览执行失败: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = encoding_rs::GBK.decode(&output.stderr).0.to_string();
+        debug_log!("[WM-Preview] stderr: {}", stderr);
+        return Err(format!("水印预览生成失败: {}", ffmpeg_error_summary(&stderr)));
+    }
+
+    let base64 = BASE64.encode(&output.stdout);
+    debug_log!("[WM-Preview] png bytes={}, b64 len={}", output.stdout.len(), base64.len());
+
+    Ok(WatermarkPreviewResult {
+        base64,
+        time_point: tp,
+        width: w,
+        height: h,
+    })
+}

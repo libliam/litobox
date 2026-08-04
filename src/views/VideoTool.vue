@@ -26,6 +26,7 @@
         <el-tab-pane label="截图提取" name="frameExtract" />
         <el-tab-pane label="画面裁剪" name="cropRegion" />
         <el-tab-pane label="视频调整" name="adjust" />
+        <el-tab-pane label="加水印" name="watermark" />
       </el-tabs>
     </div>
 
@@ -1158,6 +1159,290 @@
       </template>
     </template>
 
+    <!-- ==================== Tab: 加水印 (F29) ==================== -->
+    <template v-if="activeTab === 'watermark'">
+      <div v-if="!useFfmpeg" class="tool-card">
+        <div class="card-body">
+          <div class="ffmpeg-required">
+            加水印需要 ffmpeg，请先安装 ffmpeg 后重启应用
+          </div>
+        </div>
+      </div>
+
+      <template v-else>
+        <!-- 卡片 1: 选择视频 -->
+        <div class="tool-card">
+          <div class="card-header"><span class="card-title">选择视频文件</span></div>
+          <div class="card-body">
+            <div class="action-grid">
+              <div class="action-group">
+                <el-button type="primary" size="small" @click="wmOpenFile" :loading="wm_loadingInfo">
+                  打开文件
+                </el-button>
+              </div>
+            </div>
+            <div v-if="wm_filePath" class="video-file-info">
+              <span class="file-name">{{ wm_fileName }}</span>
+              <span class="file-detail" v-if="wm_videoInfo">
+                {{ formatDuration(wm_videoInfo.duration) }} | {{ wm_videoInfo.width }}x{{ wm_videoInfo.height }} |
+                {{ formatFileSize(wm_videoInfo.file_size) }}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 卡片 2: 类型 + 位置 -->
+        <div v-if="wm_videoInfo" class="tool-card">
+          <div class="card-header"><span class="card-title">水印类型 &amp; 位置</span></div>
+          <div class="card-body">
+            <div class="action-grid">
+              <div class="action-group">
+                <div class="group-label">水印类型</div>
+                <div class="group-buttons">
+                  <el-button size="small" :type="wm_type === 'text' ? 'primary' : ''" @click="wm_type = 'text'">文字</el-button>
+                  <el-button size="small" :type="wm_type === 'image' ? 'primary' : ''" @click="wm_type = 'image'">图片</el-button>
+                  <el-button size="small" :type="wm_type === 'both' ? 'primary' : ''" @click="wm_type = 'both'">都用</el-button>
+                </div>
+              </div>
+            </div>
+
+            <div class="wm-settings-row">
+              <div class="wm-pos-wrap">
+                <div class="group-label">位置</div>
+                <div class="wm-position-grid">
+                  <el-button
+                    v-for="p in POSITIONS"
+                    :key="p.value"
+                    size="small"
+                    :type="wm_position === p.value ? 'primary' : ''"
+                    @click="wm_position = p.value"
+                  >{{ p.icon }}</el-button>
+                </div>
+              </div>
+              <div class="wm-offset-wrap">
+                <div class="action-group">
+                  <div class="group-label">水平偏移 X</div>
+                  <el-input-number v-model="wm_offsetX" :min="-10000" :max="10000" :step="10" size="small" style="width: 120px" />
+                  <span class="unit-text">px</span>
+                </div>
+                <div class="action-group">
+                  <div class="group-label">垂直偏移 Y</div>
+                  <el-input-number v-model="wm_offsetY" :min="-10000" :max="10000" :step="10" size="small" style="width: 120px" />
+                  <span class="unit-text">px</span>
+                </div>
+              </div>
+            </div>
+            <div class="wm-hint-text">
+              以上为位置锚点（九宫格预设），偏移量支持负值，可实现任意位置自由定位。要完全手动定位，可选「左上角 + 偏移 X/Y」实现。
+            </div>
+
+            <div class="action-grid" style="margin-top: 12px">
+              <div class="action-group">
+                <el-checkbox v-model="wm_useTimeRange" size="small">限定时间段显示水印</el-checkbox>
+              </div>
+            </div>
+            <div class="action-grid" v-if="wm_useTimeRange && wm_videoInfo">
+              <div class="action-group">
+                <div class="group-label">起始时间</div>
+                <el-input-number
+                  v-model="wm_startTime"
+                  :min="0" :max="Math.max(0, wm_endTime - 0.1)"
+                  :step="0.1" :precision="1" size="small" style="width: 120px"
+                />
+                <span class="unit-text">秒</span>
+              </div>
+              <div class="action-group">
+                <div class="group-label">结束时间</div>
+                <el-input-number
+                  v-model="wm_endTime"
+                  :min="wm_startTime + 0.1" :max="wm_videoInfo.duration"
+                  :step="0.1" :precision="1" size="small" style="width: 120px"
+                />
+                <span class="unit-text">秒</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 卡片 3: 水印内容参数 -->
+        <div v-if="wm_videoInfo" class="tool-card">
+          <div class="card-header"><span class="card-title">水印参数</span></div>
+          <div class="card-body">
+            <div v-if="wm_type === 'text' || wm_type === 'both'" class="wm-params-block">
+              <div class="wm-params-title">📝 文字水印</div>
+              <div class="action-grid">
+                <div class="action-group wm-text-row">
+                  <div class="group-label">水印文字</div>
+                  <el-input
+                    v-model="wm_text"
+                    size="small"
+                    placeholder="请输入水印文字..."
+                    style="width: 260px"
+                    maxlength="200"
+                    show-word-limit
+                  />
+                  <VariablePicker v-model="wm_text" size="small" />
+                </div>
+              </div>
+              <div class="action-grid" style="margin-top: 8px">
+                <div class="action-group">
+                  <div class="group-label">字体</div>
+                  <el-select v-model="wm_fontName" size="small" style="width: 160px">
+                    <el-option
+                      v-for="f in wm_fontList"
+                      :key="f.path"
+                      :label="f.name"
+                      :value="f.name"
+                    />
+                  </el-select>
+                  <div class="group-buttons">
+                    <el-button size="small" @click="wmPickCustomFont">自定义字体...</el-button>
+                  </div>
+                  <span class="font-path-hint" v-if="getResolvedFontPath()">
+                    → {{ getResolvedFontPath() }}
+                  </span>
+                </div>
+              </div>
+              <div class="action-grid" style="margin-top: 8px">
+                <div class="action-group">
+                  <div class="group-label">字号</div>
+                  <el-input-number v-model="wm_fontSize" :min="8" :max="200" size="small" style="width: 90px" />
+                </div>
+                <div class="action-group">
+                  <div class="group-label">颜色</div>
+                  <el-color-picker v-model="wm_fontColor" size="small" />
+                </div>
+                <div class="action-group">
+                  <div class="group-label">透明度 {{ wm_fontOpacity.toFixed(1) }}</div>
+                  <el-slider v-model="wm_fontOpacity" :min="0.1" :max="1.0" :step="0.1" style="width: 140px" />
+                </div>
+                <div class="action-group">
+                  <el-checkbox v-model="wm_fontBorder" size="small">描边</el-checkbox>
+                  <el-color-picker v-if="wm_fontBorder" v-model="wm_fontBorderColor" size="small" />
+                </div>
+              </div>
+            </div>
+
+            <div v-if="wm_type === 'image' || wm_type === 'both'" class="wm-params-block">
+              <div class="wm-params-title">🖼️ 图片水印</div>
+              <div class="action-grid">
+                <div class="action-group">
+                  <el-button type="primary" size="small" @click="wmPickImage">选择水印图片</el-button>
+                  <el-button size="small" v-if="wm_imagePath" @click="wmClearImage">移除</el-button>
+                </div>
+                <div v-if="wm_imageName" class="file-name">{{ wm_imageName }}</div>
+              </div>
+              <div class="action-grid" style="margin-top: 8px">
+                <div class="action-group">
+                  <div class="group-label">缩放 {{ (wm_imageScale * 100).toFixed(0) }}%</div>
+                  <el-slider v-model="wm_imageScale" :min="0.1" :max="2.0" :step="0.05" style="width: 180px" show-input size="small" />
+                </div>
+                <div class="action-group">
+                  <div class="group-label">透明度 {{ wm_imageOpacity.toFixed(1) }}</div>
+                  <el-slider v-model="wm_imageOpacity" :min="0.1" :max="1.0" :step="0.05" style="width: 180px" />
+                </div>
+              </div>
+              <div class="wm-hint-text">
+                支持 PNG（带透明通道）/ JPG / WebP 静态图片；GIF 动画请先转为静态帧
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 卡片 4: 水印预览（单帧） -->
+        <div v-if="wm_videoInfo" class="tool-card">
+          <div class="card-header">
+            <span class="card-title">水印预览</span>
+            <div class="card-actions">
+              <el-button size="small" :loading="wm_previewLoading" @click="wmGeneratePreview">刷新预览</el-button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="action-grid">
+              <div class="action-group">
+                <div class="group-label">预览时间点</div>
+                <el-slider
+                  v-model="wm_previewTime"
+                  :min="0"
+                  :max="wm_videoInfo.duration"
+                  :step="0.1"
+                  :format-tooltip="(v: number) => v.toFixed(1) + 's'"
+                  show-input
+                  size="small"
+                  style="width: 340px"
+                  @change="wmSchedulePreview"
+                />
+              </div>
+              <div class="action-group">
+                <span class="preview-time-text">{{ wm_previewTime.toFixed(1) }}s / {{ wm_videoInfo.duration.toFixed(1) }}s</span>
+              </div>
+            </div>
+
+            <div class="preview-frame-wrap">
+              <div v-if="wm_previewError" class="preview-error">
+                {{ wm_previewError }}
+              </div>
+              <img
+                v-else-if="wm_previewBase64"
+                :src="`data:image/png;base64,${wm_previewBase64}`"
+                class="preview-frame-img"
+                alt="水印预览"
+              />
+              <div v-else class="preview-placeholder">
+                点击「刷新预览」或调整滑块生成预览帧
+              </div>
+              <div v-if="wm_previewLoading" class="preview-loading-mask">
+                <div class="preview-spinner"></div>
+                <span>生成预览中...</span>
+              </div>
+            </div>
+            <div class="wm-hint-text">
+              预览为单帧 PNG 截图，滑块调整时间点后自动重新生成（debounce 800ms）。水印时间段外的预览帧将不显示水印。
+            </div>
+          </div>
+        </div>
+
+        <!-- 卡片 5: 输出 & 操作 -->
+        <div v-if="wm_videoInfo" class="tool-card">
+          <div class="card-header"><span class="card-title">输出 &amp; 操作</span></div>
+          <div class="card-body">
+            <div class="action-grid">
+              <div class="action-group">
+                <div class="group-label">输出格式</div>
+                <el-select v-model="wm_outputFormat" size="small" style="width: 100px">
+                  <el-option label="MP4" value="mp4" />
+                  <el-option label="MKV" value="mkv" />
+                  <el-option label="MOV" value="mov" />
+                  <el-option label="WebM" value="webm" />
+                </el-select>
+              </div>
+              <div class="action-group">
+                <el-checkbox v-model="wm_saveToSamePath" size="small">与源文件同路径</el-checkbox>
+              </div>
+            </div>
+            <div class="action-grid" style="margin-top: 12px">
+              <div class="action-group">
+                <el-button
+                  type="primary"
+                  size="small"
+                  @click="wmDoWatermark"
+                  :loading="wm_isProcessing"
+                  :disabled="!wm_canSubmit"
+                >加水印并导出</el-button>
+                <el-button size="small" @click="wmReset">重置</el-button>
+              </div>
+            </div>
+            <el-progress v-if="wm_isProcessing" :percentage="wm_progress" :stroke-width="6" style="margin-top: 12px" />
+            <div v-if="wm_result" class="result-info">
+              <span>输出路径: {{ wm_result.path }}</span>
+              <span class="result-sep">|</span>
+              <span>大小: {{ formatFileSize(wm_result.size) }}</span>
+            </div>
+          </div>
+        </div>
+      </template>
+    </template>
+
     <!-- 错误提示 -->
     <div v-if="error" class="error-message">{{ error }}</div>
   </div>
@@ -1170,6 +1455,7 @@ import { open, save } from '@tauri-apps/plugin-dialog'
 import { listen } from '@tauri-apps/api/event'
 import { ElMessage } from 'element-plus'
 import { useToolboxStore } from '@/store'
+import VariablePicker from '@/components/VariablePicker.vue'
 
 const store = useToolboxStore()
 
@@ -1423,6 +1709,97 @@ const adjustVolumeFormat = ref('mp4')
 const adjustVolumeProcessing = ref(false)
 const adjustVolumeProgress = ref(0)
 const adjustVolumeResult = ref<VideoVolumeResult | null>(null)
+
+// ============ 水印 Tab 状态 (F29) ============
+const wm_filePath = ref('')
+const wm_fileName = ref('')
+const wm_videoInfo = ref<VideoInfo | null>(null)
+const wm_loadingInfo = ref(false)
+const wm_isProcessing = ref(false)
+const wm_progress = ref(0)
+const wm_done = ref(false)
+const wm_listenOff = ref<(() => void) | null>(null)
+
+const wm_type = ref<'text' | 'image' | 'both'>('text')
+const POSITIONS = [
+  { value: 'topLeft',     icon: '↖' },
+  { value: 'top',         icon: '↑' },
+  { value: 'topRight',    icon: '↗' },
+  { value: 'left',        icon: '←' },
+  { value: 'center',      icon: '●' },
+  { value: 'right',       icon: '→' },
+  { value: 'bottomLeft',  icon: '↙' },
+  { value: 'bottom',      icon: '↓' },
+  { value: 'bottomRight', icon: '↘' },
+] as const
+type WmPosition = typeof POSITIONS[number]['value']
+
+const CANDIDATE_FONTS = [
+  { name: '微软雅黑',        path: 'C:/Windows/Fonts/msyh.ttc' },
+  { name: '微软雅黑 Bold',   path: 'C:/Windows/Fonts/msyhbd.ttc' },
+  { name: '黑体 SimHei',     path: 'C:/Windows/Fonts/simhei.ttf' },
+  { name: '宋体 SimSun',     path: 'C:/Windows/Fonts/simsun.ttc' },
+  { name: 'Arial',           path: 'C:/Windows/Fonts/arial.ttf' },
+]
+const wm_fontList = ref<{ name: string; path: string }[]>([])
+const wm_fontName = ref('微软雅黑')
+const wm_customFontPath = ref('')
+const wm_text = ref('')
+const wm_fontSize = ref(32)
+const wm_fontColor = ref('#ffffff')
+const wm_fontBorder = ref(false)
+const wm_fontBorderColor = ref('#000000')
+const wm_fontOpacity = ref(1.0)
+
+const wm_imagePath = ref('')
+const wm_imageName = ref('')
+const wm_imageScale = ref(1.0)
+const wm_imageOpacity = ref(0.8)
+
+const wm_position = ref<WmPosition>('bottomRight')
+const wm_offsetX = ref(20)
+const wm_offsetY = ref(20)
+const wm_useTimeRange = ref(false)
+const wm_startTime = ref(0)
+const wm_endTime = ref(0)
+
+const wm_outputFormat = ref('mp4')
+const wm_saveToSamePath = ref(true)
+const wm_result = ref<{ path: string; size: number } | null>(null)
+
+// 预览相关
+const wm_previewBase64 = ref('')
+const wm_previewTime = ref(0)
+const wm_previewLoading = ref(false)
+const wm_previewError = ref('')
+let wm_previewDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+// 解析出最终字体路径
+function getResolvedFontPath(): string {
+  if (wm_customFontPath.value.trim()) return wm_customFontPath.value.trim()
+  const found = wm_fontList.value.find(f => f.name === wm_fontName.value)
+  return found?.path || ''
+}
+
+const wm_canSubmit = computed(() => {
+  if (!wm_filePath.value || !useFfmpeg.value) return false
+  if (wm_type.value === 'text' || wm_type.value === 'both') {
+    if (!wm_text.value.trim()) return false
+    if (!getResolvedFontPath()) return false
+  }
+  if (wm_type.value === 'image' || wm_type.value === 'both') {
+    if (!wm_imagePath.value) return false
+  }
+  if (wm_useTimeRange.value && wm_endTime.value <= wm_startTime.value) return false
+  return true
+})
+
+function probeFonts() {
+  wm_fontList.value = []
+  for (const f of CANDIDATE_FONTS) {
+    wm_fontList.value.push(f)
+  }
+}
 
 // 裁剪框叠加层样式（基于显示坐标）
 const cropOverlayStyle = computed(() => {
@@ -2642,6 +3019,218 @@ async function doVolumeChange() {
   } finally { adjustVolumeProcessing.value = false }
 }
 
+// ============ 水印 Tab 操作 (F29) ============
+async function wmOpenFile() {
+  try {
+    wm_loadingInfo.value = true
+    const selected = await open({
+      multiple: false,
+      filters: [{ name: '视频文件', extensions: ['mp4','mkv','mov','avi','webm','flv','wmv','m4v','ts'] }],
+    })
+    if (!selected) return
+    const path = Array.isArray(selected) ? selected[0] : (selected as string)
+    wm_filePath.value = path
+    wm_fileName.value = path.split(/[/\\]/).pop() || ''
+    wm_result.value = null
+    try {
+      wm_videoInfo.value = await invoke<VideoInfo>('get_video_info', { path, useFfmpeg: true })
+      if (wm_videoInfo.value && wm_videoInfo.value.duration > 0) {
+        wm_endTime.value = Math.round(wm_videoInfo.value.duration * 10) / 10
+      }
+    } catch (e: any) {
+      ElMessage.error('读取视频信息失败: ' + (e.message || e))
+    }
+  } finally {
+    wm_loadingInfo.value = false
+  }
+}
+
+async function wmPickCustomFont() {
+  const selected = await open({
+    multiple: false,
+    filters: [{ name: '字体文件', extensions: ['ttf','ttc','otf'] }],
+  })
+  if (!selected) return
+  const path = Array.isArray(selected) ? selected[0] : (selected as string)
+  wm_customFontPath.value = path
+}
+
+async function wmPickImage() {
+  const selected = await open({
+    multiple: false,
+    filters: [{ name: '图片文件', extensions: ['png','jpg','jpeg','webp','bmp'] }],
+  })
+  if (!selected) return
+  const path = Array.isArray(selected) ? selected[0] : (selected as string)
+  wm_imagePath.value = path
+  wm_imageName.value = path.split(/[/\\]/).pop() || ''
+  wm_result.value = null
+}
+function wmClearImage() {
+  wm_imagePath.value = ''
+  wm_imageName.value = ''
+  wm_result.value = null
+}
+
+function wmReset() {
+  wm_text.value = ''
+  wm_fontSize.value = 32
+  wm_fontColor.value = '#ffffff'
+  wm_fontOpacity.value = 1.0
+  wm_fontBorder.value = false
+  wm_fontBorderColor.value = '#000000'
+  wm_customFontPath.value = ''
+  wm_imagePath.value = ''
+  wm_imageName.value = ''
+  wm_imageScale.value = 1.0
+  wm_imageOpacity.value = 0.8
+  wm_position.value = 'bottomRight'
+  wm_offsetX.value = 20
+  wm_offsetY.value = 20
+  wm_useTimeRange.value = false
+  wm_startTime.value = 0
+  if (wm_videoInfo.value) wm_endTime.value = Math.round(wm_videoInfo.value.duration * 10) / 10
+  wm_outputFormat.value = 'mp4'
+  wm_result.value = null
+  wm_previewBase64.value = ''
+  wm_previewError.value = ''
+}
+
+// ============ 水印预览 ============
+function wmSchedulePreview() {
+  if (wm_previewDebounceTimer) {
+    clearTimeout(wm_previewDebounceTimer)
+    wm_previewDebounceTimer = null
+  }
+  wm_previewDebounceTimer = setTimeout(() => {
+    wmGeneratePreview()
+  }, 800)
+}
+
+async function wmGeneratePreview() {
+  if (!wm_filePath.value || !useFfmpeg.value || !wm_videoInfo.value) return
+  if (wm_previewLoading.value) return
+
+  // 校验最小必要字段
+  if ((wm_type.value === 'text' || wm_type.value === 'both') && !wm_text.value.trim()) return
+  if ((wm_type.value === 'text' || wm_type.value === 'both') && !getResolvedFontPath()) return
+  if ((wm_type.value === 'image' || wm_type.value === 'both') && !wm_imagePath.value) return
+
+  wm_previewLoading.value = true
+  wm_previewError.value = ''
+  try {
+    const fontFile = getResolvedFontPath()
+    const options = {
+      wmType: wm_type.value,
+      text: wm_text.value || undefined,
+      fontFile,
+      fontSize: wm_fontSize.value,
+      fontColor: wm_fontColor.value,
+      fontBorder: wm_fontBorder.value,
+      fontBorderColor: wm_fontBorderColor.value,
+      fontOpacity: wm_fontOpacity.value,
+      imagePath: wm_imagePath.value || undefined,
+      imageScale: wm_imageScale.value,
+      imageOpacity: wm_imageOpacity.value,
+      position: wm_position.value,
+      offsetX: wm_offsetX.value,
+      offsetY: wm_offsetY.value,
+      useTimeRange: wm_useTimeRange.value,
+      startTime: wm_startTime.value,
+      endTime: wm_endTime.value,
+      outputFormat: wm_outputFormat.value,
+    }
+    const result = await invoke<any>('video_watermark_preview', {
+      path: wm_filePath.value,
+      options,
+      timePoint: wm_previewTime.value,
+    })
+    wm_previewBase64.value = result.base64
+  } catch (e: any) {
+    wm_previewError.value = '预览生成失败: ' + (typeof e === 'string' ? e : (e.message || String(e)))
+    wm_previewBase64.value = ''
+  } finally {
+    wm_previewLoading.value = false
+  }
+}
+
+async function wmDoWatermark() {
+  if (!wm_canSubmit.value) return
+  wm_isProcessing.value = true
+  wm_progress.value = 0
+  wm_done.value = false
+  wm_result.value = null
+
+  let outputPath: string | undefined = undefined
+  if (!wm_saveToSamePath.value) {
+    const defaultName = `${wm_fileName.value.replace(/\.[^.]+$/, '')}_watermarked.${wm_outputFormat.value}`
+    const p = await save({
+      defaultPath: defaultName,
+      filters: [{ name: '视频', extensions: [wm_outputFormat.value] }],
+    })
+    if (!p) { wm_isProcessing.value = false; return }
+    outputPath = p as string
+  }
+
+  try {
+    const fontFile = getResolvedFontPath()
+    const options = {
+      wmType: wm_type.value,
+      text: wm_text.value || undefined,
+      fontFile,
+      fontSize: wm_fontSize.value,
+      fontColor: wm_fontColor.value,
+      fontBorder: wm_fontBorder.value,
+      fontBorderColor: wm_fontBorderColor.value,
+      fontOpacity: wm_fontOpacity.value,
+      imagePath: wm_imagePath.value || undefined,
+      imageScale: wm_imageScale.value,
+      imageOpacity: wm_imageOpacity.value,
+      position: wm_position.value,
+      offsetX: wm_offsetX.value,
+      offsetY: wm_offsetY.value,
+      useTimeRange: wm_useTimeRange.value,
+      startTime: wm_startTime.value,
+      endTime: wm_endTime.value,
+      outputFormat: wm_outputFormat.value,
+      outputPath,
+    }
+
+    const previewType =
+      wm_type.value === 'text' ? '文字:' + wm_text.value.slice(0, 20) :
+      wm_type.value === 'image' ? '图片:' + wm_imageName.value :
+      '文字+图片'
+
+    const result = await invoke<any>('video_watermark', {
+      path: wm_filePath.value,
+      options,
+    })
+
+    wm_result.value = { path: result.output_path, size: result.output_size }
+
+    store.addHistory({
+      tool: 'videoTool',
+      action: '加水印',
+      inputPreview: `${wm_fileName.value} + ${previewType} @ ${wm_position.value}`,
+      outputPreview: `输出: ${result.output_path.split(/[/\\]/).pop()} (${formatFileSize(result.output_size)})`,
+      inputFull: JSON.stringify({ filePath: wm_filePath.value, ...options }),
+      outputFull: JSON.stringify(result),
+      options,
+    })
+
+    ElMessage.success('加水印完成')
+    if (outputPath) {
+      ElMessage.success(`已保存到: ${outputPath}`)
+    }
+  } catch (e: any) {
+    const msg = typeof e === 'string' ? e : (e.message || String(e))
+    ElMessage.error('加水印失败: ' + msg)
+  } finally {
+    wm_isProcessing.value = false
+    wm_done.value = true
+  }
+}
+
 // ============ 格式化 ============
 function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60)
@@ -2704,6 +3293,7 @@ onActivated(() => {
       '变速': 'adjust',
       '旋转翻转': 'adjust',
       '音量调整': 'adjust',
+      '加水印': 'watermark',
     }
     if (restore.action) {
       const tab = actionTabMap[restore.action]
@@ -2722,6 +3312,24 @@ watch([startTime, endTime], () => drawSelection())
 watch(thumbnails, () => nextTick(() => drawTimeline()), { deep: true })
 // 切换 Tab 时清理共享的 error 状态
 watch(activeTab, () => { error.value = '' })
+
+// Tab 切换：水印 Tab 注册事件监听 + 字体探测
+watch(activeTab, async (t) => {
+  if (t === 'watermark') {
+    wm_done.value = false
+    wm_progress.value = wm_isProcessing.value ? wm_progress.value : 0
+    probeFonts()
+    // 监听进度事件
+    const unlisten = await listen('video-watermark-progress', (event: any) => {
+      if (wm_done.value) return
+      wm_progress.value = Math.round(event.payload?.progress ?? 0)
+    })
+    wm_listenOff.value = unlisten as any
+  } else {
+    wm_listenOff.value?.()
+    wm_listenOff.value = null
+  }
+}, { immediate: true, flush: 'post' })
 </script>
 
 <style scoped>
@@ -3231,5 +3839,121 @@ html.light .video-tool-tabs :deep(.el-tabs__header) {
   color: var(--text-secondary);
   font-size: 13px;
   margin-left: 4px;
+}
+
+/* ===== 加水印 Tab 样式 ===== */
+.wm-settings-row {
+  display: flex;
+  gap: 32px;
+  align-items: flex-start;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+.wm-pos-wrap { display: flex; flex-direction: column; gap: 8px; }
+.wm-position-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 44px);
+  grid-template-rows: repeat(3, 32px);
+  gap: 4px;
+}
+.wm-position-grid .el-button {
+  width: 44px;
+  height: 32px;
+  padding: 0;
+  font-size: 15px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Segoe UI Symbol', 'Microsoft YaHei', sans-serif;
+}
+.wm-offset-wrap { display: flex; flex-direction: column; gap: 10px; justify-content: center; }
+
+.wm-params-block { margin-bottom: 16px; }
+.wm-params-block:last-child { margin-bottom: 0; }
+.wm-params-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--accent-cyan);
+  margin-bottom: 10px;
+  letter-spacing: 0.5px;
+}
+.wm-text-row { flex-wrap: wrap; }
+.font-path-hint {
+  color: var(--text-secondary);
+  font-size: 12px;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wm-hint-text {
+  color: var(--text-secondary);
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+/* ===== 预览相关样式 ===== */
+.preview-time-text {
+  color: var(--accent-cyan);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.preview-frame-wrap {
+  position: relative;
+  margin-top: 16px;
+  background: var(--bg-input, rgba(0,0,0,0.25));
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 12px;
+  min-height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.preview-frame-img {
+  max-width: 100%;
+  max-height: 420px;
+  display: block;
+  border-radius: 4px;
+  image-rendering: auto;
+}
+.preview-placeholder {
+  color: var(--text-secondary);
+  font-size: 13px;
+  text-align: center;
+  padding: 20px;
+}
+.preview-error {
+  color: #ff6b6b;
+  font-size: 13px;
+  text-align: center;
+  padding: 20px;
+}
+.preview-loading-mask {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--text-primary);
+  font-size: 13px;
+  border-radius: 6px;
+  z-index: 5;
+}
+.preview-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--border-color);
+  border-top-color: var(--accent-cyan);
+  border-radius: 50%;
+  animation: wm-preview-spin 0.8s linear infinite;
+}
+@keyframes wm-preview-spin {
+  to { transform: rotate(360deg); }
 }
 </style>

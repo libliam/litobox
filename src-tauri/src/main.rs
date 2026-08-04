@@ -229,6 +229,8 @@ fn main() {
             video_tools::video_speed_change,
             video_tools::video_rotate_flip,
             video_tools::video_volume,
+            video_tools::video_watermark,
+            video_tools::video_watermark_preview,
             audio_tools::generate_waveform,
             audio_tools::audio_crop,
             audio_tools::get_audio_preview,
