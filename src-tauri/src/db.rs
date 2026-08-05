@@ -1859,6 +1859,8 @@ pub fn db_read_shortcuts() -> Vec<(String, String)> {
         ("__palette__".to_string(), "CmdOrCtrl+Alt+P".to_string()),
         // 快速启动浮层
         ("__quick_launch__".to_string(), "Alt+Space".to_string()),
+        // 截图工具：呼出全屏选框
+        ("__screenshot__".to_string(), "Alt+Shift+A".to_string()),
     ];
     let config = db_get_config("shortcuts".to_string()).unwrap_or_default();
     if config.is_empty() {

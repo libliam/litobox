@@ -83,6 +83,7 @@ export const TOOL_LIST: ToolItem[] = [
   { id: 'fileRenamer', name: '文件重命名', icon: '✏️', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>`, description: '批量文件重命名，支持替换/正则/前后缀/序号模式', keywords: ['重命名', 'rename', '批量', '文件', '替换', '正则', '序号'], category: 'utility' },
   { id: 'quickLaunch', name: '快速启动', icon: '⚡', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`, description: '全盘文件名快速搜索，一键打开', keywords: ['快速启动', '文件搜索', 'Everything', '启动', '搜索文件', '打开', 'quick', 'launch'], category: 'utility' },
   { id: 'clipboard', name: '剪贴板', icon: '📋', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><path d="M9 14l2 2 4-4"/></svg>`, description: '系统剪贴板历史记录', keywords: ['剪贴板', '复制', '历史', 'clipboard'] },
+  { id: 'screenshot', name: '截图工具', icon: '📷', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>`, description: '区域+全屏截图，标注（矩形/箭头/文字/马赛克），自动复制剪贴板，支持延时和全局热键 Alt+Shift+A', keywords: ['截图', '截屏', 'screenshot', '标注', '马赛克', '箭头', '截图工具', '全屏', '区域'], category: 'utility' },
   { id: 'snippet', name: '代码片段', icon: '<>', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>`, description: '代码片段管理，支持分类、搜索、导入导出', keywords: ['代码', '片段', 'snippet', '管理', '收藏', '模板'], category: 'utility' },
   { id: 'history', name: '历史记录', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/><path d="M3 12a9 9 0 0115.36-6.36L21 3"/></svg>`, description: '查看和清空操作历史', keywords: ['历史', '记录', '操作'] },
   { id: 'workflow', name: '工作流', icon: '', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h4l3 3h6l3-3h4"/><path d="M4 12h4l3 3h6l3-3h4"/><path d="M4 18h4l3 3h6l3-3h4"/><circle cx="4" cy="6" r="1" fill="currentColor"/><circle cx="20" cy="6" r="1" fill="currentColor"/><circle cx="4" cy="12" r="1" fill="currentColor"/><circle cx="20" cy="12" r="1" fill="currentColor"/><circle cx="4" cy="18" r="1" fill="currentColor"/><circle cx="20" cy="18" r="1" fill="currentColor"/></svg>`, description: '工作流编排，链式处理，变量池管理', keywords: ['工作流', '编排', '链式', '变量池'], category: 'utility' },
@@ -135,6 +136,14 @@ export const useToolboxStore = defineStore('toolbox', () => {
   const isQuickLaunchOpen = ref(false)
   const openQuickLaunch = () => { isQuickLaunchOpen.value = true }
   const closeQuickLaunch = () => { isQuickLaunchOpen.value = false }
+  // 截图全屏选框浮层
+  const isScreenshotOverlayOpen = ref(false)
+  const screenshotDelaySec = ref(0) // 0=立即, 3/5/10=延时
+  const openScreenshotOverlay = (delaySec = 0) => {
+    screenshotDelaySec.value = delaySec
+    isScreenshotOverlayOpen.value = true
+  }
+  const closeScreenshotOverlay = () => { isScreenshotOverlayOpen.value = false }
 
   // ============ 后台采集状态 ============
   type CollectKind = 'system' | 'network' | 'process' | 'hardware' | 'software'
@@ -404,5 +413,10 @@ export const useToolboxStore = defineStore('toolbox', () => {
     isQuickLaunchOpen,
     openQuickLaunch,
     closeQuickLaunch,
+    // 截图浮层
+    isScreenshotOverlayOpen,
+    screenshotDelaySec,
+    openScreenshotOverlay,
+    closeScreenshotOverlay,
   }
 })

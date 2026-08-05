@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod clipboard;
+mod screenshot;
 mod db;
 mod file_encoding;
 mod file_saver;
@@ -53,6 +54,10 @@ fn main() {
             clipboard::stop_clipboard_monitor,
             clipboard::is_monitoring,
             clipboard::copy_to_clipboard,
+            screenshot::screenshot_capture_fullscreen,
+            screenshot::screenshot_write_clipboard_image,
+            screenshot::screenshot_save_file,
+            screenshot::screenshot_get_default_dir,
             file_encoding::read_file_with_encoding,
             file_encoding::convert_file_encoding,
             file_encoding::detect_file_encoding,
@@ -327,6 +332,11 @@ fn main() {
                                 let _ = window.set_focus();
                                 if tool == "__palette__" {
                                     let _ = window.emit("command-palette-triggered", ());
+                                } else if tool == "__quick_launch__" {
+                                    let _ = window.emit("quick-launch-triggered", ());
+                                } else if tool == "__screenshot__" {
+                                    // 截图热键：先确保窗口最小化/隐藏（不要让主窗口出现在截图里），然后发事件给前端
+                                    let _ = window.emit("screenshot-triggered", ());
                                 } else {
                                     let _ = window.emit("global-shortcut-triggered", &tool);
                                 }
