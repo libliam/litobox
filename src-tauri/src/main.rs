@@ -1,5 +1,16 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+// ponytail: debug 模式输出日志到 stderr，release 模式编译时移除（零开销）
+// 必须放在 mod 声明之前，这样子模块才能使用该宏
+#[macro_export]
+macro_rules! debug_log {
+    ($($arg:tt)*) => {
+        if cfg!(debug_assertions) {
+            eprintln!($($arg)*)
+        }
+    };
+}
+
 mod clipboard;
 mod db;
 mod file_encoding;
@@ -30,15 +41,6 @@ mod password_vault;
 mod file_renamer;
 mod quick_launch;
 
-// ponytail: debug 模式输出日志到 stderr，release 模式编译时移除（零开销）
-macro_rules! debug_log {
-    ($($arg:tt)*) => {
-        if cfg!(debug_assertions) {
-            eprintln!($($arg)*)
-        }
-    };
-}
-
 use tauri::{Manager, Emitter};
 use tauri_plugin_dialog::{DialogExt, MessageDialogBuilder, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
@@ -53,6 +55,8 @@ fn main() {
             clipboard::stop_clipboard_monitor,
             clipboard::is_monitoring,
             clipboard::copy_to_clipboard,
+            clipboard::clipboard_get_image,
+            clipboard::clipboard_set_image,
             file_encoding::read_file_with_encoding,
             file_encoding::convert_file_encoding,
             file_encoding::detect_file_encoding,

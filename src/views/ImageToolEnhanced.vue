@@ -6,6 +6,7 @@
         <el-tab-pane label="图片拼图" name="merge" />
         <el-tab-pane label="加水印" name="watermark" />
         <el-tab-pane label="调色板提取" name="palette" />
+        <el-tab-pane label="剪贴板图片" name="clipboard" />
       </el-tabs>
     </div>
 
@@ -267,11 +268,86 @@
         <div v-if="error" class="error-message">{{ error }}</div>
       </div>
     </div>
+
+    <!-- Tab 5: 剪贴板图片 -->
+    <div v-if="activeTab === 'clipboard'" class="tool-card">
+      <div class="card-header">
+        <span class="card-title">剪贴板图片</span>
+        <div class="card-actions">
+          <el-button size="small" type="primary" :loading="clipboardLoading" @click="loadClipboardImage">
+            读取剪贴板
+          </el-button>
+          <el-button v-if="clipboardImage" size="small" @click="saveClipboardImage">保存到文件</el-button>
+          <el-button v-if="clipboardImage" size="small" type="success" @click="copyImageToClipboard">
+            复制图片
+          </el-button>
+          <el-button v-if="clipboardImage" size="small" @click="clearClipboardImage">清空</el-button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div v-if="!clipboardImage" class="upload-hint">
+          点击「读取剪贴板」或按 <kbd>Ctrl+V</kbd> 粘贴剪贴板中的图片（截图、复制的图片等）
+        </div>
+        <div v-else class="clipboard-image-container">
+          <div class="clipboard-image-preview" @click="openClipboardViewer = true">
+            <img :src="clipboardImageDataUrl" class="clipboard-preview-img" alt="剪贴板图片预览" />
+            <div class="preview-hint">点击查看大图</div>
+          </div>
+          <div class="clipboard-image-info">
+            <div class="info-title">图片信息</div>
+            <div class="info-list">
+              <div class="info-row">
+                <span class="info-label">宽度</span>
+                <span class="info-value">{{ clipboardImage.width }} px</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">高度</span>
+                <span class="info-value">{{ clipboardImage.height }} px</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">尺寸</span>
+                <span class="info-value">{{ clipboardImage.width }} × {{ clipboardImage.height }}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">PNG 大小</span>
+                <span class="info-value">{{ formatBytes(clipboardImage.size_bytes) }}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">宽高比</span>
+                <span class="info-value">{{ calcAspectRatio(clipboardImage.width, clipboardImage.height) }}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">像素数</span>
+                <span class="info-value">{{ formatPixels(clipboardImage.width * clipboardImage.height) }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 大图查看器弹窗 -->
+    <el-dialog
+      v-model="openClipboardViewer"
+      title="图片大图查看"
+      width="90%"
+      top="5vh"
+      :close-on-click-modal="true"
+      class="clipboard-viewer-dialog"
+    >
+      <div class="viewer-container">
+        <img v-if="clipboardImage" :src="clipboardImageDataUrl" class="viewer-img" alt="大图预览" />
+      </div>
+      <template #footer>
+        <el-button @click="openClipboardViewer = false">关闭</el-button>
+        <el-button type="primary" @click="saveClipboardImage; openClipboardViewer = false">保存到文件</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
@@ -1096,6 +1172,96 @@ const copyPaletteCss = async () => {
   await navigator.clipboard.writeText(css)
   ElMessage.success('已复制 CSS 变量')
 }
+
+// ============ Tab 5: 剪贴板图片 ============
+interface ClipboardImage {
+  width: number
+  height: number
+  base64_png: string
+  size_bytes: number
+}
+
+const clipboardImage = ref<ClipboardImage | null>(null)
+const clipboardLoading = ref(false)
+const openClipboardViewer = ref(false)
+
+const clipboardImageDataUrl = computed(() => {
+  if (!clipboardImage.value) return ''
+  return 'data:image/png;base64,' + clipboardImage.value.base64_png
+})
+
+// Ctrl+V 粘贴：仅在 clipboard Tab 激活时响应
+const onPaste = (e: ClipboardEvent) => {
+  if (activeTab.value !== 'clipboard') return
+  // 如果焦点在输入框等可编辑元素上，不拦截
+  const target = e.target as HTMLElement
+  if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
+  e.preventDefault()
+  loadClipboardImage()
+}
+
+onMounted(() => window.addEventListener('paste', onPaste))
+onUnmounted(() => window.removeEventListener('paste', onPaste))
+
+const loadClipboardImage = async () => {
+  clipboardLoading.value = true
+  error.value = ''
+  try {
+    const result = await invoke<ClipboardImage | null>('clipboard_get_image')
+    if (!result) {
+      clipboardImage.value = null
+      ElMessage.warning('剪贴板中没有图片')
+    } else {
+      clipboardImage.value = result
+      ElMessage.success('读取成功')
+    }
+  } catch (e: any) {
+    error.value = e
+    ElMessage.error('读取剪贴板图片失败: ' + e)
+  } finally {
+    clipboardLoading.value = false
+  }
+}
+
+const clearClipboardImage = () => {
+  clipboardImage.value = null
+  error.value = ''
+}
+
+const calcAspectRatio = (w: number, h: number): string => {
+  const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b))
+  const g = gcd(w, h)
+  return `${w / g}:${h / g}`
+}
+
+const formatPixels = (n: number): string => {
+  if (n < 1000) return n.toString()
+  if (n < 1000000) return (n / 1000).toFixed(1) + ' K'
+  return (n / 1000000).toFixed(2) + ' MP'
+}
+
+const saveClipboardImage = async () => {
+  if (!clipboardImage.value) return
+  try {
+    const blob = base64ToBlob(clipboardImage.value.base64_png, 'image/png')
+    const now = new Date()
+    const pad = (n: number) => n.toString().padStart(2, '0')
+    const filename = `clipboard_${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.png`
+    await saveFileWithDialog(blob, filename, 'png')
+  } catch (e: any) {
+    ElMessage.error('保存失败: ' + e)
+  }
+}
+
+const copyImageToClipboard = async () => {
+  if (!clipboardImage.value) return
+  try {
+    await invoke('clipboard_set_image', { base64Png: clipboardImage.value.base64_png })
+    ElMessage.success('已复制图片到剪贴板')
+  } catch (e: any) {
+    ElMessage.error('复制失败: ' + e)
+  }
+}
 </script>
 
 <style scoped>
@@ -1380,5 +1546,133 @@ html.light .image-tabs :deep(.el-tabs__header) {
   border-radius: 4px;
   color: var(--accent-red);
   font-size: 13px;
+}
+
+/* ===== 剪贴板图片特有样式 ===== */
+.clipboard-image-container {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 768px) {
+  .clipboard-image-container {
+    grid-template-columns: 1fr;
+  }
+}
+
+.clipboard-image-preview {
+  position: relative;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 12px;
+  cursor: zoom-in;
+  transition: box-shadow 0.2s;
+  text-align: center;
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.clipboard-image-preview:hover {
+  box-shadow: 0 0 0 2px var(--accent-cyan), 0 0 16px rgba(0, 212, 255, 0.2);
+}
+
+.clipboard-preview-img {
+  max-width: 100%;
+  max-height: 400px;
+  object-fit: contain;
+  border-radius: 4px;
+  image-rendering: auto;
+}
+
+.preview-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  opacity: 0.7;
+}
+
+.clipboard-image-info {
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 16px;
+}
+
+.info-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--accent-cyan);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.info-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  padding: 4px 0;
+}
+
+.info-label {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.info-value {
+  color: var(--text-primary);
+  font-weight: 500;
+  text-align: right;
+  word-break: break-all;
+}
+
+/* 大图查看器 */
+.viewer-container {
+  width: 100%;
+  max-height: 75vh;
+  overflow: auto;
+  background: var(--bg-input);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.viewer-img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 4px;
+}
+
+.clipboard-viewer-dialog :deep(.el-dialog__body) {
+  padding: 16px 20px;
+}
+
+.upload-hint kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  font-size: 12px;
+  font-family: monospace;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  color: var(--accent-cyan);
 }
 </style>
