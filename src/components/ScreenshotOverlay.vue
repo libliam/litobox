@@ -602,13 +602,17 @@ function undo() {
 // ============================================================
 async function buildFinalPng(): Promise<{ base64: string; width: number; height: number } | null> {
   const img = bgImage.value
-  if (!img) return null
+  if (!img) { console.warn('[screenshot] buildFinalPng: bgImage is null'); return null }
   // 没选框 → 按全图
   const selCss = sel.value || { x: 0, y: 0, w: canvasCssW.value, h: canvasCssH.value }
   const sx = Math.floor(selCss.x / scaleX.value)
   const sy = Math.floor(selCss.y / scaleY.value)
   const sw = Math.max(1, Math.ceil(selCss.w / scaleX.value))
   const sh = Math.max(1, Math.ceil(selCss.h / scaleY.value))
+  console.log(`[screenshot] buildFinalPng: selCss=${JSON.stringify(selCss)}, bgCoords=(${sx},${sy},${sw},${sh}), bgSize=(${bgW.value}x${bgH.value})`)
+  if (sx + sw > bgW.value || sy + sh > bgH.value || sw <= 0 || sh <= 0) {
+    console.error('[screenshot] buildFinalPng: WARNING - crop region out of bounds!', {sx,sy,sw,sh,bgW:bgW.value,bgH:bgH.value})
+  }
 
   const out = document.createElement('canvas')
   out.width = sw
@@ -686,13 +690,22 @@ function drawMosaicOnBg(ctx: CanvasRenderingContext2D, img: HTMLImageElement, sx
 
 // 完成：复制到剪贴板
 async function doCopy() {
+  if (isExporting.value) { console.warn('[screenshot] doCopy blocked: already exporting'); return }
   isExporting.value = true
+  console.log('[screenshot] doCopy: start, bgImage=', !!bgImage.value, 'bgW=', bgW.value, 'bgH=', bgH.value, 'scaleX=', scaleX.value, 'scaleY=', scaleY.value)
   try {
+    const t1 = performance.now()
     const out = await buildFinalPng()
+    const t2 = performance.now()
+    console.log(`[screenshot] buildFinalPng: ${(t2-t1).toFixed(0)}ms, out=`, out ? `size=${out.width}x${out.height}, base64Len=${out.base64.length}` : 'NULL')
     if (!out) { ElMessage.warning('还未捕获到底图'); return }
     // base64: data:image/png;base64,xxx → 去掉前缀
     const b64 = out.base64.slice(out.base64.indexOf(',') + 1)
+    const t3 = performance.now()
+    console.log(`[screenshot] invoking screenshot_write_clipboard_image, b64Len=${b64.length}`)
     await invoke('screenshot_write_clipboard_image', { base64Png: b64 })
+    const t4 = performance.now()
+    console.log(`[screenshot] invoke done in ${(t4-t3).toFixed(0)}ms`)
     // 记录操作历史
     store.addHistory({
       tool: 'screenshot',
@@ -705,9 +718,11 @@ async function doCopy() {
     ElMessage.success(`已复制 (${out.width}×${out.height})`)
     closeIt()
   } catch (e: any) {
+    console.error('[screenshot] doCopy ERROR:', e)
     ElMessage.error('复制失败：' + (e?.message || String(e)))
   } finally {
     isExporting.value = false
+    console.log('[screenshot] doCopy: done, isExporting=false')
   }
 }
 

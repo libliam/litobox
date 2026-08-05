@@ -322,7 +322,10 @@ fn main() {
                 manager.on_shortcut(shortcut, move |_app, _sc, event| {
                     if let tauri_plugin_global_shortcut::ShortcutState::Pressed = event.state {
                         if let Some(window) = h.get_webview_window("main") {
-                            if tool == "__palette__" || tool == "__quick_launch__" {
+                            if tool == "__screenshot__" {
+                                // 截图热键：不 show 主窗口（避免主窗口出现在截图里），直接发事件
+                                let _ = window.emit("screenshot-triggered", ());
+                            } else if tool == "__palette__" || tool == "__quick_launch__" {
                                 // 命令面板/快速启动：先唤起窗口到前台（最小化状态也能正确恢复）
                                 #[cfg(target_os = "windows")]
                                 if let Ok(hwnd) = window.hwnd() {
@@ -336,11 +339,6 @@ fn main() {
                                 let _ = window.set_focus();
                                 if tool == "__palette__" {
                                     let _ = window.emit("command-palette-triggered", ());
-                                } else if tool == "__quick_launch__" {
-                                    let _ = window.emit("quick-launch-triggered", ());
-                                } else if tool == "__screenshot__" {
-                                    // 截图热键：先确保窗口最小化/隐藏（不要让主窗口出现在截图里），然后发事件给前端
-                                    let _ = window.emit("screenshot-triggered", ());
                                 } else {
                                     let _ = window.emit("global-shortcut-triggered", &tool);
                                 }

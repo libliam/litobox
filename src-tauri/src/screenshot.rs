@@ -205,26 +205,34 @@ pub async fn screenshot_capture_fullscreen() -> Result<CaptureResult, String> {
 // ==================== 命令：写图片到剪贴板 ====================
 
 #[tauri::command]
-pub fn screenshot_write_clipboard_image(base64_png: String) -> Result<(), String> {
-    let trim = base64_png.trim();
-    let data = trim.trim_start_matches("data:image/png;base64,");
-    let bytes = BASE64.decode(data)
-        .map_err(|e| format!("base64 解码失败: {}", e))?;
-    let img = image::load_from_memory_with_format(&bytes, ImageFormat::Png)
-        .map_err(|e| format!("PNG 解码失败: {}", e))?
-        .to_rgba8();
-    let (w, h) = img.dimensions();
-    let pixels: Vec<u8> = img.into_raw();
+pub async fn screenshot_write_clipboard_image(base64_png: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+        let trim = base64_png.trim();
+        let data = trim.trim_start_matches("data:image/png;base64,");
+        let b64_len = data.len();
+        debug_log!("[screenshot] clipboard: b64_len={} bytes", b64_len);
+        let bytes = BASE64.decode(data)
+            .map_err(|e| format!("base64 解码失败: {}", e))?;
+        debug_log!("[screenshot] clipboard: decoded {} raw bytes", bytes.len());
+        let img = image::load_from_memory_with_format(&bytes, ImageFormat::Png)
+            .map_err(|e| format!("PNG 解码失败: {}", e))?
+            .to_rgba8();
+        let (w, h) = img.dimensions();
+        let pixels: Vec<u8> = img.into_raw();
+        debug_log!("[screenshot] clipboard: pixel data {}x{}, {} bytes", w, h, pixels.len());
 
-    let mut clip = Clipboard::new().map_err(|e| format!("剪贴板不可用: {}", e))?;
-    let img_data = arboard::ImageData {
-        width: w as usize,
-        height: h as usize,
-        bytes: std::borrow::Cow::Owned(pixels),
-    };
-    clip.set_image(img_data).map_err(|e| format!("写图片剪贴板失败: {}", e))?;
-    debug_log!("[screenshot] clipboard set ok: {}x{}", w, h);
-    Ok(())
+        let mut clip = Clipboard::new().map_err(|e| format!("剪贴板不可用: {}", e))?;
+        let img_data = arboard::ImageData {
+            width: w as usize,
+            height: h as usize,
+            bytes: std::borrow::Cow::Owned(pixels),
+        };
+        clip.set_image(img_data).map_err(|e| format!("写图片剪贴板失败: {}", e))?;
+        debug_log!("[screenshot] clipboard set ok: {}x{}", w, h);
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("截图任务失败: {}", e))?
 }
 
 // ==================== 命令：保存截图到文件 ====================
