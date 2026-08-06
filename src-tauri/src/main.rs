@@ -12,7 +12,6 @@ macro_rules! debug_log {
 }
 
 mod clipboard;
-mod screenshot;
 mod db;
 mod file_encoding;
 mod file_saver;
@@ -56,10 +55,6 @@ fn main() {
             clipboard::stop_clipboard_monitor,
             clipboard::is_monitoring,
             clipboard::copy_to_clipboard,
-            screenshot::screenshot_capture_fullscreen,
-            screenshot::screenshot_write_clipboard_image,
-            screenshot::screenshot_save_file,
-            screenshot::screenshot_get_default_dir,
             clipboard::clipboard_get_image,
             clipboard::clipboard_set_image,
             file_encoding::read_file_with_encoding,
@@ -317,15 +312,11 @@ fn main() {
                     Err(_) => continue,
                 };
                 let tool = tool_id.to_string();
-                let h = handle.clone();
                 
-                manager.on_shortcut(shortcut, move |_app, _sc, event| {
+                manager.on_shortcut(shortcut, move |app_handle, _sc, event| {
                     if let tauri_plugin_global_shortcut::ShortcutState::Pressed = event.state {
-                        if let Some(window) = h.get_webview_window("main") {
-                            if tool == "__screenshot__" {
-                                // 截图热键：不 show 主窗口（避免主窗口出现在截图里），直接发事件
-                                let _ = window.emit("screenshot-triggered", ());
-                            } else if tool == "__palette__" || tool == "__quick_launch__" {
+                        if let Some(window) = app_handle.get_webview_window("main") {
+                            if tool == "__palette__" || tool == "__quick_launch__" {
                                 // 命令面板/快速启动：先唤起窗口到前台（最小化状态也能正确恢复）
                                 #[cfg(target_os = "windows")]
                                 if let Ok(hwnd) = window.hwnd() {

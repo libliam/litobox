@@ -20,7 +20,6 @@
     </div>
     <CommandPalette />
     <QuickLaunchOverlay v-model:visible="store.isQuickLaunchOpen" />
-    <ScreenshotOverlay v-model:visible="store.isScreenshotOverlayOpen" />
     <ConfirmDialogWrapper />
   </div>
 </template>
@@ -94,10 +93,8 @@ import BoostView from '@/views/BoostView.vue'
 import PasswordVault from '@/views/PasswordVault.vue'
 import FileRenamer from '@/views/FileRenamer.vue'
 import QuickLaunchTool from '@/views/QuickLaunchTool.vue'
-import ScreenshotTool from '@/views/ScreenshotTool.vue'
 import CommandPalette from '@/components/CommandPalette.vue'
 import QuickLaunchOverlay from '@/components/QuickLaunchOverlay.vue'
-import ScreenshotOverlay from '@/components/ScreenshotOverlay.vue'
 import { ConfirmDialogWrapper } from '@/composables/useConfirmDialog'
 
 // toolId → 组件 映射表（替代 v-if 链）
@@ -164,7 +161,6 @@ const toolComponentMap: Record<string, any> = {
   passwordVault: PasswordVault,
   fileRenamer: FileRenamer,
   quickLaunch: QuickLaunchTool,
-  screenshot: ScreenshotTool,
 }
 
 const store = useToolboxStore()
@@ -181,7 +177,6 @@ store.openTab(store.config.lastTool || 'home')
 
 let unlistenShortcut: (() => void) | null = null
 let unlistenPalette: (() => void) | null = null
-let unlistenScreenshot: (() => void) | null = null
 let globalKeydownHandler: ((e: KeyboardEvent) => void) | null = null
 
 const handleSelectTool = (toolId: string) => {
@@ -244,11 +239,6 @@ onMounted(async () => {
     }
   })
 
-  unlistenScreenshot = await listen('screenshot-triggered', () => {
-    // Alt+Shift+A 全局热键：隐藏主窗口 → 250ms 后开浮层截图 → 恢复
-    store.openScreenshotOverlay(0)
-  })
-
   // 应用内 Ctrl+P toggle 命令面板（仅应用激活时生效）
   globalKeydownHandler = (e: KeyboardEvent) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
@@ -269,9 +259,6 @@ onUnmounted(() => {
   }
   if (unlistenPalette) {
     unlistenPalette()
-  }
-  if (unlistenScreenshot) {
-    unlistenScreenshot()
   }
   if (globalKeydownHandler) {
     window.removeEventListener('keydown', globalKeydownHandler)
