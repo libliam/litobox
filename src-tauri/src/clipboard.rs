@@ -2,19 +2,36 @@ use arboard::Clipboard;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use image::{ImageFormat, RgbaImage};
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use std::io::Cursor;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
 use std::thread;
 use tauri::{AppHandle, Emitter};
 
+use crate::db;
+
 static MONITORING: AtomicBool = AtomicBool::new(true);
-static LAST_TEXT: Mutex<String> = Mutex::new(String::new());
+static LAST_SEQ: AtomicU32 = AtomicU32::new(0);
+static LAST_TEXT_HASH: Mutex<String> = Mutex::new(String::new());
+static LAST_IMAGE_HASH: Mutex<String> = Mutex::new(String::new());
+static LAST_FILES_HASH: Mutex<String> = Mutex::new(String::new());
 
 #[derive(Clone, Serialize)]
 pub struct ClipboardEntry {
-    pub text: String,
+    pub entry_type: String, // "text", "image", "files"
+    pub text: String,       // text content / image file path / JSON file paths
+    pub meta: String,       // JSON metadata
     pub timestamp: u64,
+}
+
+/// 获取剪贴板图片缓存目录
+fn get_clipboard_image_dir() -> Result<std::path::PathBuf, String> {
+    let app_dir = dirs::config_dir()
+        .ok_or("无法获取应用数据目录")?;
+    let img_dir = app_dir.join("com.dev.toolbox").join("clipboard_images");
+    std::fs::create_dir_all(&img_dir).map_err(|e| e.to_string())?;
+    Ok(img_dir)
 }
 
 #[tauri::command]
@@ -33,29 +50,192 @@ pub fn start_clipboard_monitor(app: AppHandle) {
                 continue;
             }
 
-            let text = clipboard.get_text().unwrap_or_default();
+            // ponytail: 用 GetClipboardSequenceNumber 检测变更，避免每轮都读取内容
+            let seq = get_clipboard_sequence_number();
+            if seq == 0 || seq == LAST_SEQ.load(Ordering::SeqCst) {
+                thread::sleep(std::time::Duration::from_millis(500));
+                continue;
+            }
 
-            if !text.is_empty() {
-                let last = LAST_TEXT.lock().unwrap();
-                if text != *last {
-                    drop(last);
-                    *LAST_TEXT.lock().unwrap() = text.clone();
+            LAST_SEQ.store(seq, Ordering::SeqCst);
 
-                    let entry = ClipboardEntry {
-                        text: text.clone(),
-                        timestamp: std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap()
-                            .as_millis() as u64,
+            // 按优先级检测：文件 > 图片 > 文本
+            // 复制文件时剪贴板可能同时有文本（路径），优先取文件
+            if let Some(files) = read_clipboard_files() {
+                let hash = hash_string(&files.join(","));
+                if hash != *LAST_FILES_HASH.lock().unwrap() {
+                    *LAST_FILES_HASH.lock().unwrap() = hash.clone();
+                    // 同步更新 text hash 防止文件路径的文本也被重复记录
+                    *LAST_TEXT_HASH.lock().unwrap() = hash_string(&files.join("\n"));
+
+                    let meta = format!("{{\"count\":{}}}", files.len());
+                    let content = serde_json::to_string(&files).unwrap_or_default();
+
+                    let _ = db::db_add_clipboard_record(
+                        content.clone(),
+                        "files".to_string(),
+                        meta.clone(),
+                    );
+
+                    let _ = app.emit("clipboard://new-entry", ClipboardEntry {
+                        entry_type: "files".to_string(),
+                        text: content,
+                        meta,
+                        timestamp: now_ms(),
+                    });
+                }
+                thread::sleep(std::time::Duration::from_millis(500));
+                continue;
+            }
+
+            if let Some(img_data) = read_clipboard_image_for_monitor() {
+                let hash = hash_string(&img_data.base64_png[..64.min(img_data.base64_png.len())]);
+                if hash != *LAST_IMAGE_HASH.lock().unwrap() {
+                    *LAST_IMAGE_HASH.lock().unwrap() = hash.clone();
+                    // 同步更新 text hash
+                    *LAST_TEXT_HASH.lock().unwrap() = hash.clone();
+
+                    // 保存图片到临时文件
+                    let img_dir = match get_clipboard_image_dir() {
+                        Ok(d) => d,
+                        Err(_) => {
+                            thread::sleep(std::time::Duration::from_millis(500));
+                            continue;
+                        }
                     };
+                    let filename = format!("clip_{}.png", now_ms());
+                    let img_path = img_dir.join(&filename);
+                    let bytes = STANDARD.decode(&img_data.base64_png).unwrap_or_default();
+                    if std::fs::write(&img_path, &bytes).is_ok() {
+                        let path_str = img_path.to_string_lossy().to_string();
+                        let meta = format!(
+                            "{{\"width\":{},\"height\":{},\"size_bytes\":{}}}",
+                            img_data.width, img_data.height, img_data.size_bytes
+                        );
 
-                    let _ = app.emit("clipboard://new-entry", entry);
+                        let _ = db::db_add_clipboard_record(
+                            path_str.clone(),
+                            "image".to_string(),
+                            meta.clone(),
+                        );
+
+                        let _ = app.emit("clipboard://new-entry", ClipboardEntry {
+                            entry_type: "image".to_string(),
+                            text: path_str,
+                            meta,
+                            timestamp: now_ms(),
+                        });
+                    }
+                }
+                thread::sleep(std::time::Duration::from_millis(500));
+                continue;
+            }
+
+            // 文本检测
+            let text = clipboard.get_text().unwrap_or_default();
+            if !text.is_empty() {
+                let hash = hash_string(&text);
+                if hash != *LAST_TEXT_HASH.lock().unwrap() {
+                    *LAST_TEXT_HASH.lock().unwrap() = hash;
+
+                    let _ = db::db_add_clipboard_record(
+                        text.clone(),
+                        "text".to_string(),
+                        "{}".to_string(),
+                    );
+
+                    let _ = app.emit("clipboard://new-entry", ClipboardEntry {
+                        entry_type: "text".to_string(),
+                        text,
+                        meta: "{}".to_string(),
+                        timestamp: now_ms(),
+                    });
                 }
             }
 
             thread::sleep(std::time::Duration::from_millis(500));
         }
     });
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64
+}
+
+fn hash_string(s: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(s.as_bytes());
+    format!("{:x}", hasher.finalize())[..16].to_string()
+}
+
+/// 读取剪贴板中的文件路径列表 (CF_HDROP)
+#[cfg(target_os = "windows")]
+fn read_clipboard_files() -> Option<Vec<String>> {
+    use windows_sys::Win32::System::DataExchange::*;
+    use windows_sys::Win32::UI::Shell::DragQueryFileW;
+
+    const CF_HDROP: u32 = 15;
+
+    unsafe {
+        if OpenClipboard(std::ptr::null_mut()) == 0 {
+            return None;
+        }
+
+        let result = (|| {
+            let handle = GetClipboardData(CF_HDROP);
+            if handle.is_null() {
+                return None;
+            }
+
+            let count = DragQueryFileW(handle as _, 0xFFFFFFFF, std::ptr::null_mut(), 0);
+            if count == 0 {
+                return None;
+            }
+
+            let mut files = Vec::with_capacity(count as usize);
+            for i in 0..count {
+                let len = DragQueryFileW(handle as _, i, std::ptr::null_mut(), 0);
+                if len == 0 {
+                    continue;
+                }
+                let mut buf = vec![0u16; (len + 1) as usize];
+                DragQueryFileW(handle as _, i, buf.as_mut_ptr(), (len + 1) as u32);
+                if let Ok(s) = String::from_utf16(&buf[..len as usize]) {
+                    files.push(s);
+                }
+            }
+
+            if files.is_empty() { None } else { Some(files) }
+        })();
+
+        CloseClipboard();
+        result
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn read_clipboard_files() -> Option<Vec<String>> {
+    None
+}
+
+/// 监控用：读取剪贴板图片（轻量，不写 DB）
+fn read_clipboard_image_for_monitor() -> Option<ClipboardImageData> {
+    clipboard_get_image().ok().flatten()
+}
+
+/// 获取剪贴板序列号（变更检测）
+#[cfg(target_os = "windows")]
+fn get_clipboard_sequence_number() -> u32 {
+    use windows_sys::Win32::System::DataExchange::GetClipboardSequenceNumber;
+    unsafe { GetClipboardSequenceNumber() }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn get_clipboard_sequence_number() -> u32 {
+    0
 }
 
 #[tauri::command]
@@ -334,5 +514,32 @@ pub fn clipboard_set_image(base64_png: String) -> Result<(), String> {
     })?;
 
     debug_log!("[clipboard_set_image] 成功写入剪贴板, 尺寸: {}x{}", w, h);
+    Ok(())
+}
+
+/// 读取图片文件为 base64（前端展示缩略图用）
+#[tauri::command]
+pub fn clipboard_read_image_file(path: String) -> Result<String, String> {
+    let bytes = std::fs::read(&path).map_err(|e| format!("读取文件失败: {}", e))?;
+    Ok(STANDARD.encode(&bytes))
+}
+
+/// 删除指定图片缓存文件
+#[tauri::command]
+pub fn clipboard_delete_image_file(path: String) -> Result<(), String> {
+    if !path.is_empty() {
+        let _ = std::fs::remove_file(&path);
+    }
+    Ok(())
+}
+
+/// 清空所有图片缓存
+#[tauri::command]
+pub fn clipboard_clear_image_cache() -> Result<(), String> {
+    let img_dir = get_clipboard_image_dir()?;
+    if img_dir.exists() {
+        std::fs::remove_dir_all(&img_dir).map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(&img_dir).map_err(|e| e.to_string())?;
+    }
     Ok(())
 }

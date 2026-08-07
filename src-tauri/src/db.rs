@@ -80,6 +80,8 @@ pub struct ClipboardRecord {
     pub id: Option<i64>,
     pub text: String,
     pub timestamp: String,
+    pub r#type: String,
+    pub meta: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -265,6 +267,14 @@ fn init_tables(conn: &Connection) -> Result<()> {
         // 列已存在，忽略
     }
     if let Err(_) = conn.execute("ALTER TABLE http_environments ADD COLUMN base_url TEXT NOT NULL DEFAULT ''", []) {
+        // 列已存在，忽略
+    }
+
+    // 迁移：clipboard_history 表新增 type 和 meta 列
+    if let Err(_) = conn.execute("ALTER TABLE clipboard_history ADD COLUMN type TEXT NOT NULL DEFAULT 'text'", []) {
+        // 列已存在，忽略
+    }
+    if let Err(_) = conn.execute("ALTER TABLE clipboard_history ADD COLUMN meta TEXT NOT NULL DEFAULT '{}'", []) {
         // 列已存在，忽略
     }
 
@@ -459,17 +469,28 @@ pub fn db_clear_ocr_history() -> Result<(), String> {
 
 // ========== 剪贴板历史 CRUD ==========
 
-pub fn db_list_clipboard_history(limit: i64, offset: i64) -> Result<Vec<ClipboardRecord>, String> {
+pub fn db_list_clipboard_history(limit: i64, offset: i64, filter_type: Option<String>) -> Result<Vec<ClipboardRecord>, String> {
     with_conn(|conn| {
-        let mut stmt = conn
-            .prepare("SELECT id, text, timestamp FROM clipboard_history ORDER BY id DESC LIMIT ?1 OFFSET ?2")
-            .map_err(|e| e.to_string())?;
+        let (sql, params_vec): (String, Vec<Box<dyn rusqlite::ToSql>>) = match &filter_type {
+            Some(ft) if !ft.is_empty() => (
+                "SELECT id, text, timestamp, type, meta FROM clipboard_history WHERE type = ?1 ORDER BY id DESC LIMIT ?2 OFFSET ?3".to_string(),
+                vec![Box::new(ft.clone()), Box::new(limit), Box::new(offset)],
+            ),
+            _ => (
+                "SELECT id, text, timestamp, type, meta FROM clipboard_history ORDER BY id DESC LIMIT ?1 OFFSET ?2".to_string(),
+                vec![Box::new(limit), Box::new(offset)],
+            ),
+        };
+        let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+        let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
         let rows = stmt
-            .query_map(params![limit, offset], |row| {
+            .query_map(params_refs.as_slice(), |row| {
                 Ok(ClipboardRecord {
                     id: Some(row.get(0)?),
                     text: row.get(1)?,
                     timestamp: row.get(2)?,
+                    r#type: row.get(3)?,
+                    meta: row.get(4)?,
                 })
             })
             .map_err(|e| e.to_string())?;
@@ -481,7 +502,7 @@ pub fn db_list_clipboard_history(limit: i64, offset: i64) -> Result<Vec<Clipboar
 pub fn db_search_clipboard_history(query: String, limit: i64) -> Result<Vec<ClipboardRecord>, String> {
     with_conn(|conn| {
         let mut stmt = conn
-            .prepare("SELECT id, text, timestamp FROM clipboard_history WHERE text LIKE '%' || ?1 || '%' ORDER BY id DESC LIMIT ?2")
+            .prepare("SELECT id, text, timestamp, type, meta FROM clipboard_history WHERE text LIKE '%' || ?1 || '%' ORDER BY id DESC LIMIT ?2")
             .map_err(|e| e.to_string())?;
         let rows = stmt
             .query_map(params![query, limit], |row| {
@@ -489,6 +510,8 @@ pub fn db_search_clipboard_history(query: String, limit: i64) -> Result<Vec<Clip
                     id: Some(row.get(0)?),
                     text: row.get(1)?,
                     timestamp: row.get(2)?,
+                    r#type: row.get(3)?,
+                    meta: row.get(4)?,
                 })
             })
             .map_err(|e| e.to_string())?;
@@ -497,11 +520,11 @@ pub fn db_search_clipboard_history(query: String, limit: i64) -> Result<Vec<Clip
     })
 }
 
-pub fn db_add_clipboard_record(text: String) -> Result<(), String> {
+pub fn db_add_clipboard_record(text: String, record_type: String, meta: String) -> Result<(), String> {
     with_conn(|conn| {
         conn.execute(
-            "INSERT INTO clipboard_history (text, timestamp) VALUES (?1, datetime('now'))",
-            params![text],
+            "INSERT INTO clipboard_history (text, type, meta, timestamp) VALUES (?1, ?2, ?3, datetime('now'))",
+            params![text, record_type, meta],
         ).map_err(|e| e.to_string())?;
         Ok(())
     })
@@ -1215,8 +1238,8 @@ pub fn cmd_db_clear_ocr_history() -> Result<(), String> {
 // ========== 剪贴板历史 Tauri 命令 ==========
 
 #[tauri::command]
-pub fn cmd_db_list_clipboard_history(limit: i64, offset: i64) -> Result<Vec<ClipboardRecord>, String> {
-    db_list_clipboard_history(limit, offset)
+pub fn cmd_db_list_clipboard_history(limit: i64, offset: i64, filter_type: Option<String>) -> Result<Vec<ClipboardRecord>, String> {
+    db_list_clipboard_history(limit, offset, filter_type)
 }
 
 #[tauri::command]
@@ -1225,8 +1248,8 @@ pub fn cmd_db_search_clipboard_history(query: String, limit: i64) -> Result<Vec<
 }
 
 #[tauri::command]
-pub fn cmd_db_add_clipboard_record(text: String) -> Result<(), String> {
-    db_add_clipboard_record(text)
+pub fn cmd_db_add_clipboard_record(text: String, record_type: String, meta: String) -> Result<(), String> {
+    db_add_clipboard_record(text, record_type, meta)
 }
 
 #[tauri::command]

@@ -3,10 +3,11 @@
     <div class="tool-card sticky-card">
       <el-tabs v-model="activeTab" class="image-tabs">
         <el-tab-pane label="批量压缩/转换" name="compress" />
-        <el-tab-pane label="图片拼图" name="merge" />
+        <el-tab-pane label="尺寸缩放" name="resize" />
+        <el-tab-pane label="图片转Base64" name="base64" />
         <el-tab-pane label="加水印" name="watermark" />
+        <el-tab-pane label="图片拼图" name="merge" />
         <el-tab-pane label="调色板提取" name="palette" />
-        <el-tab-pane label="剪贴板图片" name="clipboard" />
       </el-tabs>
     </div>
 
@@ -269,89 +270,139 @@
       </div>
     </div>
 
-    <!-- Tab 5: 剪贴板图片 -->
-    <div v-if="activeTab === 'clipboard'" class="tool-card">
+    <!-- 单图上传（尺寸缩放/Base64 共用） -->
+    <div v-if="activeTab === 'resize' || activeTab === 'base64'" class="tool-card">
       <div class="card-header">
-        <span class="card-title">剪贴板图片</span>
+        <span class="card-title">图片输入</span>
         <div class="card-actions">
-          <el-button size="small" type="primary" :loading="clipboardLoading" @click="loadClipboardImage">
-            读取剪贴板
-          </el-button>
-          <el-button v-if="clipboardImage" size="small" @click="saveClipboardImage">保存到文件</el-button>
-          <el-button v-if="clipboardImage" size="small" type="success" @click="copyImageToClipboard">
-            复制图片
-          </el-button>
-          <el-button v-if="clipboardImage" size="small" @click="clearClipboardImage">清空</el-button>
+          <el-button size="small" type="primary" @click="triggerSingleFileInput">上传文件</el-button>
+          <el-button v-if="singleImageFile" size="small" @click="handleClearSingleImage">移除</el-button>
         </div>
       </div>
-      <div class="card-body">
-        <div v-if="!clipboardImage" class="upload-hint">
-          点击「读取剪贴板」或按 <kbd>Ctrl+V</kbd> 粘贴剪贴板中的图片（截图、复制的图片等）
+      <div
+        class="card-body upload-area"
+        :class="{ 'drag-over': isSingleDragging }"
+        @dragover="handleSingleDragOver"
+        @dragleave="handleSingleDragLeave"
+        @drop="handleSingleDrop"
+      >
+        <input
+          ref="singleFileInputRef"
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/bmp"
+          style="display: none"
+          @change="handleSingleFileSelect"
+        />
+        <div v-if="singleImageFile" class="image-info">
+          <span class="info-name">{{ singleImageFile.name }}</span>
+          <span class="info-size">{{ formatBytes(singleImageInfo?.size || 0) }}</span>
+          <span class="info-dimensions">{{ singleImageInfo?.width }}×{{ singleImageInfo?.height }}</span>
         </div>
-        <div v-else class="clipboard-image-container">
-          <div class="clipboard-image-preview" @click="openClipboardViewer = true">
-            <img :src="clipboardImageDataUrl" class="clipboard-preview-img" alt="剪贴板图片预览" />
-            <div class="preview-hint">点击查看大图</div>
-          </div>
-          <div class="clipboard-image-info">
-            <div class="info-title">图片信息</div>
-            <div class="info-list">
-              <div class="info-row">
-                <span class="info-label">宽度</span>
-                <span class="info-value">{{ clipboardImage.width }} px</span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">高度</span>
-                <span class="info-value">{{ clipboardImage.height }} px</span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">尺寸</span>
-                <span class="info-value">{{ clipboardImage.width }} × {{ clipboardImage.height }}</span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">PNG 大小</span>
-                <span class="info-value">{{ formatBytes(clipboardImage.size_bytes) }}</span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">宽高比</span>
-                <span class="info-value">{{ calcAspectRatio(clipboardImage.width, clipboardImage.height) }}</span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">像素数</span>
-                <span class="info-value">{{ formatPixels(clipboardImage.width * clipboardImage.height) }}</span>
-              </div>
-            </div>
-          </div>
+        <div v-else class="upload-hint">
+          点击「上传文件」或拖拽图片到此处
         </div>
       </div>
     </div>
 
-    <!-- 大图查看器弹窗 -->
-    <el-dialog
-      v-model="openClipboardViewer"
-      title="图片大图查看"
-      width="90%"
-      top="5vh"
-      :close-on-click-modal="true"
-      class="clipboard-viewer-dialog"
-    >
-      <div class="viewer-container">
-        <img v-if="clipboardImage" :src="clipboardImageDataUrl" class="viewer-img" alt="大图预览" />
+    <!-- Tab 2: 尺寸缩放 -->
+    <div v-if="activeTab === 'resize'" class="tool-card">
+      <div class="card-header">
+        <span class="card-title">尺寸缩放</span>
       </div>
-      <template #footer>
-        <el-button @click="openClipboardViewer = false">关闭</el-button>
-        <el-button type="primary" @click="saveClipboardImage; openClipboardViewer = false">保存到文件</el-button>
-      </template>
-    </el-dialog>
+      <div class="card-body">
+        <div class="resize-controls">
+          <div class="input-row">
+            <label>宽度 (px)</label>
+            <input
+              type="number"
+              v-model.number="resizeWidth"
+              :disabled="lockAspect && !resizeTarget"
+              class="resize-input"
+              @input="handleWidthChange"
+            />
+          </div>
+          <div class="input-row">
+            <label>高度 (px)</label>
+            <input
+              type="number"
+              v-model.number="resizeHeight"
+              :disabled="lockAspect && !resizeTarget"
+              class="resize-input"
+              @input="handleHeightChange"
+            />
+          </div>
+          <div class="input-row">
+            <label>百分比 (%)</label>
+            <input
+              type="number"
+              v-model.number="resizePercent"
+              class="resize-input"
+              @input="handlePercentChange"
+            />
+          </div>
+          <div class="lock-row">
+            <el-checkbox v-model="lockAspect">等比例缩放</el-checkbox>
+          </div>
+        </div>
+        <div class="action-grid">
+          <div class="action-group">
+            <el-button size="small" type="primary" :disabled="!singleImageFile" @click="handleResize">
+              开始缩放
+            </el-button>
+            <el-button size="small" :disabled="!resizedBlob" @click="handleDownloadResized">
+              下载缩放图
+            </el-button>
+          </div>
+        </div>
+        <div v-if="resizedBlob" class="result-info">
+          <span>原尺寸: {{ resizeOrigWidth }}×{{ resizeOrigHeight }}</span>
+          <span class="arrow">→</span>
+          <span>新尺寸: {{ resizeWidth }}×{{ resizeHeight }}</span>
+        </div>
+        <div v-if="resizeError" class="error-message">{{ resizeError }}</div>
+      </div>
+    </div>
+
+    <!-- Tab 3: 图片转Base64 -->
+    <div v-if="activeTab === 'base64'" class="tool-card">
+      <div class="card-header">
+        <span class="card-title">Base64 输出</span>
+        <div class="card-actions">
+          <el-button size="small" :disabled="!base64Result" @click="handleCopyBase64">复制</el-button>
+          <el-button size="small" :disabled="!base64Result" @click="handleDownloadBase64">下载.txt</el-button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="action-grid">
+          <div class="action-group">
+            <el-button size="small" type="primary" :disabled="!singleImageFile" @click="handleToBase64">
+              生成Base64
+            </el-button>
+          </div>
+        </div>
+        <div v-if="base64Result" class="base64-info">
+          <span>大小: {{ formatBytes(base64Result.length) }}</span>
+        </div>
+        <el-input
+          v-model="base64Result"
+          type="textarea"
+          :rows="10"
+          placeholder="生成Base64后在此显示..."
+          readonly
+        />
+        <div v-if="base64Error" class="error-message">{{ base64Error }}</div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, computed, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
 import { saveFileWithDialog } from '@/utils/fileSaver'
+import * as imageUtils from '@/utils/imageUtils'
 
 const activeTab = ref('compress')
 const error = ref('')
@@ -1173,94 +1224,176 @@ const copyPaletteCss = async () => {
   ElMessage.success('已复制 CSS 变量')
 }
 
-// ============ Tab 5: 剪贴板图片 ============
-interface ClipboardImage {
-  width: number
-  height: number
-  base64_png: string
-  size_bytes: number
+// ============ 单图上传（尺寸缩放/Base64 共用） ============
+const singleFileInputRef = ref<HTMLInputElement | null>(null)
+const singleImageFile = ref<File | null>(null)
+const singleImageInfo = ref<{ size: number; width: number; height: number } | null>(null)
+const isSingleDragging = ref(false)
+
+const triggerSingleFileInput = () => singleFileInputRef.value?.click()
+
+const handleSingleFileSelect = async (e: Event) => {
+  const target = e.target as HTMLInputElement
+  if (!target.files || target.files.length === 0) return
+  await setSingleImage(target.files[0])
 }
 
-const clipboardImage = ref<ClipboardImage | null>(null)
-const clipboardLoading = ref(false)
-const openClipboardViewer = ref(false)
-
-const clipboardImageDataUrl = computed(() => {
-  if (!clipboardImage.value) return ''
-  return 'data:image/png;base64,' + clipboardImage.value.base64_png
-})
-
-// Ctrl+V 粘贴：仅在 clipboard Tab 激活时响应
-const onPaste = (e: ClipboardEvent) => {
-  if (activeTab.value !== 'clipboard') return
-  // 如果焦点在输入框等可编辑元素上，不拦截
-  const target = e.target as HTMLElement
-  if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
+const handleSingleDragOver = (e: DragEvent) => {
   e.preventDefault()
-  loadClipboardImage()
+  isSingleDragging.value = true
 }
 
-onMounted(() => window.addEventListener('paste', onPaste))
-onUnmounted(() => window.removeEventListener('paste', onPaste))
+const handleSingleDragLeave = () => {
+  isSingleDragging.value = false
+}
 
-const loadClipboardImage = async () => {
-  clipboardLoading.value = true
-  error.value = ''
-  try {
-    const result = await invoke<ClipboardImage | null>('clipboard_get_image')
-    if (!result) {
-      clipboardImage.value = null
-      ElMessage.warning('剪贴板中没有图片')
-    } else {
-      clipboardImage.value = result
-      ElMessage.success('读取成功')
-    }
-  } catch (e: any) {
-    error.value = e
-    ElMessage.error('读取剪贴板图片失败: ' + e)
-  } finally {
-    clipboardLoading.value = false
+const handleSingleDrop = async (e: DragEvent) => {
+  e.preventDefault()
+  isSingleDragging.value = false
+  if (e.dataTransfer?.files.length) {
+    await setSingleImage(e.dataTransfer.files[0])
   }
 }
 
-const clearClipboardImage = () => {
-  clipboardImage.value = null
-  error.value = ''
-}
-
-const calcAspectRatio = (w: number, h: number): string => {
-  const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b))
-  const g = gcd(w, h)
-  return `${w / g}:${h / g}`
-}
-
-const formatPixels = (n: number): string => {
-  if (n < 1000) return n.toString()
-  if (n < 1000000) return (n / 1000).toFixed(1) + ' K'
-  return (n / 1000000).toFixed(2) + ' MP'
-}
-
-const saveClipboardImage = async () => {
-  if (!clipboardImage.value) return
+const setSingleImage = async (file: File) => {
+  if (!file.type.startsWith('image/')) {
+    ElMessage.error('请选择图片文件')
+    return
+  }
+  singleImageFile.value = file
+  singleImageInfo.value = { size: file.size, width: 0, height: 0 }
   try {
-    const blob = base64ToBlob(clipboardImage.value.base64_png, 'image/png')
-    const now = new Date()
-    const pad = (n: number) => n.toString().padStart(2, '0')
-    const filename = `clipboard_${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.png`
-    await saveFileWithDialog(blob, filename, 'png')
-  } catch (e: any) {
-    ElMessage.error('保存失败: ' + e)
+    const info = await imageUtils.getImageInfo(file)
+    singleImageInfo.value.width = info.width
+    singleImageInfo.value.height = info.height
+    resizeOrigWidth.value = info.width
+    resizeOrigHeight.value = info.height
+    resizeWidth.value = info.width
+    resizeHeight.value = info.height
+    resizePercent.value = 100
+  } catch {
+    // ignore
+  }
+  // 清理之前的处理结果
+  resizedBlob.value = null
+  base64Result.value = ''
+  resizeError.value = ''
+}
+
+const handleClearSingleImage = () => {
+  singleImageFile.value = null
+  singleImageInfo.value = null
+  resizedBlob.value = null
+  base64Result.value = ''
+  resizeError.value = ''
+}
+
+// ============ Tab 2: 尺寸缩放 ============
+const resizeWidth = ref(800)
+const resizeHeight = ref(600)
+const resizePercent = ref(100)
+const lockAspect = ref(true)
+const resizeTarget = ref<'width' | 'height' | null>(null)
+const resizedBlob = ref<Blob | null>(null)
+const resizeOrigWidth = ref(0)
+const resizeOrigHeight = ref(0)
+const resizeError = ref('')
+
+const handleWidthChange = () => {
+  if (lockAspect.value && resizeOrigWidth.value) {
+    const ratio = resizeHeight.value / resizeWidth.value
+    resizeHeight.value = Math.round(resizeWidth.value * ratio)
+  }
+  if (resizeOrigWidth.value) {
+    resizePercent.value = Math.round((resizeWidth.value / resizeOrigWidth.value) * 100)
   }
 }
 
-const copyImageToClipboard = async () => {
-  if (!clipboardImage.value) return
+const handleHeightChange = () => {
+  if (lockAspect.value && resizeOrigHeight.value) {
+    const ratio = resizeWidth.value / resizeHeight.value
+    resizeWidth.value = Math.round(resizeHeight.value * ratio)
+  }
+  if (resizeOrigHeight.value) {
+    resizePercent.value = Math.round((resizeHeight.value / resizeOrigHeight.value) * 100)
+  }
+}
+
+const handlePercentChange = () => {
+  if (!resizeOrigWidth.value) return
+  const w = Math.max(1, Math.round((resizePercent.value / 100) * resizeOrigWidth.value))
+  const h = Math.max(1, Math.round((resizePercent.value / 100) * resizeOrigHeight.value))
+  resizeWidth.value = w
+  resizeHeight.value = h
+}
+
+const handleResize = async () => {
+  if (!singleImageFile.value) return
+  resizeError.value = ''
   try {
-    await invoke('clipboard_set_image', { base64Png: clipboardImage.value.base64_png })
-    ElMessage.success('已复制图片到剪贴板')
+    const result = await imageUtils.resizeImage(singleImageFile.value, resizeWidth.value, resizeHeight.value)
+    resizedBlob.value = result
+    ElMessage.success('缩放完成')
+  } catch (e: any) {
+    resizeError.value = e
+    ElMessage.error('缩放失败: ' + e)
+  }
+}
+
+const handleDownloadResized = () => {
+  if (!resizedBlob.value) return
+  const url = URL.createObjectURL(resizedBlob.value)
+  const a = document.createElement('a')
+  a.href = url
+  const originalName = singleImageFile.value?.name || 'image'
+  const nameWithoutExt = originalName.replace(/\.[^.]+$/, '')
+  a.download = `${nameWithoutExt}_${resizeWidth.value}x${resizeHeight.value}.png`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+// ============ Tab 3: 图片转Base64 ============
+const base64Result = ref('')
+const base64Error = ref('')
+
+const handleToBase64 = async () => {
+  if (!singleImageFile.value) return
+  base64Error.value = ''
+  try {
+    const result = await imageUtils.imageToBase64(singleImageFile.value)
+    base64Result.value = result
+    ElMessage.success('生成成功')
+  } catch (e: any) {
+    base64Error.value = e
+    ElMessage.error('生成失败: ' + e)
+  }
+}
+
+const handleCopyBase64 = async () => {
+  if (!base64Result.value) return
+  try {
+    await navigator.clipboard.writeText(base64Result.value)
+    ElMessage.success('已复制到剪贴板')
   } catch (e: any) {
     ElMessage.error('复制失败: ' + e)
   }
+}
+
+const handleDownloadBase64 = () => {
+  if (!base64Result.value) return
+  const blob = new Blob([base64Result.value], { type: 'text/plain' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  const originalName = singleImageFile.value?.name || 'image'
+  const nameWithoutExt = originalName.replace(/\.[^.]+$/, '')
+  a.download = `${nameWithoutExt}_base64.txt`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
 }
 </script>
 
@@ -1548,131 +1681,88 @@ html.light .image-tabs :deep(.el-tabs__header) {
   font-size: 13px;
 }
 
-/* ===== 剪贴板图片特有样式 ===== */
-.clipboard-image-container {
-  display: grid;
-  grid-template-columns: 1fr 280px;
-  gap: 16px;
-  align-items: start;
-}
-
-@media (max-width: 768px) {
-  .clipboard-image-container {
-    grid-template-columns: 1fr;
-  }
-}
-
-.clipboard-image-preview {
-  position: relative;
-  background: var(--bg-input);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 12px;
-  cursor: zoom-in;
-  transition: box-shadow 0.2s;
-  text-align: center;
-  min-height: 200px;
+/* ===== 尺寸缩放 & Base64 样式 ===== */
+.upload-area {
+  min-height: 120px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  transition: background 0.2s, border-color 0.2s;
 }
 
-.clipboard-image-preview:hover {
-  box-shadow: 0 0 0 2px var(--accent-cyan), 0 0 16px rgba(0, 212, 255, 0.2);
+.upload-area.drag-over {
+  background: rgba(0, 212, 255, 0.1);
+  border: 2px dashed var(--accent-cyan);
 }
 
-.clipboard-preview-img {
-  max-width: 100%;
-  max-height: 400px;
-  object-fit: contain;
-  border-radius: 4px;
-  image-rendering: auto;
+.resize-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
 }
 
-.preview-hint {
-  margin-top: 8px;
-  font-size: 12px;
-  color: var(--text-secondary);
-  opacity: 0.7;
-}
-
-.clipboard-image-info {
-  background: var(--bg-input);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 16px;
-}
-
-.info-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--accent-cyan);
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  margin-bottom: 12px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--border-color);
-}
-
-.info-list {
+.input-row {
   display: flex;
   flex-direction: column;
+  gap: 4px;
+}
+
+.input-row label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.resize-input {
+  padding: 8px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 14px;
+  outline: none;
+}
+
+.resize-input:focus {
+  border-color: var(--accent-cyan);
+}
+
+.resize-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.lock-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.result-info {
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: var(--bg-input);
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
   gap: 8px;
 }
 
-.info-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 13px;
-  padding: 4px 0;
-}
-
-.info-label {
-  color: var(--text-secondary);
-  flex-shrink: 0;
-}
-
-.info-value {
-  color: var(--text-primary);
-  font-weight: 500;
-  text-align: right;
-  word-break: break-all;
-}
-
-/* 大图查看器 */
-.viewer-container {
-  width: 100%;
-  max-height: 75vh;
-  overflow: auto;
-  background: var(--bg-input);
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-}
-
-.viewer-img {
-  max-width: 100%;
-  height: auto;
-  display: block;
-  border-radius: 4px;
-}
-
-.clipboard-viewer-dialog :deep(.el-dialog__body) {
-  padding: 16px 20px;
-}
-
-.upload-hint kbd {
-  display: inline-block;
-  padding: 1px 6px;
-  font-size: 12px;
-  font-family: monospace;
-  background: var(--bg-input);
-  border: 1px solid var(--border-color);
-  border-radius: 3px;
+.result-info .arrow {
   color: var(--accent-cyan);
+  font-weight: bold;
+}
+
+.base64-info {
+  margin: 8px 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.info-dimensions {
+  color: var(--text-secondary);
 }
 </style>

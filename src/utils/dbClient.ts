@@ -186,18 +186,20 @@ export interface ClipboardRecord {
   id?: number;
   text: string;
   timestamp: string;
+  type: string;   // "text" | "image" | "files"
+  meta: string;   // JSON metadata
 }
 
-export async function listClipboardHistory(limit: number, offset: number): Promise<ClipboardRecord[]> {
-  return invoke('cmd_db_list_clipboard_history', { limit, offset });
+export async function listClipboardHistory(limit: number, offset: number, filterType?: string): Promise<ClipboardRecord[]> {
+  return invoke('cmd_db_list_clipboard_history', { limit, offset, filterType: filterType || null });
 }
 
 export async function searchClipboardHistory(query: string, limit: number): Promise<ClipboardRecord[]> {
   return invoke('cmd_db_search_clipboard_history', { query, limit });
 }
 
-export async function addClipboardRecord(text: string): Promise<void> {
-  return invoke('cmd_db_add_clipboard_record', { text });
+export async function addClipboardRecord(text: string, recordType: string, meta: string): Promise<void> {
+  return invoke('cmd_db_add_clipboard_record', { text, recordType, meta });
 }
 
 export async function deleteClipboardRecord(id: number): Promise<void> {

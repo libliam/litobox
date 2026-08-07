@@ -48,7 +48,6 @@ import MockDataTool from '@/views/MockDataTool.vue'
 import OcrTool from '@/views/OcrTool.vue'
 import DiffTool from '@/views/DiffTool.vue'
 import ClipboardTool from '@/views/ClipboardTool.vue'
-import ImageTool from '@/views/ImageTool.vue'
 import CsvTool from '@/views/CsvTool.vue'
 import PdfTool from '@/views/PdfTool.vue'
 import HashTool from '@/views/HashTool.vue'
@@ -116,7 +115,7 @@ const toolComponentMap: Record<string, any> = {
   ocr: OcrTool,
   diff: DiffTool,
   clipboard: ClipboardTool,
-  image: ImageTool,
+  image: ImageToolEnhanced,
   csv: CsvTool,
   pdf: PdfTool,
   hash: HashTool,
@@ -145,7 +144,6 @@ const toolComponentMap: Record<string, any> = {
   diskAnalyzer: DiskSpaceAnalyzer,
   fileSearcher: FileSearcher,
   iconGenerator: IconGenerator,
-  imageToolEnhanced: ImageToolEnhanced,
   audioTool: AudioTool,
   videoTool: VideoTool,
   mediaInfo: MediaInfoTool,
