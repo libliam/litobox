@@ -1,13 +1,23 @@
 <template>
-  <aside class="sidebar">
+  <aside class="sidebar" :class="{ collapsed: collapsed }">
     <div class="sidebar-header">
       <div class="logo-area">
         <span class="logo-icon">⚡</span>
-        <div class="logo-text">
+        <div class="logo-text" v-show="!collapsed">
           <h1 class="app-title">栗的百宝箱</h1>
           <span class="app-version">v{{ appVersion }}</span>
         </div>
       </div>
+      <button class="collapse-btn" :title="collapsed ? '展开菜单' : '收起菜单'" @click="toggleSidebar">
+        <svg v-if="collapsed" viewBox="0 0 24 24" width="16" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="11 5 4 12 11 19"/>
+          <polyline points="17 5 10 12 17 19"/>
+        </svg>
+        <svg v-else viewBox="0 0 24 24" width="16" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="7 5 14 12 7 19"/>
+          <polyline points="13 5 20 12 13 19"/>
+        </svg>
+      </button>
     </div>
 
     <!-- 固定工具（顶部固定，不滚动） -->
@@ -18,6 +28,7 @@
           :key="tool.id"
           class="nav-item"
           :class="{ active: modelValue === tool.id }"
+          :title="collapsed ? tool.name : ''"
           @click="handleSelect(tool.id)"
         >
           <span class="nav-icon" v-html="tool.iconSvg"></span>
@@ -36,12 +47,13 @@
     <nav class="sidebar-nav">
       <!-- 收藏工具 -->
       <div v-if="favoritedTools.length > 0" class="nav-section">
-        <div class="nav-section-title">收藏</div>
+        <div v-show="!collapsed" class="nav-section-title">收藏</div>
         <div
           v-for="tool in favoritedTools"
           :key="tool.id"
           class="nav-item"
           :class="{ active: modelValue === tool.id }"
+          :title="collapsed ? tool.name : ''"
           @click="handleSelect(tool.id)"
         >
           <span class="nav-icon" v-html="tool.iconSvg"></span>
@@ -56,7 +68,7 @@
 
       <!-- 分类工具 -->
       <div v-for="category in categorizedTools" :key="category.name" class="nav-section">
-        <div 
+        <div v-show="!collapsed"
           class="nav-section-header"
           @click="toggleCollapse(category.key)"
         >
@@ -67,12 +79,13 @@
             </svg>
           </span>
         </div>
-        <div v-show="isCategoryExpanded(category.key)" class="nav-section-content">
+        <div v-show="isCategoryExpanded(category.key) || collapsed" class="nav-section-content">
           <div
             v-for="tool in category.tools"
             :key="tool.id"
             class="nav-item"
             :class="{ active: modelValue === tool.id }"
+            :title="collapsed ? tool.name : ''"
             @click="handleSelect(tool.id)"
           >
             <span class="nav-icon" v-html="tool.iconSvg"></span>
@@ -89,7 +102,7 @@
 
       <!-- 未分类工具 -->
       <div v-if="uncategorizedTools.length > 0" class="nav-section">
-        <div 
+        <div v-show="!collapsed"
           class="nav-section-header"
           @click="toggleCollapse('uncategorized')"
         >
@@ -100,12 +113,13 @@
             </svg>
           </span>
         </div>
-        <div v-show="isCategoryExpanded('uncategorized')" class="nav-section-content">
+        <div v-show="isCategoryExpanded('uncategorized') || collapsed" class="nav-section-content">
           <div
             v-for="tool in uncategorizedTools"
             :key="tool.id"
             class="nav-item"
             :class="{ active: modelValue === tool.id }"
+            :title="collapsed ? tool.name : ''"
             @click="handleSelect(tool.id)"
           >
             <span class="nav-icon" v-html="tool.iconSvg"></span>
@@ -122,7 +136,7 @@
     </nav>
 
     <div class="sidebar-footer">
-      <el-tooltip :content="isPinned ? '取消置顶' : '窗口置顶'" placement="top">
+      <el-tooltip :content="isPinned ? '取消置顶' : '窗口置顶'" placement="right">
         <button 
           class="pin-btn" 
           :class="{ active: isPinned }"
@@ -136,12 +150,19 @@
         </button>
       </el-tooltip>
       
-      <el-select v-model="currentTheme" size="small" class="theme-select">
+      <el-select v-show="!collapsed" v-model="currentTheme" class="theme-select" popper-class="sidebar-theme-popper">
         <el-option label="跟随系统" value="auto" />
         <el-option label="深色模式" value="dark" />
         <el-option label="浅色模式" value="light" />
       </el-select>
-      <el-tooltip content="快捷键设置" placement="top">
+      <el-tooltip v-if="collapsed" content="切换主题" placement="right">
+        <el-select v-model="currentTheme" class="theme-select-collapsed" popper-class="sidebar-theme-popper">
+          <el-option label="跟随系统" value="auto" />
+          <el-option label="深色模式" value="dark" />
+          <el-option label="浅色模式" value="light" />
+        </el-select>
+      </el-tooltip>
+      <el-tooltip content="快捷键设置" placement="right">
         <button class="pin-btn" @click="showShortcutSettings = true">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="3" width="18" height="18" rx="2"/>
@@ -189,6 +210,14 @@ const store = useToolboxStore()
 const currentTheme = ref(store.config.theme)
 const isPinned = ref(false)
 const appVersion = __APP_VERSION__
+
+const collapsed = ref(localStorage.getItem('sidebar_collapsed') === '1')
+watch(collapsed, (val) => {
+  localStorage.setItem('sidebar_collapsed', val ? '1' : '0')
+})
+function toggleSidebar() {
+  collapsed.value = !collapsed.value
+}
 
 const expandedCategories = ref<Record<string, boolean>>({})
 
@@ -383,6 +412,12 @@ const handleToggleFavorite = (toolId: string) => {
   store.toggleFavorite(toolId)
 }
 
+const isDarkMode = computed(() => {
+  if (currentTheme.value === 'dark') return true
+  if (currentTheme.value === 'light') return false
+  return document.documentElement.classList.contains('dark')
+})
+
 watch(currentTheme, (newTheme) => {
   store.saveConfig({ theme: newTheme as 'auto' | 'dark' | 'light' })
   applyTheme(newTheme)
@@ -417,11 +452,119 @@ const applyTheme = (theme: string) => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  transition: width 0.25s ease, min-width 0.25s ease;
+}
+
+.sidebar.collapsed {
+  width: 52px;
+  min-width: 52px;
+}
+
+.sidebar.collapsed .nav-label,
+.sidebar.collapsed .nav-section-title,
+.sidebar.collapsed .collapse-icon,
+.sidebar.collapsed .fav-btn {
+  display: none !important;
+}
+
+.sidebar.collapsed .nav-item {
+  justify-content: center;
+  padding: 10px 0;
+  gap: 0;
+}
+
+.sidebar.collapsed .nav-section {
+  padding: 0 4px;
+}
+
+.sidebar.collapsed .sidebar-fixed-nav {
+  border-bottom: 1px solid var(--border-color);
+}
+
+.sidebar.collapsed .nav-section-content {
+  display: block;
+}
+
+.sidebar.collapsed .nav-section-content .nav-item {
+  justify-content: center;
+  padding: 10px 0;
+  gap: 0;
+}
+
+.sidebar.collapsed .sidebar-footer {
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 8px;
+}
+
+.sidebar.collapsed .theme-select-collapsed {
+  width: 32px;
 }
 
 .sidebar-header {
   padding: 16px;
   border-bottom: 1px solid var(--border-color);
+  position: relative;
+}
+
+.sidebar.collapsed .sidebar-header {
+  padding: 12px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.collapse-btn {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: color 0.3s, transform 0.3s;
+  z-index: 10;
+}
+
+.collapse-btn:hover {
+  color: var(--accent-cyan);
+}
+
+.sidebar.collapsed .collapse-btn {
+  position: static;
+  transform: none;
+  width: 100%;
+  height: 28px;
+}
+
+.collapse-btn svg {
+  transition: transform 0.3s ease;
+}
+
+.sidebar.collapsed .collapse-btn svg {
+  animation: arrowPulseLeft 2s ease-in-out infinite;
+}
+
+@keyframes arrowPulseLeft {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(-3px); }
+}
+
+.collapse-btn svg {
+  animation: arrowPulseRight 2s ease-in-out infinite;
+}
+
+@keyframes arrowPulseRight {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(3px); }
 }
 
 .logo-area {
@@ -620,6 +763,54 @@ const applyTheme = (theme: string) => {
 
 .theme-select {
   flex: 1;
+  min-width: 0;
+}
+
+.theme-select :deep(.el-select__wrapper) {
+  padding: 0 8px;
+  min-height: 28px !important;
+  border-radius: 6px;
+  background-color: var(--bg-input) !important;
+}
+
+.theme-select :deep(.el-select__wrapper:hover) {
+  box-shadow: 0 0 0 1px var(--accent-cyan) inset !important;
+}
+
+.theme-select :deep(.el-select__wrapper.is-focused) {
+  box-shadow: 0 0 0 1px var(--accent-cyan) inset !important;
+}
+
+.theme-select :deep(.el-select__selected-item) {
+  font-size: 12px !important;
+  color: var(--text-secondary) !important;
+  line-height: 26px !important;
+}
+
+.theme-select :deep(.el-select__caret) {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.theme-select-collapsed {
+  width: 32px;
+}
+
+.theme-select-collapsed :deep(.el-select__wrapper) {
+  padding: 0 4px;
+  min-height: 28px !important;
+  border-radius: 6px;
+  background-color: var(--bg-input) !important;
+}
+
+.theme-select-collapsed :deep(.el-select__selected-item) {
+  display: none;
+}
+
+.theme-select-collapsed :deep(.el-select__caret) {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 .sidebar-nav::-webkit-scrollbar {
@@ -692,5 +883,29 @@ const applyTheme = (theme: string) => {
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
+}
+</style>
+
+<!-- 非 scoped 样式：用于 popper（挂载到 body 上） -->
+<style>
+.sidebar-theme-popper.el-select-dropdown {
+  min-width: 90px !important;
+  padding: 4px !important;
+  border-radius: 6px !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3) !important;
+  font-size: 12px !important;
+}
+
+.sidebar-theme-popper.el-select-dropdown .el-select-dropdown__item {
+  padding: 6px 10px !important;
+  min-height: 28px !important;
+  font-size: 12px !important;
+  line-height: 1.2 !important;
+  border-radius: 4px !important;
+  margin: 1px 0 !important;
+}
+
+.sidebar-theme-popper.el-select-dropdown .el-select-dropdown__item + .el-select-dropdown__item {
+  margin-top: 2px !important;
 }
 </style>
