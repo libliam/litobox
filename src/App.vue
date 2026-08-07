@@ -92,6 +92,7 @@ import BoostView from '@/views/BoostView.vue'
 import PasswordVault from '@/views/PasswordVault.vue'
 import FileRenamer from '@/views/FileRenamer.vue'
 import QuickLaunchTool from '@/views/QuickLaunchTool.vue'
+import SvgTool from '@/views/SvgTool.vue'
 import CommandPalette from '@/components/CommandPalette.vue'
 import QuickLaunchOverlay from '@/components/QuickLaunchOverlay.vue'
 import { ConfirmDialogWrapper } from '@/composables/useConfirmDialog'
@@ -159,6 +160,7 @@ const toolComponentMap: Record<string, any> = {
   passwordVault: PasswordVault,
   fileRenamer: FileRenamer,
   quickLaunch: QuickLaunchTool,
+  svg: SvgTool,
 }
 
 const store = useToolboxStore()
