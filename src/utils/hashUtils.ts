@@ -51,7 +51,7 @@ export function hmacText(text: string, key: string, algorithm: HashAlgorithm): s
     case 'sha512':
       return CryptoJS.HmacSHA512(text, key).toString()
     case 'sha3':
-      return CryptoJS.HmacSHA3(text, key, { outputLength: 256 }).toString()
+      return CryptoJS.HmacSHA3(text, key).toString()
     case 'ripemd160':
       return CryptoJS.HmacRIPEMD160(text, key).toString()
     default:

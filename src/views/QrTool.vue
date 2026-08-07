@@ -427,7 +427,6 @@ const generateError = ref('')
 const verifyResult = ref<{ ok: boolean; message: string } | null>(null)
 
 // 智能风险判断：只有生成后验证失败才高亮
-const hasGenerated = computed(() => !!qrDataUrl.value)
 const verifyFailed = computed(() => verifyResult.value?.ok === false)
 
 const riskLowTolerance = computed(() => {

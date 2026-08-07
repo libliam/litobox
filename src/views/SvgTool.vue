@@ -110,7 +110,7 @@
         <div class="header-left">
           <span class="card-title">SVG 优化</span>
           <span class="stat-badge" v-if="optimizeResult">
-            <span :class="savedPct > 0 ? 'positive' : 'negative'">
+            <span :class="optimizeResult.savedPct > 0 ? 'positive' : 'negative'">
               {{ optimizeResult.savedPct > 0 ? '−' : '+' }}{{ Math.abs(optimizeResult.savedPct) }}%
             </span>
           </span>
@@ -229,7 +229,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   QuestionFilled, MagicStick, Upload, DocumentCopy, Delete,
@@ -388,7 +388,7 @@ const doOptimize = () => {
 
   // 4. 简化 path d 属性（移除无用小数点后缀零）
   if (opts.value.mergePaths) {
-    code = code.replace(/d="([^"]*)"/g, (match, d) => {
+    code = code.replace(/d="([^"]*)"/g, (_, d) => {
       // 移除路径中不必要的空格和重复的小数点
       return 'd="' + d.replace(/\s+/g, ' ').replace(/(\d)\.0+/g, '$1').trim() + '"'
     })

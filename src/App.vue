@@ -214,8 +214,8 @@ const applyTheme = (theme: string) => {
 const saveWindowState = async () => {
   try {
     const win = getCurrentWindow()
-    const size = await win.getSize()
-    const position = await win.getPosition()
+    const size = await win.outerSize()
+    const position = await win.outerPosition()
     localStorage.setItem('window_size', JSON.stringify({
       width: size.width,
       height: size.height,
@@ -255,8 +255,8 @@ onMounted(async () => {
 
   // 监听窗口大小和位置变化
   const win = getCurrentWindow()
-  windowResizeHandler = await win.on('resize', () => saveWindowState())
-  windowMoveHandler = await win.on('move', () => saveWindowState())
+  windowResizeHandler = await win.onResized(() => saveWindowState())
+  windowMoveHandler = await win.onMoved(() => saveWindowState())
 
   unlistenShortcut = await listen('global-shortcut-triggered', (event) => {
     const toolId = event.payload as string

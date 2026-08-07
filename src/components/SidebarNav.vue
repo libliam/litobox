@@ -412,12 +412,6 @@ const handleToggleFavorite = (toolId: string) => {
   store.toggleFavorite(toolId)
 }
 
-const isDarkMode = computed(() => {
-  if (currentTheme.value === 'dark') return true
-  if (currentTheme.value === 'light') return false
-  return document.documentElement.classList.contains('dark')
-})
-
 watch(currentTheme, (newTheme) => {
   store.saveConfig({ theme: newTheme as 'auto' | 'dark' | 'light' })
   applyTheme(newTheme)
