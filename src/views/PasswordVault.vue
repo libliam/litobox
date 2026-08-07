@@ -46,8 +46,13 @@
               </template>
               <el-icon class="hint-icon"><QuestionFilled /></el-icon>
             </el-tooltip>
+            <span v-if="autoLockEnabled" class="autolock-badge" :title="`${autoLockMinutes} 分钟无操作自动锁定`">
+              <el-icon><Clock /></el-icon>
+              {{ remainingMinutesDisplay }}
+            </span>
           </div>
           <div class="card-actions">
+            <el-button size="small" @click="settingsVisible = true">⚙️ 设置</el-button>
             <el-button size="small" @click="handleExport">导出</el-button>
             <div class="import-wrapper">
               <el-button size="small" @click="handleImport">批量导入</el-button>
@@ -173,6 +178,30 @@
     </div>
   </div>
 
+  <el-dialog v-model="settingsVisible" title="密码保管箱设置" width="420px">
+    <el-form label-width="120px">
+      <el-form-item label="自动锁定">
+        <el-switch v-model="autoLockEnabled" active-text="开启  无操作自动锁定" />
+      </el-form-item>
+      <el-form-item label="锁定时长">
+        <el-select v-model="autoLockMinutes" :disabled="!autoLockEnabled" style="width: 160px">
+          <el-option :value="1" label="1 分钟" />
+          <el-option :value="3" label="3 分钟" />
+          <el-option :value="5" label="5 分钟" />
+          <el-option :value="10" label="10 分钟" />
+          <el-option :value="15" label="15 分钟" />
+          <el-option :value="30" label="30 分钟" />
+        </el-select>
+        <span class="form-hint">空闲 {{ autoLockMinutes }} 分钟后自动锁定</span>
+      </el-form-item>
+    </el-form>
+    <p v-if="settingsError" class="change-pwd-error">{{ settingsError }}</p>
+    <template #footer>
+      <el-button @click="settingsVisible = false">取消</el-button>
+      <el-button type="primary" @click="handleSaveSettings" :loading="isSavingSettings">保存</el-button>
+    </template>
+  </el-dialog>
+
   <el-dialog v-model="resetConfirmVisible" title="⚠️ 重置主密码" width="480px" :close-on-click-modal="false" @open="generateResetChallenge">
     <div class="reset-warning">
       <p class="reset-warning-title">此操作将删除所有已保存的凭据！</p>
@@ -212,12 +241,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import { QuestionFilled, Refresh } from '@element-plus/icons-vue'
+import { QuestionFilled, Refresh, Clock } from '@element-plus/icons-vue'
 import { invoke } from '@tauri-apps/api/core'
 import DataTable from '@/components/DataTable.vue'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
+import * as db from '@/utils/dbClient'
 
 const { confirm } = useConfirmDialog()
 
@@ -258,6 +288,104 @@ const changePwdForm = reactive({
   newPassword: '',
   confirmPassword: ''
 })
+
+// ============ 自动锁定配置 ============
+const AUTOLOCK_CONFIG_KEY_ENABLED = 'password_vault_autolock_enabled'
+const AUTOLOCK_CONFIG_KEY_MINUTES = 'password_vault_autolock_minutes'
+const AUTOLOCK_DEFAULT_ENABLED = false
+const AUTOLOCK_DEFAULT_MINUTES = 5
+
+const settingsVisible = ref(false)
+const isSavingSettings = ref(false)
+const settingsError = ref('')
+const autoLockEnabled = ref(AUTOLOCK_DEFAULT_ENABLED)
+const autoLockMinutes = ref(AUTOLOCK_DEFAULT_MINUTES)
+
+let lastActivityAt = 0                  // 上次用户活动时间戳（ms）
+let idleCheckTimer: ReturnType<typeof setInterval> | null = null
+let idleDisplayTick = ref(0)            // 每秒自增，驱动剩余时间显示重算
+
+const remainingMinutesDisplay = computed(() => {
+  // 依赖 idleDisplayTick，确保每秒重算
+  void idleDisplayTick.value
+  if (!autoLockEnabled.value) return ''
+  const elapsedMs = Date.now() - lastActivityAt
+  const remainingSec = Math.max(0, autoLockMinutes.value * 60 - Math.floor(elapsedMs / 1000))
+  const m = Math.floor(remainingSec / 60)
+  const s = remainingSec % 60
+  return `${m}:${s.toString().padStart(2, '0')}`
+})
+
+const resetIdleTimer = () => {
+  // ponytail: 只在已解锁状态更新 lastActivity，避免锁定后用户操作还在计时
+  if (!isUnlocked.value) {
+    lastActivityAt = Date.now()
+  }
+}
+
+const doLock = (silent: boolean = false) => {
+  isUnlocked.value = true
+  masterPassword.value = ''
+  confirmPassword.value = ''
+  credentials.value = []
+  if (idleCheckTimer) {
+    clearInterval(idleCheckTimer)
+    idleCheckTimer = null
+  }
+  if (!silent) ElMessage.success('已锁定')
+}
+
+const startIdleChecker = () => {
+  if (idleCheckTimer) clearInterval(idleCheckTimer)
+  lastActivityAt = Date.now()
+  idleDisplayTick.value = 0
+  idleCheckTimer = setInterval(() => {
+    idleDisplayTick.value++
+    if (!autoLockEnabled.value) return
+    if (isUnlocked.value) return               // 已锁定状态跳过
+    const elapsed = Date.now() - lastActivityAt
+    if (elapsed >= autoLockMinutes.value * 60 * 1000) {
+      // 自动锁定
+      const mins = autoLockMinutes.value
+      doLock(true)
+      ElMessage.info(`空闲 ${mins} 分钟，密码保管箱已自动锁定`)
+    }
+  }, 1000)
+}
+
+const loadAutoLockSettings = async () => {
+  try {
+    const enabledStr = await db.getConfig(AUTOLOCK_CONFIG_KEY_ENABLED).catch(() => '')
+    const minutesStr = await db.getConfig(AUTOLOCK_CONFIG_KEY_MINUTES).catch(() => '')
+    autoLockEnabled.value = enabledStr === '' ? AUTOLOCK_DEFAULT_ENABLED : enabledStr === 'true'
+    const m = parseInt(minutesStr, 10)
+    autoLockMinutes.value = Number.isFinite(m) && [1, 3, 5, 10, 15, 30].includes(m) ? m : AUTOLOCK_DEFAULT_MINUTES
+  } catch (e) {
+    console.warn('加载自动锁定配置失败，使用默认值:', e)
+    autoLockEnabled.value = AUTOLOCK_DEFAULT_ENABLED
+    autoLockMinutes.value = AUTOLOCK_DEFAULT_MINUTES
+  }
+}
+
+const handleSaveSettings = async () => {
+  settingsError.value = ''
+  isSavingSettings.value = true
+  try {
+    await db.setConfig(AUTOLOCK_CONFIG_KEY_ENABLED, String(autoLockEnabled.value))
+    await db.setConfig(AUTOLOCK_CONFIG_KEY_MINUTES, String(autoLockMinutes.value))
+    // 如果已经解锁且启用了自动锁定，重置活动时间并启动/重启定时器
+    if (!isUnlocked.value && autoLockEnabled.value) {
+      startIdleChecker()
+    }
+    settingsVisible.value = false
+    ElMessage.success('设置已保存')
+  } catch (e) {
+    settingsError.value = String(e)
+  } finally {
+    isSavingSettings.value = false
+  }
+}
+
 
 // 重置密码二次确认
 const resetConfirmVisible = ref(false)
@@ -337,6 +465,10 @@ const handleUnlock = async () => {
 
     isUnlocked.value = false
     await loadCredentials()
+    // 解锁成功后启动空闲检测（如启用自动锁定）
+    if (autoLockEnabled.value) {
+      startIdleChecker()
+    }
   } catch (e) {
     errorMessage.value = String(e)
   } finally {
@@ -347,12 +479,7 @@ const handleUnlock = async () => {
 const handleLock = async () => {
   const ok = await confirm.ask('锁定确认', '确定要锁定密码保管箱吗？', { type: 'warning' })
   if (!ok) return
-  
-  isUnlocked.value = true
-  masterPassword.value = ''
-  confirmPassword.value = ''
-  credentials.value = []
-  ElMessage.success('已锁定')
+  doLock(false)
 }
 
 const handleChangePassword = async () => {
@@ -411,6 +538,13 @@ const handleConfirmReset = async () => {
     confirmPassword.value = ''
     errorMessage.value = ''
     resetConfirmVisible.value = false
+    // 重置主密码会清掉 SQL 里 password_vault_% 配置，内存也同步为默认值
+    autoLockEnabled.value = AUTOLOCK_DEFAULT_ENABLED
+    autoLockMinutes.value = AUTOLOCK_DEFAULT_MINUTES
+    if (idleCheckTimer) {
+      clearInterval(idleCheckTimer)
+      idleCheckTimer = null
+    }
     ElMessage.success('已重置，请设置新的主密码')
   } catch (e) {
     ElMessage.error('重置失败: ' + String(e))
@@ -707,11 +841,28 @@ const handleSave = async () => {
   }
 }
 
+const IDLE_EVENTS = ['mousemove', 'mousedown', 'keydown', 'click', 'scroll', 'wheel'] as const
+
 onMounted(async () => {
   try {
     hasMasterPassword.value = await invoke<boolean>('pv_has_master_password')
   } catch (e) {
     ElMessage.error('初始化失败: ' + String(e))
+  }
+  await loadAutoLockSettings()
+  // 注册全局活动事件监听（整个 window 级别，用户任何操作都重置计时）
+  for (const ev of IDLE_EVENTS) {
+    window.addEventListener(ev, resetIdleTimer, { passive: true })
+  }
+})
+
+onUnmounted(() => {
+  for (const ev of IDLE_EVENTS) {
+    window.removeEventListener(ev, resetIdleTimer)
+  }
+  if (idleCheckTimer) {
+    clearInterval(idleCheckTimer)
+    idleCheckTimer = null
   }
 })
 </script>
@@ -895,5 +1046,37 @@ onMounted(async () => {
   color: var(--accent-red);
   font-size: 13px;
   margin-top: 8px;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.autolock-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--accent-cyan);
+  background: var(--bg-active);
+  border: 1px solid var(--accent-cyan);
+  border-radius: 12px;
+  padding: 2px 10px;
+  font-family: 'Consolas', 'Courier New', monospace;
+  letter-spacing: 0.5px;
+  animation: autolock-pulse 2s ease-in-out infinite;
+}
+
+@keyframes autolock-pulse {
+  0%, 100% { opacity: 0.85; }
+  50% { opacity: 1; }
+}
+
+.form-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-left: 8px;
 }
 </style>
