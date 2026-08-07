@@ -27,6 +27,7 @@
 <script setup lang="ts">
 import { watch, onMounted, onUnmounted, computed } from 'vue'
 import { listen } from '@tauri-apps/api/event'
+import { getCurrentWindow, PhysicalSize, PhysicalPosition } from '@tauri-apps/api/window'
 import { useToolboxStore } from '@/store'
 import { storeToRefs } from 'pinia'
 import SidebarNav from '@/components/SidebarNav.vue'
@@ -178,6 +179,8 @@ store.openTab(store.config.lastTool || 'home')
 let unlistenShortcut: (() => void) | null = null
 let unlistenPalette: (() => void) | null = null
 let globalKeydownHandler: ((e: KeyboardEvent) => void) | null = null
+let windowResizeHandler: (() => void) | null = null
+let windowMoveHandler: (() => void) | null = null
 
 const handleSelectTool = (toolId: string) => {
   store.openTab(toolId)
@@ -207,6 +210,37 @@ const applyTheme = (theme: string) => {
   }
 }
 
+// 保存窗口大小和位置
+const saveWindowState = async () => {
+  try {
+    const win = getCurrentWindow()
+    const size = await win.getSize()
+    const position = await win.getPosition()
+    localStorage.setItem('window_size', JSON.stringify({
+      width: size.width,
+      height: size.height,
+      x: position.x,
+      y: position.y,
+    }))
+  } catch {}
+}
+
+// 恢复窗口大小和位置
+const restoreWindowState = async () => {
+  try {
+    const saved = localStorage.getItem('window_size')
+    if (!saved) return
+    const state = JSON.parse(saved)
+    if (state.width && state.height) {
+      const win = getCurrentWindow()
+      await win.setSize(new PhysicalSize(state.width, state.height))
+      if (state.x !== undefined && state.y !== undefined) {
+        await win.setPosition(new PhysicalPosition(state.x, state.y))
+      }
+    }
+  } catch {}
+}
+
 onMounted(async () => {
   applyTheme(store.config.theme)
 
@@ -215,6 +249,14 @@ onMounted(async () => {
       applyTheme('auto')
     }
   })
+
+  // 恢复窗口大小
+  await restoreWindowState()
+
+  // 监听窗口大小和位置变化
+  const win = getCurrentWindow()
+  windowResizeHandler = await win.on('resize', () => saveWindowState())
+  windowMoveHandler = await win.on('move', () => saveWindowState())
 
   unlistenShortcut = await listen('global-shortcut-triggered', (event) => {
     const toolId = event.payload as string
@@ -251,6 +293,9 @@ onMounted(async () => {
     }
   }
   window.addEventListener('keydown', globalKeydownHandler)
+
+  // 页面关闭前保存窗口状态
+  window.addEventListener('beforeunload', saveWindowState)
 })
 
 onUnmounted(() => {
@@ -263,6 +308,15 @@ onUnmounted(() => {
   if (globalKeydownHandler) {
     window.removeEventListener('keydown', globalKeydownHandler)
   }
+  if (windowResizeHandler) {
+    windowResizeHandler()
+  }
+  if (windowMoveHandler) {
+    windowMoveHandler()
+  }
+  window.removeEventListener('beforeunload', saveWindowState)
+  // 组件销毁前再次保存
+  saveWindowState()
 })
 </script>
 
