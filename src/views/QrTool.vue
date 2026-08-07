@@ -84,7 +84,123 @@
         </div>
       </el-tab-pane>
 
-      <!-- Tab 2: 二维码解码 -->
+      <!-- Tab 2: 批量生成 -->
+      <el-tab-pane label="批量生成" name="batch">
+        <div class="tool-card sticky-card">
+          <div class="card-header">
+            <div class="header-left">
+              <span class="card-title">批量操作</span>
+              <el-tooltip placement="top" effect="dark">
+                <template #content>
+                  <div class="tooltip-content">
+                    <p>每行一条文本，支持 CSV/文本列表</p>
+                    <p>可批量生成并打包下载</p>
+                  </div>
+                </template>
+                <el-icon class="hint-icon"><QuestionFilled /></el-icon>
+              </el-tooltip>
+            </div>
+            <div class="card-actions">
+              <el-button size="small" @click="handleClear('batch')">清空</el-button>
+              <el-button size="small" @click="handlePaste('batch')">粘贴</el-button>
+              <el-button size="small" type="primary" @click="handleBatchGenerate" :loading="batchLoading">
+                <el-icon class="batch-icon"><MagicStick /></el-icon>
+                <span>批量生成</span>
+              </el-button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="action-grid">
+              <div class="action-group">
+                <div class="group-label">尺寸</div>
+                <el-input-number v-model="batchSize" :min="100" :max="1000" :step="50" size="small" style="width: 100px" />
+              </div>
+              <div class="action-group">
+                <div class="group-label">边距</div>
+                <el-input-number v-model="batchMargin" :min="0" :max="10" size="small" style="width: 80px" />
+              </div>
+              <div class="action-group">
+                <div class="group-label">前景色</div>
+                <input type="color" v-model="batchFgColor" class="native-color-picker" />
+              </div>
+              <div class="action-group">
+                <div class="group-label">背景色</div>
+                <input type="color" v-model="batchBgColor" class="native-color-picker" />
+              </div>
+              <div class="action-group">
+                <div class="group-label">命名</div>
+                <el-select v-model="batchNameMode" size="small" style="width: 140px">
+                  <el-option label="序号 (001, 002...)" value="indexed" />
+                  <el-option label="文本前16字符" value="text" />
+                </el-select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 输入卡片 -->
+        <div class="tool-card">
+          <div class="card-header">
+            <span class="card-title">文本列表</span>
+            <div class="card-actions">
+              <span class="stat-text">{{ batchLines.length }} 条</span>
+              <el-button size="small" @click="uploadCsv">
+                <el-icon><Upload /></el-icon>
+                <span>导入</span>
+              </el-button>
+            </div>
+          </div>
+          <div class="card-body">
+            <el-input
+              v-model="tabState.batch.input"
+              type="textarea"
+              :rows="8"
+              placeholder="每行一条文本或 URL，例如：&#10;https://example.com&#10;Hello World&#10;SELECT * FROM users"
+              resize="vertical"
+            />
+            <div v-if="batchErrors.length" class="batch-errors">
+              <span class="error-title">{{ batchErrors.length }} 条失败：</span>
+              <span v-for="(e, i) in batchErrors" :key="i" class="error-item">第{{ e.line }}行</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 结果卡片 -->
+        <div class="tool-card" v-if="batchResults.length">
+          <div class="card-header">
+            <span class="card-title">生成结果（{{ batchResults.length }} 条）</span>
+            <div class="card-actions">
+              <el-button size="small" @click="downloadAllZip">
+                <el-icon><Download /></el-icon>
+                <span>打包下载 (ZIP)</span>
+              </el-button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="batch-grid">
+              <div v-for="(item, i) in batchResults" :key="i" class="batch-item">
+                <img :src="item.dataUrl" :alt="item.filename" class="batch-qr" />
+                <div class="batch-info">
+                  <span class="batch-filename" :title="item.text">{{ item.filename }}</span>
+                  <span class="batch-text" :title="item.text">{{ item.text }}</span>
+                </div>
+                <div class="batch-actions">
+                  <el-button size="small" @click="downloadSingle(item)">
+                    <el-icon><Download /></el-icon>
+                    <span>下载</span>
+                  </el-button>
+                  <el-button size="small" @click="copyDataUrl(item)">
+                    <el-icon><DocumentCopy /></el-icon>
+                    <span>复制</span>
+                  </el-button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </el-tab-pane>
+
+      <!-- Tab 2 (实际顺序 Tab 3): 二维码解码 -->
       <el-tab-pane label="解码" name="decode">
         <div class="tool-card sticky-card">
           <div class="card-header">
@@ -161,7 +277,7 @@
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
-import { QuestionFilled, Upload } from '@element-plus/icons-vue'
+import { QuestionFilled, Upload, MagicStick, Download, DocumentCopy } from '@element-plus/icons-vue'
 import QRCode from 'qrcode'
 import jsQR from 'jsqr'
 import { useToolboxStore } from '@/store'
@@ -174,7 +290,8 @@ const activeTab = ref('generate')
 
 const tabState = reactive<Record<string, { input: string; output: string; error: string; isError: boolean }>>({
   generate: { input: '', output: '', error: '', isError: false },
-  decode: { input: '', output: '', error: '', isError: false }
+  decode: { input: '', output: '', error: '', isError: false },
+  batch: { input: '', output: '', error: '', isError: false }
 })
 
 // ============ 生成 Tab ============
@@ -300,6 +417,10 @@ const handleClear = (tab: string) => {
   if (tab === 'decode') {
     decodePreview.value = ''
   }
+  if (tab === 'batch') {
+    batchResults.value = []
+    batchErrors.value = []
+  }
 }
 
 const handlePaste = async (tab: string) => {
@@ -337,6 +458,142 @@ const handleSaveDecodeEdit = () => {
     outputFull: tabState.decode.output,
   })
   ElMessage.success('修改已保存')
+}
+
+// ============ 批量生成 Tab ============
+
+interface BatchResult {
+  text: string
+  dataUrl: string
+  filename: string
+}
+
+interface BatchError {
+  line: number
+  text: string
+  error: string
+}
+
+const batchSize = ref(200)
+const batchMargin = ref(2)
+const batchFgColor = ref('#000000')
+const batchBgColor = ref('#ffffff')
+const batchNameMode = ref('indexed')
+const batchResults = ref<BatchResult[]>([])
+const batchErrors = ref<BatchError[]>([])
+const batchLoading = ref(false)
+
+const batchLines = computed(() => {
+  return tabState.batch.input.split('\n').map(l => l.trim()).filter(l => l.length > 0)
+})
+
+const sanitizeFilename = (s: string) => s.replace(/[<>:"/\\|?*]/g, '_').slice(0, 60)
+
+const handleBatchGenerate = async () => {
+  const lines = batchLines.value
+  if (lines.length === 0) {
+    ElMessage.warning('请输入至少一行文本')
+    return
+  }
+  if (lines.length > 500) {
+    ElMessage.warning('最多支持 500 条')
+    return
+  }
+
+  batchLoading.value = true
+  batchResults.value = []
+  batchErrors.value = []
+
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i]
+    try {
+      const dataUrl = await QRCode.toDataURL(text, {
+        width: batchSize.value,
+        margin: batchMargin.value,
+        color: { dark: batchFgColor.value, light: batchBgColor.value }
+      })
+      const filename = batchNameMode.value === 'indexed'
+        ? String(i + 1).padStart(3, '0') + '.png'
+        : sanitizeFilename(text) + '.png'
+
+      batchResults.value.push({ text, dataUrl, filename })
+    } catch (e: any) {
+      batchErrors.value.push({ line: i + 1, text, error: e.message || '生成失败' })
+    }
+  }
+
+  batchLoading.value = false
+  const ok = batchResults.value.length
+  const fail = batchErrors.value.length
+  if (ok > 0) {
+    ElMessage.success(`完成：成功 ${ok} 条${fail > 0 ? `，失败 ${fail} 条` : ''}`)
+    store.addHistory({
+      tool: 'qr',
+      action: '批量生成',
+      inputPreview: `${ok} 条文本`,
+      outputPreview: `${ok} 张二维码`,
+      inputFull: lines.join('\n'),
+      outputFull: `批量生成 ${ok} 张二维码`
+    })
+  } else {
+    ElMessage.error('全部生成失败')
+  }
+}
+
+const uploadCsv = () => {
+  const inputEl = document.createElement('input')
+  inputEl.type = 'file'
+  inputEl.accept = '.csv,.txt'
+  inputEl.onchange = (e) => {
+    const file = (e.target as HTMLInputElement).files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      const text = reader.result as string
+      const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0)
+      tabState.batch.input = lines.join('\n')
+      ElMessage.success(`导入 ${lines.length} 行`)
+    }
+    reader.readAsText(file)
+  }
+  inputEl.click()
+}
+
+const downloadSingle = async (item: BatchResult) => {
+  const response = await fetch(item.dataUrl)
+  const blob = await response.blob()
+  await saveFileWithDialog(blob, item.filename, 'png')
+}
+
+const copyDataUrl = async (item: BatchResult) => {
+  try {
+    const response = await fetch(item.dataUrl)
+    const blob = await response.blob()
+    if (navigator.clipboard && window.ClipboardItem) {
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+      ElMessage.success('已复制到剪贴板')
+    } else {
+      ElMessage.warning('当前浏览器不支持图片剪贴板操作')
+    }
+  } catch {
+    ElMessage.error('复制失败')
+  }
+}
+
+const downloadAllZip = async () => {
+  if (batchResults.value.length === 0) return
+  try {
+    const JSZip = (await import('jszip')).default
+    const zip = new JSZip()
+    for (const item of batchResults.value) {
+      const base64 = item.dataUrl.split(',')[1]
+      zip.file(item.filename, base64, { base64: true })
+    }
+    const blob = await zip.generateAsync({ type: 'blob' })
+    await saveFileWithDialog(blob, `qrcode_batch_${batchResults.value.length}.zip`, 'zip')
+  } catch (e: any) {
+    ElMessage.error('打包失败：' + (e.message || '未知错误'))
+  }
 }
 </script>
 
@@ -581,5 +838,93 @@ html.light .qr-tool-tabs :deep(.el-tabs__header) {
   padding: 40px 0;
   color: var(--text-muted);
   font-style: italic;
+}
+
+/* ===== 批量生成 ===== */
+.stat-text {
+  color: var(--text-secondary);
+  font-size: 12px;
+  margin-right: 8px;
+}
+
+.batch-icon {
+  margin-right: 4px;
+}
+
+.batch-errors {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.batch-errors .error-title {
+  color: var(--accent-red);
+  font-size: 12px;
+}
+
+.batch-errors .error-item {
+  padding: 2px 6px;
+  background: rgba(239, 68, 68, 0.1);
+  border-radius: 3px;
+  color: var(--accent-red);
+  font-size: 12px;
+}
+
+.batch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 16px;
+}
+
+.batch-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  gap: 8px;
+}
+
+.batch-qr {
+  width: 140px;
+  height: 140px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+}
+
+.batch-info {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.batch-filename {
+  font-size: 12px;
+  color: var(--accent-cyan);
+  font-weight: 500;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.batch-text {
+  font-size: 11px;
+  color: var(--text-secondary);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.batch-actions {
+  display: flex;
+  gap: 4px;
 }
 </style>

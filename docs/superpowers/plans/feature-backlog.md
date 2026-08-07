@@ -132,7 +132,7 @@
 | F6  | **PDF 图片提取**              | 从 PDF 提取内嵌图片（非整页栅格化），按页导出。与 PdfTool「PDF转图片」（整页渲染）区别：提取原始嵌入图                                                             | 低            | 2026-07-08 brainstorming |
 | F7  | **PDF 加密/旋转/页面重排**        | 加/解密码、旋转页面、拖拽重排页序、删除指定页                                                                                                 | 低            | 2026-07-08 brainstorming |
 | F15 | ✅ **PDF 压缩**              | 图像重采样（可调 DPI/质量）+ 元数据/注释清理 + 流压缩优化。纯 Rust 实现（lopdf + image crate），体积增量 \~1-2 MB。可探测系统 Ghostscript 启用高质量压缩，不内嵌 gs，守住轻量定位 | — 已完成 V5.1 — | 2026-07-09 brainstorming |
-| F8  | **批量二维码生成**               | 从文本列表/CSV 批量生成二维码，导出 ZIP 或拼接图                                                                                           | 中            | 2026-07-08 brainstorming |
+| F8  | **批量二维码生成**               | 从文本列表/CSV 批量生成二维码，导出 ZIP 或拼接图                                                                                           | 中 ✅ 已完成 V6.13 | 2026-07-08 brainstorming |
 | F9  | **二维码带 Logo**             | 二维码中心嵌 Logo 图，自动调整容错率                                                                                                   | 低            | 2026-07-08 brainstorming |
 | F10 | **条形码生成/识别**              | CODE128/EAN13/UPC 等常见条码生成与识别，扩展 QrTool 到条码场景                                                                            | 低            | 2026-07-08 brainstorming |
 | F11 | ✅ **文字转语音（TTS）**            | 调用 Windows SAPI/WinRT 本地语音引擎，文字生成语音文件，纯离线无网络依赖，支持预览/另存为                                                                  | — 已完成 V5.5 — | 2026-07-08 brainstorming |
