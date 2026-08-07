@@ -6,22 +6,36 @@
       </div>
       <div class="card-body">
         <div class="action-grid">
-          <div class="action-group">
+          <div class="action-group" style="--group-color: #00d4ff">
             <div class="group-label">URL</div>
             <div class="group-buttons">
-              <el-button size="small" @click="handleEncode(encodeUtils.urlEncode)">URL编码</el-button>
-              <el-button size="small" @click="handleEncode(encodeUtils.urlDecode)">URL解码</el-button>
-              <el-button size="small" @click="handleEncode(encodeUtils.urlDoubleDecode)">URL双重解码</el-button>
+              <el-button size="small" @click="handleEncode(encodeUtils.urlEncode)">编码</el-button>
+              <el-button size="small" @click="handleEncode(encodeUtils.urlDecode)">解码</el-button>
+              <el-button size="small" @click="handleEncode(encodeUtils.urlDoubleDecode)">双重解码</el-button>
             </div>
           </div>
-          <div class="action-group">
+          <div class="action-group" style="--group-color: #10b981">
             <div class="group-label">Base64</div>
             <div class="group-buttons">
-              <el-button size="small" @click="handleEncode(encodeUtils.base64Encode)">Base64编码</el-button>
-              <el-button size="small" @click="handleEncode(encodeUtils.base64Decode)">Base64解码</el-button>
+              <el-button size="small" @click="handleEncode(encodeUtils.base64Encode)">编码</el-button>
+              <el-button size="small" @click="handleEncode(encodeUtils.base64Decode)">解码</el-button>
             </div>
           </div>
-          <div class="action-group">
+          <div class="action-group" style="--group-color: #f59e0b">
+            <div class="group-label">HTML实体</div>
+            <div class="group-buttons">
+              <el-button size="small" @click="handleEncode(encodeUtils.htmlEncode)">编码</el-button>
+              <el-button size="small" @click="handleEncode(encodeUtils.htmlDecode)">解码</el-button>
+            </div>
+          </div>
+          <div class="action-group" style="--group-color: #ef4444">
+            <div class="group-label">Unicode</div>
+            <div class="group-buttons">
+              <el-button size="small" @click="handleEncode(encodeUtils.unicodeEncode)">编码</el-button>
+              <el-button size="small" @click="handleEncode(encodeUtils.unicodeDecode)">解码</el-button>
+            </div>
+          </div>
+          <div class="action-group" style="--group-color: #64748b">
             <div class="group-label">时间戳</div>
             <div class="group-buttons">
               <el-button size="small" @click="handleTimestampToDatetime">时间戳 → 时间</el-button>
@@ -55,11 +69,14 @@
     <div class="tool-card">
       <div class="card-header">
         <span class="card-title">输出</span>
-        <el-button size="small" @click="handleCopy">复制</el-button>
+        <div class="card-actions">
+          <el-button size="small" @click="handleOutputToInput" :disabled="!outputValue">转到输入</el-button>
+          <el-button size="small" @click="handleCopy">复制</el-button>
+        </div>
       </div>
       <div class="card-body">
         <el-input
-          :model-value="outputValue"
+          v-model="outputValue"
           type="textarea"
           :rows="6"
           readonly
@@ -106,12 +123,10 @@ const handleEncode = (encodeFn: (text: string) => string) => {
     ElMessage.warning('请输入内容')
     return
   }
-  
   const result = encodeFn(inputValue.value)
   outputValue.value = result
   errorMessage.value = ''
-  isError.value = false
-  
+  isError.value = result.includes('失败')
   store.addHistory({
     tool: 'encode',
     action: 'encode',
@@ -119,7 +134,7 @@ const handleEncode = (encodeFn: (text: string) => string) => {
     outputPreview: outputValue.value.slice(0, 50),
     inputFull: inputValue.value,
     outputFull: outputValue.value,
-    options: { timestampMode: timestampMode.value }
+    options: {}
   })
   ElMessage.success('处理完成')
 }
@@ -132,7 +147,6 @@ const handleTimestampToDatetime = () => {
     isError.value = true
     return
   }
-  
   outputValue.value = encodeUtils.timestampToDatetime(timestamp, timestampMode.value === 'ms')
   errorMessage.value = ''
   isError.value = false
@@ -170,6 +184,18 @@ const handleInsertVariable = (value: string) => {
   inputValue.value = value
 }
 
+const handleOutputToInput = () => {
+  if (!outputValue.value) {
+    ElMessage.warning('输出为空')
+    return
+  }
+  inputValue.value = outputValue.value
+  outputValue.value = ''
+  errorMessage.value = ''
+  isError.value = false
+  ElMessage.success('已转到输入')
+}
+
 const handleCopy = async () => {
   try {
     await navigator.clipboard.writeText(outputValue.value)
@@ -180,15 +206,11 @@ const handleCopy = async () => {
 }
 
 const restoreFromHistory = (data: HistoryRestoreState) => {
-  // 填充输入框
   inputValue.value = data.input
-  // 填充输出框（不重新执行）
   outputValue.value = data.output
-  // 还原配置
   if (data.options?.timestampMode) {
     timestampMode.value = data.options.timestampMode
   }
-  // 显示提示
   ElMessage({
     message: `已加载历史记录（${new Date(data.timestamp).toLocaleString('zh-CN')} 的操作）`,
     type: 'info',
@@ -249,22 +271,40 @@ onMounted(() => {
 .action-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 24px;
-  align-items: flex-end;
+  gap: 12px;
+  align-items: stretch;
 }
 .action-group {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-color);
+  border-left: 3px solid var(--group-color, var(--accent-cyan));
+  border-radius: 6px;
+  min-width: 120px;
 }
 .group-label {
   font-size: 12px;
-  color: var(--text-secondary);
-  font-weight: 500;
+  color: var(--group-color, var(--text-secondary));
+  font-weight: 600;
+  letter-spacing: 0.5px;
 }
 .group-buttons {
   display: flex;
-  gap: 8px;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.group-buttons :deep(.el-button) {
+  border-color: var(--group-color, var(--border-color));
+  color: var(--text-primary);
+  background: transparent;
+}
+.group-buttons :deep(.el-button:hover) {
+  border-color: var(--group-color, var(--accent-cyan));
+  color: var(--group-color, var(--accent-cyan));
+  background: rgba(0, 212, 255, 0.05);
 }
 
 .error :deep(.el-textarea__inner) {
