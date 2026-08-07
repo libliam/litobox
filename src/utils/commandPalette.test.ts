@@ -17,7 +17,6 @@ function assert(condition: boolean, message: string) {
 const testTools = [
   { id: 'json', name: 'JSON工具', icon: '', iconSvg: '', description: 'JSON格式化压缩校验', keywords: ['json', '格式化', '压缩'] },
   { id: 'hash', name: '哈希计算', icon: '', iconSvg: '', description: 'MD5/SHA 哈希', keywords: ['hash', 'md5', 'sha', '哈希'] },
-  { id: 'note', name: '文本编辑器', icon: '', iconSvg: '', description: '草稿本便签', keywords: ['笔记', 'notepad', '草稿'] },
   { id: 'home', name: '首页', icon: '', iconSvg: '', description: '搜索工具最近使用', keywords: ['首页', '搜索', '主页'] },
 ]
 

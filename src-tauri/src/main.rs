@@ -17,17 +17,10 @@ mod file_encoding;
 mod file_saver;
 mod js_executor;
 mod http_cmd;
-mod note_manager;
 mod system_info;
 mod sqlite_viewer;
 mod disk_analyzer;
 mod file_searcher;
-mod icon_generator;
-mod image_tools;
-mod audio_tools;
-mod video_tools;
-mod pdf_tools;
-mod media_info;
 mod hotkey_probe;
 mod hotkey_data;
 mod hosts_manager;
@@ -123,9 +116,6 @@ fn main() {
             db::db_note_get_last_opened,
             db::db_note_set_last_opened,
             db::open_notes_folder,
-            // Note manager 命令
-            note_manager::note_read,
-            note_manager::note_write,
             db::cmd_db_register_shortcuts,
             system_info::is_admin,
             system_info::collect_system,
@@ -208,52 +198,6 @@ fn main() {
             file_searcher::file_search_get_summary,
             file_searcher::file_search_get_results,
             file_searcher::file_search_clear,
-            // 图标生成命令
-            icon_generator::generate_icon,
-            icon_generator::read_file_base64,
-            icon_generator::copy_file,
-            // 图片工具增强命令
-            image_tools::get_file_info,
-            image_tools::get_thumbnail,
-            image_tools::image_compress,
-            image_tools::image_merge,
-            image_tools::image_template_merge,
-            image_tools::image_watermark,
-            image_tools::image_palette,
-            audio_tools::check_ffmpeg,
-            audio_tools::get_audio_info,
-            video_tools::get_video_info,
-            video_tools::extract_thumbnails,
-            video_tools::video_crop,
-            video_tools::video_transcode,
-            video_tools::audio_extract,
-            video_tools::video_compress,
-            video_tools::video_merge,
-            video_tools::video_extract_frame,
-            video_tools::video_preview_frame,
-            video_tools::calc_crop_preset,
-            video_tools::video_crop_region,
-            video_tools::video_speed_change,
-            video_tools::video_rotate_flip,
-            video_tools::video_volume,
-            video_tools::video_watermark,
-            video_tools::video_watermark_preview,
-            audio_tools::generate_waveform,
-            audio_tools::audio_crop,
-            audio_tools::get_audio_preview,
-            audio_tools::audio_convert,
-            audio_tools::audio_compress,
-            audio_tools::audio_merge,
-            audio_tools::audio_speed_change,
-            audio_tools::list_tts_voices,
-            audio_tools::tts_generate,
-            audio_tools::get_downloads_dir,
-            pdf_tools::detect_ghostscript,
-            pdf_tools::get_pdf_page_count,
-            pdf_tools::compress_pdf,
-            pdf_tools::save_temp_file,
-            media_info::get_media_info,
-            media_info::extract_cover_art,
             // 全局快捷键占用查看器命令
             hotkey_probe::hotkey_probe_start,
             hotkey_probe::hotkey_probe_cancel,

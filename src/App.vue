@@ -46,11 +46,9 @@ import FileProcessing from '@/views/FileProcessing.vue'
 import SqlTool from '@/views/SqlTool.vue'
 import JSTool from '@/views/JSTool.vue'
 import MockDataTool from '@/views/MockDataTool.vue'
-import OcrTool from '@/views/OcrTool.vue'
 import DiffTool from '@/views/DiffTool.vue'
 import ClipboardTool from '@/views/ClipboardTool.vue'
 import CsvTool from '@/views/CsvTool.vue'
-import PdfTool from '@/views/PdfTool.vue'
 import HashTool from '@/views/HashTool.vue'
 import XmlYamlTool from '@/views/XmlYamlTool.vue'
 import DedupTool from '@/views/DedupTool.vue'
@@ -66,7 +64,6 @@ import SnippetTool from '@/views/SnippetTool.vue'
 import HttpTool from '@/views/HttpTool.vue'
 import HistoryView from '@/views/HistoryView.vue'
 import WorkflowView from '@/views/WorkflowView.vue'
-import NoteEditor from '@/views/NoteEditor.vue'
 import CalculatorTool from '@/views/CalculatorTool.vue'
 import SystemInfoView from '@/views/SystemInfoView.vue'
 import NetworkInfoView from '@/views/NetworkInfoView.vue'
@@ -76,11 +73,6 @@ import SoftwareEnvView from '@/views/SoftwareEnvView.vue'
 import SqliteViewerView from '@/views/SqliteViewerView.vue'
 import DiskSpaceAnalyzer from '@/views/DiskSpaceAnalyzer.vue'
 import FileSearcher from '@/views/FileSearcher.vue'
-import IconGenerator from '@/views/IconGenerator.vue'
-import ImageToolEnhanced from '@/views/ImageToolEnhanced.vue'
-import AudioTool from '@/views/AudioTool.vue'
-import VideoTool from '@/views/VideoTool.vue'
-import MediaInfoTool from '@/views/MediaInfoTool.vue'
 import ServiceListView from '@/views/ServiceListView.vue'
 import HotkeyView from '@/views/HotkeyView.vue'
 import HostsView from '@/views/HostsView.vue'
@@ -114,12 +106,9 @@ const toolComponentMap: Record<string, any> = {
   sql: SqlTool,
   js: JSTool,
   mockData: MockDataTool,
-  ocr: OcrTool,
   diff: DiffTool,
   clipboard: ClipboardTool,
-  image: ImageToolEnhanced,
   csv: CsvTool,
-  pdf: PdfTool,
   hash: HashTool,
   xmlYaml: XmlYamlTool,
   dedup: DedupTool,
@@ -135,7 +124,6 @@ const toolComponentMap: Record<string, any> = {
   http: HttpTool,
   history: HistoryView,
   workflow: WorkflowView,
-  note: NoteEditor,
   calculator: CalculatorTool,
   systemInfo: SystemInfoView,
   networkInfo: NetworkInfoView,
@@ -145,10 +133,6 @@ const toolComponentMap: Record<string, any> = {
   sqliteViewer: SqliteViewerView,
   diskAnalyzer: DiskSpaceAnalyzer,
   fileSearcher: FileSearcher,
-  iconGenerator: IconGenerator,
-  audioTool: AudioTool,
-  videoTool: VideoTool,
-  mediaInfo: MediaInfoTool,
   serviceList: ServiceListView,
   hotkeyViewer: HotkeyView,
   hostsManager: HostsView,

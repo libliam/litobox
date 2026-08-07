@@ -1,6 +1,6 @@
 [package]
 name = "litobox"
-version = "7.1.0"
+version = "8.0.0"
 description = "栗的百宝箱"
 authors = ["developer"]
 edition = "2021"
@@ -30,15 +30,7 @@ trash = "5.1"
 sha2 = "0.10"
 uuid = { version = "1.10", features = ["v4"] }
 regex = "1.10"
-image = "0.25"
-imageproc = "0.25"
-ab_glyph = "0.2"
-symphonia = { version = "0.5", features = ["mp3", "wav", "isomp4", "aac"], default-features = false }
-symphonia-core = "0.5"
-hound = "3.5"
-mp3lame-encoder = "0.2.4"
-lopdf = "0.34"
-mp4 = "0.14"
+image = { version = "0.25", default-features = false, features = ["png", "bmp", "jpeg"] }
 flate2 = "1.0"
 
 [target.'cfg(windows)'.dependencies]
