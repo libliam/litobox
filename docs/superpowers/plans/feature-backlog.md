@@ -129,7 +129,7 @@
 | F3  | ✅ 图片加水印（批量）             | 文字/图片水印，支持位置/透明度/旋转，批量处理。复用 image crate（已引入），`imageops::overlay` + 透明度混合                                                | — 已完成 V4.9 — | 2026-07-08 brainstorming |
 | F4  | **SVG 预览/优化/转 PNG**       | SVG 渲染预览、压缩优化（去冗余属性/注释）、栅格化转 PNG。优化用文本解析，转 PNG 用 resvg 纯 Rust（需新增依赖）                                                    | 中 ✅ 已完成 V6.12 | 2026-07-08 brainstorming |
 | F5  | ✅ 图片调色板提取               | 从图片提取主色调（N 色）导出色板，可联动 ColorTool。复用 image crate（已引入），像素采样 + 颜色量化                                                         | — 已完成 V4.9 — | 2026-07-08 brainstorming |
-| F6  | **PDF 图片提取**              | 从 PDF 提取内嵌图片（非整页栅格化），按页导出。与 PdfTool「PDF转图片」（整页渲染）区别：提取原始嵌入图                                                             | 低            | 2026-07-08 brainstorming |
+| F6  | **PDF 图片提取**              | 从 PDF 提取内嵌图片（非整页栅格化），按页导出。与 PdfTool「PDF转图片」（整页渲染）区别：提取原始嵌入图  — 已完成 V7.1.2 | — 已完成 V7.1.2 — | 2026-07-08 brainstorming |
 | F7  | **PDF 加密/旋转/页面重排**        | 加/解密码、旋转页面、拖拽重排页序、删除指定页                                                                                                 | 低            | 2026-07-08 brainstorming |
 | F15 | ✅ **PDF 压缩**              | 图像重采样（可调 DPI/质量）+ 元数据/注释清理 + 流压缩优化。纯 Rust 实现（lopdf + image crate），体积增量 \~1-2 MB。可探测系统 Ghostscript 启用高质量压缩，不内嵌 gs，守住轻量定位 | — 已完成 V5.1 — | 2026-07-09 brainstorming |
 | F8  | **批量二维码生成**               | 从文本列表/CSV 批量生成二维码，导出 ZIP 或拼接图                                                                                           | 中 ✅ 已完成 V6.13 | 2026-07-08 brainstorming |

@@ -9,6 +9,7 @@
         <el-tab-pane label="PDF转Markdown" name="pdfToMarkdown" />
         <el-tab-pane label="PDF合并/拆分" name="mergeSplit" />
         <el-tab-pane label="PDF压缩" name="compress" />
+        <el-tab-pane label="提取图片" name="extractImages" />
       </el-tabs>
     </div>
 
@@ -601,6 +602,111 @@
     </div>
 
     <div v-if="activeTab === 'compress' && compressError" class="error-message">{{ compressError }}</div>
+
+    <!-- Tab 7: 提取图片（输入卡片） -->
+    <div v-if="activeTab === 'extractImages'" class="tool-card">
+      <div class="card-header">
+        <div class="header-left">
+          <span class="card-title">PDF 输入</span>
+          <el-tooltip placement="top" effect="dark">
+            <template #content>
+              <div class="tooltip-content">
+                <p>从 PDF 中提取<strong>原始内嵌图片</strong>（XObject 资源）</p>
+                <p>与「PDF 转图片」的区别：<strong>不做整页栅格化</strong>，只提取真正嵌入 PDF 的位图资源</p>
+                <p>支持：JPEG(DCTDecode) / PNG(FlateDecode) / JPEG2000 / TIFF(CCITT) / Raw</p>
+                <p>跨页复用的图片资源仅提取一次（自动去重）</p>
+              </div>
+            </template>
+            <el-icon class="hint-icon"><QuestionFilled /></el-icon>
+          </el-tooltip>
+        </div>
+        <div class="card-actions">
+          <el-button size="small" type="primary" @click="triggerExtractImgInput">上传 PDF</el-button>
+          <el-button v-if="extractImgFile" size="small" @click="handleClearExtractImgFile">移除</el-button>
+        </div>
+      </div>
+      <div class="card-body">
+        <input
+          ref="extractImgInputRef"
+          type="file"
+          accept=".pdf"
+          style="display: none"
+          @change="handleExtractImgFileSelect"
+        />
+        <div v-if="extractImgFile" class="file-info">
+          <span class="file-name">{{ extractImgFile.name }}</span>
+          <span class="file-size">{{ formatFileSize(extractImgFile.size) }}</span>
+          <span v-if="extractImgPageCount" class="file-pages">{{ extractImgPageCount }} 页</span>
+        </div>
+        <div v-else class="upload-hint">点击「上传 PDF」选择文件</div>
+      </div>
+    </div>
+
+    <!-- Tab 7: 提取图片（操作卡片） -->
+    <div v-if="activeTab === 'extractImages'" class="tool-card">
+      <div class="card-header">
+        <span class="card-title">图片提取</span>
+        <div class="card-actions">
+          <el-button size="small" :disabled="!extractedImages.length" @click="handleSaveAllExtractedImagesZip">
+            📦 打包下载 ZIP
+          </el-button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="action-grid">
+          <div class="action-group">
+            <div class="group-label">执行</div>
+            <div class="group-buttons">
+              <el-button
+                type="primary"
+                size="small"
+                :disabled="!extractImgFile || isExtractingImages"
+                :loading="isExtractingImages"
+                @click="handleExtractImages"
+              >
+                扫描并提取
+              </el-button>
+            </div>
+          </div>
+          <div class="action-group">
+            <div class="group-label">说明</div>
+            <span class="group-label">
+              支持 JPEG / PNG / JPEG 2000 / TIFF Fax / 原始字节，部分罕见格式仅保存原始数据，浏览器无法预览
+            </span>
+          </div>
+        </div>
+        <div v-if="extractedImages.length" class="result-info">
+          <span>共找到 {{ extractedImages.length }} 张内嵌图片</span>
+          <span>总大小: {{ formatFileSize(extractedImages.reduce((s, i) => s + i.size, 0)) }}</span>
+          <span>JPEG {{ imgFormatCounts.jpeg }} 张 · PNG {{ imgFormatCounts.png }} 张 · 其他 {{ imgFormatCounts.other }} 张</span>
+        </div>
+        <div v-if="extractedImages.length" class="extract-preview-grid">
+          <div v-for="(img, idx) in extractedImages" :key="idx" class="extract-preview-item">
+            <div class="extract-preview-thumb">
+              <img :src="img.previewDataUrl" :alt="img.xObjectName" loading="lazy" />
+            </div>
+            <div class="extract-preview-meta">
+              <div class="preview-title">#{{ idx + 1 }} · P{{ img.pageIndex }}</div>
+              <div class="preview-dims">{{ img.width }} × {{ img.height }}</div>
+              <div class="preview-tags">
+                <span class="tag tag-format" :class="'tag-' + img.format">{{ img.format.toUpperCase() }}</span>
+                <span class="tag">{{ formatFileSize(img.size) }}</span>
+                <span v-if="img.colorSpace" class="tag tag-cs">{{ img.colorSpace }}</span>
+              </div>
+              <div class="preview-xobj" :title="img.xObjectName">资源: {{ img.xObjectName }}</div>
+            </div>
+            <div class="extract-preview-actions">
+              <el-button size="small" @click="handleSaveSingleExtractedImage(img, idx + 1)">保存</el-button>
+            </div>
+          </div>
+        </div>
+        <div v-if="!extractedImages.length && extractImgScanDone" class="empty-hint">
+          本 PDF 未发现内嵌图片资源（可能是纯文本 PDF，或图片以其他方式嵌入）
+        </div>
+        <div v-if="extractImagesError" class="error-message">{{ extractImagesError }}</div>
+      </div>
+    </div>
+
   </div>
 </template>
 
@@ -616,7 +722,9 @@ import {
   loadPdfDocument,
   saveFileWithDialog,
   formatFileSize,
-  type ImageToPdfOptions
+  extractEmbeddedImages,
+  type ImageToPdfOptions,
+  type ExtractedImage
 } from '@/utils/pdfUtils'
 import { recognizeImage, recognizeMarkdown } from '@/utils/ocrUtils'
 import { useToolboxStore } from '@/store'
@@ -820,6 +928,182 @@ const handleSaveSingleCompressed = async (idx: number) => {
 const handleSaveAllCompressed = async () => {
   for (let i = 0; i < compressResults.value.length; i++) {
     await handleSaveSingleCompressed(i)
+  }
+}
+
+// ============ Tab 7: 提取图片 ============
+const extractImgInputRef = ref<HTMLInputElement | null>(null)
+const extractImgFile = ref<File | null>(null)
+const extractImgPageCount = ref(0)
+const extractedImages = ref<ExtractedImage[]>([])
+const isExtractingImages = ref(false)
+const extractImagesError = ref('')
+const extractImgScanDone = ref(false)
+
+const imgFormatCounts = computed(() => {
+  const counts = { jpeg: 0, png: 0, other: 0 }
+  for (const img of extractedImages.value) {
+    if (img.format === 'jpeg') counts.jpeg++
+    else if (img.format === 'png') counts.png++
+    else counts.other++
+  }
+  return counts
+})
+
+function extensionFor(img: ExtractedImage): string {
+  switch (img.format) {
+    case 'jpeg': return 'jpg'
+    case 'png':  return 'png'
+    case 'jp2':  return 'jp2'
+    case 'tiff': return 'tiff'
+    default:     return 'bin'
+  }
+}
+
+function sanitizeFilename(name: string): string {
+  // ponytail: 去掉 Windows 非法字符，保留中英文、数字、下划线、连字符、点
+  return String(name).replace(/[\\/:*?"<>|]+/g, '_').slice(0, 80) || 'unnamed'
+}
+
+const triggerExtractImgInput = () => extractImgInputRef.value?.click()
+
+const handleExtractImgFileSelect = async (e: Event) => {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  extractImagesError.value = ''
+  extractedImages.value = []
+  extractImgScanDone.value = false
+  const maxSize = 100 * 1024 * 1024
+  if (file.size > maxSize) {
+    extractImagesError.value = 'PDF 过大，建议小于 100MB'
+    return
+  }
+  extractImgFile.value = file
+  try {
+    const buffer = await file.arrayBuffer()
+    const doc = await loadPdfDocument(new Uint8Array(buffer))
+    extractImgPageCount.value = doc.numPages
+  } catch (e: any) {
+    extractImagesError.value = e.message || 'PDF 加载失败'
+    extractImgPageCount.value = 0
+  }
+  input.value = ''
+}
+
+const handleClearExtractImgFile = () => {
+  extractImgFile.value = null
+  extractImgPageCount.value = 0
+  extractedImages.value = []
+  extractImagesError.value = ''
+  extractImgScanDone.value = false
+  if (extractImgInputRef.value) extractImgInputRef.value.value = ''
+}
+
+const handleExtractImages = async () => {
+  if (!extractImgFile.value) return
+  extractImagesError.value = ''
+  extractImgScanDone.value = false
+  isExtractingImages.value = true
+  const loading = ElLoading.service({
+    lock: true,
+    text: '正在扫描 PDF 内嵌图片...',
+    background: 'rgba(0, 0, 0, 0.7)',
+  })
+  try {
+    const imgs = await extractEmbeddedImages(extractImgFile.value)
+    extractedImages.value = imgs
+    extractImgScanDone.value = true
+    if (imgs.length === 0) {
+      ElMessage.warning('未发现内嵌图片资源')
+    } else {
+      ElMessage.success(`提取完成，共 ${imgs.length} 张图片`)
+    }
+    const jpeg = imgFormatCounts.value.jpeg
+    const png = imgFormatCounts.value.png
+    const other = imgs.length - jpeg - png
+    store.addHistory({
+      tool: 'pdf',
+      action: 'PDF提取内嵌图片',
+      inputPreview: extractImgFile.value.name.slice(0, 50),
+      outputPreview: `${imgs.length} 张 (JPEG ${jpeg}, PNG ${png}, 其他 ${other})`,
+      inputFull: extractImgFile.value.name,
+      outputFull: extractedImages.value.map(i =>
+        `#${i.xObjectName}  P${i.pageIndex}  ${i.width}×${i.height}  ${i.format.toUpperCase()}  ${formatFileSize(i.size)}`
+      ).join('\n')
+    })
+  } catch (e: any) {
+    extractImagesError.value = e.message || '提取失败'
+  } finally {
+    isExtractingImages.value = false
+    loading.close()
+  }
+}
+
+const handleSaveSingleExtractedImage = async (img: ExtractedImage, seqNo: number) => {
+  try {
+    const ext = extensionFor(img)
+    const baseName = extractImgFile.value?.name.replace(/\.pdf$/i, '') || 'pdf'
+    // 命名：文件基础名 + 页码 + 序号 + 原始资源名 + 扩展名
+    const fileName = sanitizeFilename(
+      `${baseName}_p${img.pageIndex}_${seqNo.toString().padStart(3, '0')}_${img.xObjectName}.${ext}`
+    )
+    await saveFileWithDialog(img.blob, fileName, ext === 'bin' ? 'zip' : ext)
+    ElMessage.success('已保存')
+  } catch (e: any) {
+    ElMessage.error(typeof e === 'string' ? e : '保存失败')
+  }
+}
+
+const handleSaveAllExtractedImagesZip = async () => {
+  const imgs = extractedImages.value
+  if (!imgs.length) return
+  try {
+    // 动态 import 避免无此功能的页面也被强依赖 jszip
+    const JSZipModule = await import('jszip')
+    const JSZip = JSZipModule.default || JSZipModule
+    const zip = new JSZip()
+    const baseName = (extractImgFile.value?.name.replace(/\.pdf$/i, '') || 'pdf-images')
+    const dirName = sanitizeFilename(baseName)
+
+    for (let idx = 0; idx < imgs.length; idx++) {
+      const img = imgs[idx]
+      const ext = extensionFor(img)
+      const seqNo = (idx + 1).toString().padStart(3, '0')
+      const fileName = sanitizeFilename(
+        `p${img.pageIndex}_${seqNo}_${img.xObjectName}.${ext}`
+      )
+      zip.file(`${dirName}/${fileName}`, img.blob)
+    }
+
+    // 附加一份清单 manifest.csv（中文 GBK 兼容性不好，用 UTF-8 + BOM，Excel 可识别）
+    const manifestHeader = ['序号', '页码', '资源名', '格式', '宽度', '高度', '大小(字节)', '大小(可读)', '颜色空间', '过滤器']
+    const manifestRows = imgs.map((img, i) => [
+      String(i + 1),
+      String(img.pageIndex),
+      `"${img.xObjectName.replace(/"/g, '""')}"`,
+      img.format.toUpperCase(),
+      String(img.width),
+      String(img.height),
+      String(img.size),
+      formatFileSize(img.size),
+      img.colorSpace,
+      img.primaryFilter
+    ])
+    const manifestCsv = '\uFEFF' +
+      [manifestHeader.join(','), ...manifestRows.map(r => r.join(','))].join('\r\n')
+    zip.file(`${dirName}/_manifest.csv`, manifestCsv)
+
+    const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'STORE' })
+
+    const now = new Date()
+    const pad = (n: number) => n.toString().padStart(2, '0')
+    const ts = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
+    const zipFileName = sanitizeFilename(`${dirName}_images_${ts}.zip`)
+    await saveFileWithDialog(zipBlob, zipFileName, 'zip')
+    ElMessage.success(`已打包 ${imgs.length} 张图片`)
+  } catch (e: any) {
+    ElMessage.error('打包失败: ' + (typeof e === 'string' ? e : (e.message || String(e))))
   }
 }
 
@@ -2108,5 +2392,132 @@ html.light :deep(.compress-table .el-table__body td) {
   font-size: 13px;
   color: var(--text-secondary);
   text-align: right;
+}
+
+/* ========== 提取图片 Tab ========== */
+.extract-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.extract-preview-item {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+.extract-preview-item:hover {
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 0 1px var(--accent-cyan), 0 4px 14px rgba(0, 212, 255, 0.12);
+  transform: translateY(-1px);
+}
+
+.extract-preview-thumb {
+  height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #0d1520 0%, #1a2332 100%);
+  padding: 8px;
+  border-bottom: 1px solid var(--border-color);
+  overflow: hidden;
+}
+html.light .extract-preview-thumb {
+  background: linear-gradient(135deg, #f0f4f8 0%, #e2e8f0 100%);
+}
+
+.extract-preview-thumb img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
+.extract-preview-meta {
+  padding: 10px 12px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12px;
+}
+
+.preview-title {
+  font-weight: 600;
+  color: var(--accent-cyan);
+  font-size: 13px;
+  letter-spacing: 0.5px;
+}
+
+.preview-dims {
+  color: var(--text-primary);
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-weight: 500;
+}
+
+.preview-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.tag {
+  display: inline-block;
+  padding: 1px 8px;
+  background: var(--bg-active);
+  color: var(--text-secondary);
+  border-radius: 10px;
+  font-size: 11px;
+  line-height: 18px;
+  border: 1px solid var(--border-color);
+  font-family: 'Consolas', 'Courier New', monospace;
+}
+
+.tag-format {
+  color: var(--text-primary);
+  font-weight: 700;
+  letter-spacing: 0.4px;
+}
+.tag-format.tag-jpeg { border-color: var(--accent-orange); color: var(--accent-orange); background: rgba(245,158,11,0.08); }
+.tag-format.tag-png  { border-color: var(--accent-green);  color: var(--accent-green);  background: rgba(16,185,129,0.08); }
+.tag-format.tag-jp2  { border-color: var(--accent-blue);   color: var(--accent-blue);   background: rgba(59,130,246,0.08); }
+.tag-format.tag-tiff { border-color: #a78bfa;              color: #a78bfa;              background: rgba(167,139,250,0.08); }
+.tag-format.tag-raw  { border-color: var(--text-secondary);color: var(--text-secondary);background: var(--bg-input); }
+
+.tag-cs {
+  font-style: italic;
+}
+
+.preview-xobj {
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.extract-preview-actions {
+  margin-top: auto;
+  padding: 8px 12px 12px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.empty-hint {
+  margin-top: 16px;
+  padding: 24px;
+  background: var(--bg-input);
+  border: 1px dashed var(--border-color);
+  border-radius: 6px;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 13px;
 }
 </style>
