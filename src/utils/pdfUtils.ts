@@ -1,5 +1,5 @@
 import * as pdfjsLib from 'pdfjs-dist'
-import { PDFDocument } from 'pdf-lib'
+import { PDFDocument, rgb, degrees } from 'pdf-lib'
 
 // 配置 pdfjs worker（模块加载时执行一次）
 pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js'
@@ -883,6 +883,159 @@ export async function extractEmbeddedImages(pdfFile: File): Promise<ExtractedIma
   // 按页码升序排（未定位到页码的排末尾）
   results.sort((a, b) => a.pageIndex - b.pageIndex)
   return results
+}
+
+// ============ PDF 加水印 ============
+
+export interface WatermarkOptions {
+  type: 'text' | 'image'
+  // 文字水印
+  text: string
+  fontSize: number
+  fontName: 'Helvetica' | 'TimesRoman' | 'Courier'
+  fontColor: [number, number, number] // RGB 0-1
+  // 图片水印
+  imageFile?: File
+  // 通用
+  opacity: number        // 0.1 ~ 1.0
+  rotation: number       // -90 ~ 90 度
+  position: 'tl' | 'tc' | 'tr' | 'ml' | 'mc' | 'mr' | 'bl' | 'bc' | 'br'
+  offsetX: number        // 额外 X 偏移 pt
+  offsetY: number        // 额外 Y 偏移 pt
+  tile: boolean          // 是否平铺（全页重复）
+  tileGapX: number       // 平铺水平间距 pt
+  tileGapY: number       // 平铺垂直间距 pt
+}
+
+export async function addWatermark(
+  pdfFile: File,
+  options: WatermarkOptions,
+  customFontBytes?: Uint8Array,
+): Promise<Blob> {
+  const buffer = await pdfFile.arrayBuffer()
+  const pdfDoc = await PDFDocument.load(buffer)
+  const pages = pdfDoc.getPages()
+
+  // 加载字体
+  let font: any
+  if (options.type === 'text') {
+    if (customFontBytes) {
+      font = await pdfDoc.embedFont(customFontBytes)
+    } else {
+      const { StandardFonts } = await import('pdf-lib')
+      const fontMap: Record<string, any> = {
+        Helvetica: StandardFonts.Helvetica,
+        TimesRoman: StandardFonts.TimesRoman,
+        Courier: StandardFonts.Courier,
+      }
+      font = await pdfDoc.embedFont(fontMap[options.fontName] || StandardFonts.Helvetica)
+    }
+  }
+
+  // 加载图片
+  let watermarkImage: any
+  if (options.type === 'image' && options.imageFile) {
+    const imgBytes = new Uint8Array(await options.imageFile.arrayBuffer())
+    const imgName = options.imageFile.name.toLowerCase()
+    if (imgName.endsWith('.png')) {
+      watermarkImage = await pdfDoc.embedPng(imgBytes)
+    } else if (imgName.endsWith('.jpg') || imgName.endsWith('.jpeg')) {
+      watermarkImage = await pdfDoc.embedJpg(imgBytes)
+    } else {
+      throw new Error('图片水印仅支持 PNG / JPG 格式')
+    }
+  }
+
+  for (const page of pages) {
+    const { width, height } = page.getSize()
+
+    if (options.tile) {
+      // 平铺模式：在整个页面重复绘制
+      const stepX = (options.type === 'text' ? options.fontSize * 8 : (watermarkImage?.width || 100)) + options.tileGapX
+      const stepY = (options.type === 'text' ? options.fontSize * 1.5 : (watermarkImage?.height || 100)) + options.tileGapY
+
+      for (let y = 0; y < height + stepY; y += stepY) {
+        for (let x = 0; x < width + stepX; x += stepX) {
+          if (options.type === 'text') {
+            page.drawText(options.text, {
+              x: x + options.offsetX,
+              y: y + options.offsetY,
+              size: options.fontSize,
+              font,
+              color: rgb(...options.fontColor),
+              opacity: options.opacity,
+              rotate: degrees(options.rotation),
+            })
+          } else if (watermarkImage) {
+            const imgW = watermarkImage.width
+            const imgH = watermarkImage.height
+            page.drawImage(watermarkImage, {
+              x: x + options.offsetX,
+              y: y + options.offsetY,
+              width: imgW,
+              height: imgH,
+              opacity: options.opacity,
+              rotate: degrees(options.rotation),
+            })
+          }
+        }
+      }
+    } else {
+      // 单点模式：按 9 宫格定位
+      const wmWidth = options.type === 'text'
+        ? font.widthOfTextAtSize(options.text, options.fontSize)
+        : (watermarkImage?.width || 100)
+      const wmHeight = options.type === 'text'
+        ? options.fontSize
+        : (watermarkImage?.height || 100)
+
+      const pos = calcPosition(options.position, width, height, wmWidth, wmHeight)
+      const x = pos.x + options.offsetX
+      const y = pos.y + options.offsetY
+
+      if (options.type === 'text') {
+        page.drawText(options.text, {
+          x, y,
+          size: options.fontSize,
+          font,
+          color: rgb(...options.fontColor),
+          opacity: options.opacity,
+          rotate: degrees(options.rotation),
+        })
+      } else if (watermarkImage) {
+        page.drawImage(watermarkImage, {
+          x, y,
+          width: watermarkImage.width,
+          height: watermarkImage.height,
+          opacity: options.opacity,
+          rotate: degrees(options.rotation),
+        })
+      }
+    }
+  }
+
+  const outBytes = await pdfDoc.save()
+  return new Blob([toStdU8(outBytes) as any], { type: 'application/pdf' })
+}
+
+/** 9 宫格坐标计算（左下角为原点） */
+function calcPosition(
+  pos: WatermarkOptions['position'],
+  pageW: number, pageH: number,
+  wmW: number, wmH: number,
+): { x: number; y: number } {
+  const margin = 36 // 默认边距 pt（约 0.5 英寸）
+  const colX: Record<string, number> = {
+    tl: margin, tc: (pageW - wmW) / 2, tr: pageW - wmW - margin,
+    ml: margin, mc: (pageW - wmW) / 2, mr: pageW - wmW - margin,
+    bl: margin, bc: (pageW - wmW) / 2, br: pageW - wmW - margin,
+  }
+  const rowY: Record<string, number> = {
+    tl: pageH - wmH - margin, tc: pageH - wmH - margin, tr: pageH - wmH - margin,
+    ml: (pageH - wmH) / 2, mc: (pageH - wmH) / 2, mr: (pageH - wmH) / 2,
+    bl: margin, bc: margin, br: margin,
+  }
+  return { x: colX[pos] ?? margin, y: rowY[pos] ?? margin }
 }
 
 // 工具函数（避免依赖外部 base64 库，和 pdfUtils 顶部已有的 arrayBufferToBase64 逻辑一致）

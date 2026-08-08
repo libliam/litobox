@@ -10,6 +10,7 @@
         <el-tab-pane label="PDF合并/拆分" name="mergeSplit" />
         <el-tab-pane label="PDF压缩" name="compress" />
         <el-tab-pane label="提取图片" name="extractImages" />
+        <el-tab-pane label="PDF加水印" name="watermark" />
       </el-tabs>
     </div>
 
@@ -707,6 +708,187 @@
       </div>
     </div>
 
+    <!-- Tab 8: PDF 加水印（输入卡片） -->
+    <div v-if="activeTab === 'watermark'" class="tool-card">
+      <div class="card-header">
+        <div class="header-left">
+          <span class="card-title">PDF 输入</span>
+          <el-tooltip placement="top" effect="dark">
+            <template #content>
+              <div class="tooltip-content">
+                <p>为 PDF 添加文字或图片水印</p>
+                <p>支持 9 宫格定位 / 平铺模式</p>
+                <p>可调节透明度、旋转角度、偏移量</p>
+              </div>
+            </template>
+            <el-icon class="hint-icon"><QuestionFilled /></el-icon>
+          </el-tooltip>
+        </div>
+        <div class="card-actions">
+          <el-button size="small" type="primary" @click="triggerWatermarkInput">上传 PDF</el-button>
+          <el-button v-if="watermarkPdfFile" size="small" @click="handleClearWatermarkPdf">移除</el-button>
+        </div>
+      </div>
+      <div class="card-body">
+        <input
+          ref="watermarkInputRef"
+          type="file"
+          accept=".pdf"
+          style="display: none"
+          @change="handleWatermarkPdfSelect"
+        />
+        <div v-if="watermarkPdfFile" class="file-info">
+          <span class="file-name">{{ watermarkPdfFile.name }}</span>
+          <span class="file-size">{{ formatFileSize(watermarkPdfFile.size) }}</span>
+          <span v-if="watermarkPageCount" class="file-pages">{{ watermarkPageCount }} 页</span>
+        </div>
+        <div v-else class="upload-hint">点击「上传 PDF」选择文件</div>
+      </div>
+    </div>
+
+    <!-- Tab 8: PDF 加水印（设置卡片） -->
+    <div v-if="activeTab === 'watermark'" class="tool-card">
+      <div class="card-header">
+        <span class="card-title">水印设置</span>
+      </div>
+      <div class="card-body">
+        <!-- 水印类型 -->
+        <div class="action-grid" style="margin-bottom: 16px">
+          <div class="action-group">
+            <div class="group-label">水印类型</div>
+            <el-radio-group v-model="wmType" size="small">
+              <el-radio-button value="text">文字</el-radio-button>
+              <el-radio-button value="image">图片</el-radio-button>
+            </el-radio-group>
+          </div>
+        </div>
+
+        <!-- 文字水印设置 -->
+        <template v-if="wmType === 'text'">
+          <div class="action-grid" style="margin-bottom: 12px">
+            <div class="action-group">
+              <div class="group-label">水印文字</div>
+              <el-input
+                v-model="wmText"
+                placeholder="输入水印文字"
+                size="small"
+                style="width: 260px"
+              />
+            </div>
+            <div class="action-group">
+              <div class="group-label">字号</div>
+              <el-input-number v-model="wmFontSize" :min="8" :max="120" size="small" style="width: 120px" />
+            </div>
+            <div class="action-group">
+              <div class="group-label">字体</div>
+              <el-select v-model="wmFontName" size="small" style="width: 120px">
+                <el-option label="Helvetica" value="Helvetica" />
+                <el-option label="Times Roman" value="TimesRoman" />
+                <el-option label="Courier" value="Courier" />
+              </el-select>
+            </div>
+            <div class="action-group">
+              <div class="group-label">颜色</div>
+              <el-color-picker v-model="wmFontColor" :predefine="['#000000','#ff0000','#0000ff','#808080','#c0c0c0']" size="small" />
+            </div>
+          </div>
+        </template>
+
+        <!-- 图片水印设置 -->
+        <template v-if="wmType === 'image'">
+          <div class="action-grid" style="margin-bottom: 12px">
+            <div class="action-group">
+              <div class="group-label">水印图片</div>
+              <el-button size="small" @click="triggerWmImageInput">选择图片</el-button>
+              <input ref="wmImageInputRef" type="file" accept="image/png,image/jpeg" style="display:none" @change="handleWmImageSelect" />
+              <span v-if="wmImageFile" style="margin-left: 8px; color: var(--text-secondary); font-size: 13px">
+                {{ wmImageFile.name }} ({{ formatFileSize(wmImageFile.size) }})
+              </span>
+            </div>
+          </div>
+        </template>
+
+        <!-- 通用设置 -->
+        <div class="action-grid" style="margin-bottom: 12px">
+          <div class="action-group">
+            <div class="group-label">透明度</div>
+            <el-slider v-model="wmOpacity" :min="0.05" :max="1" :step="0.05" style="width: 180px" />
+            <span style="margin-left: 8px; color: var(--text-secondary); font-size: 13px; min-width: 40px">{{ Math.round(wmOpacity * 100) }}%</span>
+          </div>
+          <div class="action-group">
+            <div class="group-label">旋转角度</div>
+            <el-slider v-model="wmRotation" :min="-90" :max="90" :step="5" style="width: 180px" />
+            <span style="margin-left: 8px; color: var(--text-secondary); font-size: 13px; min-width: 40px">{{ wmRotation }}°</span>
+          </div>
+        </div>
+
+        <div class="action-grid" style="margin-bottom: 12px">
+          <div class="action-group">
+            <div class="group-label">定位模式</div>
+            <el-radio-group v-model="wmTile" size="small">
+              <el-radio-button :value="false">单点</el-radio-button>
+              <el-radio-button :value="true">平铺</el-radio-button>
+            </el-radio-group>
+          </div>
+          <div v-if="!wmTile" class="action-group">
+            <div class="group-label">位置</div>
+            <div class="position-grid">
+              <el-button size="small" :type="wmPosition === 'tl' ? 'primary' : 'default'" @click="wmPosition = 'tl'">左上</el-button>
+              <el-button size="small" :type="wmPosition === 'tc' ? 'primary' : 'default'" @click="wmPosition = 'tc'">中上</el-button>
+              <el-button size="small" :type="wmPosition === 'tr' ? 'primary' : 'default'" @click="wmPosition = 'tr'">右上</el-button>
+              <el-button size="small" :type="wmPosition === 'ml' ? 'primary' : 'default'" @click="wmPosition = 'ml'">左中</el-button>
+              <el-button size="small" :type="wmPosition === 'mc' ? 'primary' : 'default'" @click="wmPosition = 'mc'">中心</el-button>
+              <el-button size="small" :type="wmPosition === 'mr' ? 'primary' : 'default'" @click="wmPosition = 'mr'">右中</el-button>
+              <el-button size="small" :type="wmPosition === 'bl' ? 'primary' : 'default'" @click="wmPosition = 'bl'">左下</el-button>
+              <el-button size="small" :type="wmPosition === 'bc' ? 'primary' : 'default'" @click="wmPosition = 'bc'">中下</el-button>
+              <el-button size="small" :type="wmPosition === 'br' ? 'primary' : 'default'" @click="wmPosition = 'br'">右下</el-button>
+            </div>
+          </div>
+          <div v-if="wmTile" class="action-group">
+            <div class="group-label">平铺间距</div>
+            <div style="display: flex; align-items: center; gap: 8px">
+              <span style="font-size: 12px; color: var(--text-secondary)">X:</span>
+              <el-input-number v-model="wmTileGapX" :min="0" :max="500" size="small" style="width: 90px" />
+              <span style="font-size: 12px; color: var(--text-secondary)">Y:</span>
+              <el-input-number v-model="wmTileGapY" :min="0" :max="500" size="small" style="width: 90px" />
+            </div>
+          </div>
+        </div>
+
+        <div class="action-grid" style="margin-bottom: 12px">
+          <div class="action-group">
+            <div class="group-label">偏移</div>
+            <div style="display: flex; align-items: center; gap: 8px">
+              <span style="font-size: 12px; color: var(--text-secondary)">X:</span>
+              <el-input-number v-model="wmOffsetX" :min="-200" :max="200" size="small" style="width: 90px" />
+              <span style="font-size: 12px; color: var(--text-secondary)">Y:</span>
+              <el-input-number v-model="wmOffsetY" :min="-200" :max="200" size="small" style="width: 90px" />
+            </div>
+          </div>
+          <div class="action-group">
+            <div class="group-label">执行</div>
+            <div class="group-buttons">
+              <el-button
+                type="primary"
+                size="small"
+                :disabled="!watermarkPdfFile || isAddingWatermark || (wmType === 'text' && !wmText) || (wmType === 'image' && !wmImageFile)"
+                :loading="isAddingWatermark"
+                @click="handleAddWatermark"
+              >
+                添加水印
+              </el-button>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="watermarkResult" class="result-info">
+          <span>输出大小: {{ formatFileSize(watermarkResult.size) }}</span>
+          <el-button size="small" @click="handleSaveWatermarkedPdf">保存 PDF</el-button>
+        </div>
+        <div v-if="watermarkError" class="error-message">{{ watermarkError }}</div>
+      </div>
+    </div>
+
   </div>
 </template>
 
@@ -723,8 +905,10 @@ import {
   saveFileWithDialog,
   formatFileSize,
   extractEmbeddedImages,
+  addWatermark,
   type ImageToPdfOptions,
-  type ExtractedImage
+  type ExtractedImage,
+  type WatermarkOptions
 } from '@/utils/pdfUtils'
 import { recognizeImage, recognizeMarkdown } from '@/utils/ocrUtils'
 import { useToolboxStore } from '@/store'
@@ -1115,6 +1299,134 @@ onMounted(async () => {
     gsAvailable.value = false
   }
 })
+
+// ============ Tab 8: PDF 加水印 ============
+const watermarkInputRef = ref<HTMLInputElement | null>(null)
+const watermarkPdfFile = ref<File | null>(null)
+const watermarkPageCount = ref(0)
+const isAddingWatermark = ref(false)
+const watermarkResult = ref<Blob | null>(null)
+const watermarkError = ref('')
+
+const wmType = ref<'text' | 'image'>('text')
+const wmText = ref('CONFIDENTIAL')
+const wmFontSize = ref(48)
+const wmFontName = ref<'Helvetica' | 'TimesRoman' | 'Courier'>('Helvetica')
+const wmFontColor = ref('#808080')
+const wmImageFile = ref<File | null>(null)
+const wmImageInputRef = ref<HTMLInputElement | null>(null)
+const wmOpacity = ref(0.3)
+const wmRotation = ref(-45)
+const wmPosition = ref<'tl' | 'tc' | 'tr' | 'ml' | 'mc' | 'mr' | 'bl' | 'bc' | 'br'>('mc')
+const wmTile = ref(false)
+const wmTileGapX = ref(100)
+const wmTileGapY = ref(100)
+const wmOffsetX = ref(0)
+const wmOffsetY = ref(0)
+
+const triggerWatermarkInput = () => watermarkInputRef.value?.click()
+
+const handleWatermarkPdfSelect = async (e: Event) => {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  watermarkError.value = ''
+  watermarkResult.value = null
+  const maxSize = 100 * 1024 * 1024
+  if (file.size > maxSize) {
+    watermarkError.value = 'PDF 过大，建议小于 100MB'
+    return
+  }
+  watermarkPdfFile.value = file
+  try {
+    const buffer = await file.arrayBuffer()
+    const doc = await loadPdfDocument(new Uint8Array(buffer))
+    watermarkPageCount.value = doc.numPages
+  } catch (e: any) {
+    watermarkError.value = e.message || 'PDF 加载失败'
+    watermarkPageCount.value = 0
+  }
+  input.value = ''
+}
+
+const handleClearWatermarkPdf = () => {
+  watermarkPdfFile.value = null
+  watermarkPageCount.value = 0
+  watermarkResult.value = null
+  watermarkError.value = ''
+  if (watermarkInputRef.value) watermarkInputRef.value.value = ''
+}
+
+const triggerWmImageInput = () => wmImageInputRef.value?.click()
+
+const handleWmImageSelect = (e: Event) => {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  wmImageFile.value = file
+  input.value = ''
+}
+
+/** 将 hex 颜色转为 pdf-lib rgb 三元组 */
+function hexToRgb(hex: string): [number, number, number] {
+  const h = hex.replace('#', '')
+  const r = parseInt(h.substring(0, 2), 16) / 255
+  const g = parseInt(h.substring(2, 4), 16) / 255
+  const b = parseInt(h.substring(4, 6), 16) / 255
+  return [r, g, b]
+}
+
+const handleAddWatermark = async () => {
+  if (!watermarkPdfFile.value) return
+  if (wmType.value === 'text' && !wmText.value) return
+  if (wmType.value === 'image' && !wmImageFile.value) return
+
+  watermarkError.value = ''
+  watermarkResult.value = null
+  isAddingWatermark.value = true
+
+  try {
+    const options: WatermarkOptions = {
+      type: wmType.value,
+      text: wmText.value,
+      fontSize: wmFontSize.value,
+      fontName: wmFontName.value,
+      fontColor: hexToRgb(wmFontColor.value),
+      imageFile: wmType.value === 'image' ? wmImageFile.value || undefined : undefined,
+      opacity: wmOpacity.value,
+      rotation: wmRotation.value,
+      position: wmPosition.value,
+      offsetX: wmOffsetX.value,
+      offsetY: wmOffsetY.value,
+      tile: wmTile.value,
+      tileGapX: wmTileGapX.value,
+      tileGapY: wmTileGapY.value,
+    }
+
+    const blob = await addWatermark(watermarkPdfFile.value, options)
+    watermarkResult.value = blob
+    ElMessage.success('水印添加完成')
+    store.addHistory({
+      tool: 'pdf',
+      action: `PDF加水印(${wmType.value === 'text' ? '文字' : '图片'})`,
+      inputPreview: watermarkPdfFile.value.name.slice(0, 50),
+      outputPreview: formatFileSize(blob.size),
+      inputFull: watermarkPdfFile.value.name,
+      outputFull: `${wmType.value === 'text' ? wmText.value : wmImageFile.value?.name} | ${wmPosition.value} | ${Math.round(wmOpacity.value * 100)}% | ${wmRotation.value}°`,
+    })
+  } catch (e: any) {
+    watermarkError.value = e.message || '添加水印失败'
+  } finally {
+    isAddingWatermark.value = false
+  }
+}
+
+const handleSaveWatermarkedPdf = async () => {
+  if (!watermarkResult.value) return
+  const baseName = watermarkPdfFile.value?.name.replace(/\.pdf$/i, '') || 'pdf'
+  await saveFileWithDialog(watermarkResult.value, `${baseName}_watermarked.pdf`, 'pdf')
+  ElMessage.success('已保存')
+}
 
 // ============ OCR 识别 ============
 const ocrResults = ref<string[]>([])
@@ -1896,6 +2208,12 @@ html.light .pdf-tabs :deep(.el-tabs__header) {
 .group-buttons {
   display: flex;
   gap: 6px;
+}
+
+.position-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
 }
 
 .hint-icon {
