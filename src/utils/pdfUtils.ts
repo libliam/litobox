@@ -910,112 +910,132 @@ export interface WatermarkOptions {
 export async function addWatermark(
   pdfFile: File,
   options: WatermarkOptions,
-  customFontBytes?: Uint8Array,
 ): Promise<Blob> {
   const buffer = await pdfFile.arrayBuffer()
   const pdfDoc = await PDFDocument.load(buffer)
   const pages = pdfDoc.getPages()
 
-  // 加载字体
-  let font: any
-  if (options.type === 'text') {
-    if (customFontBytes) {
-      font = await pdfDoc.embedFont(customFontBytes)
-    } else {
-      const { StandardFonts } = await import('pdf-lib')
-      const fontMap: Record<string, any> = {
-        Helvetica: StandardFonts.Helvetica,
-        TimesRoman: StandardFonts.TimesRoman,
-        Courier: StandardFonts.Courier,
-      }
-      font = await pdfDoc.embedFont(fontMap[options.fontName] || StandardFonts.Helvetica)
-    }
-  }
+  // 统一将水印渲染为图片（支持中文等任意语言）
+  let wmImage: any
+  let wmWidth: number
+  let wmHeight: number
 
-  // 加载图片
-  let watermarkImage: any
-  if (options.type === 'image' && options.imageFile) {
+  if (options.type === 'text' && options.text) {
+    // 用 Canvas 渲染文字为 PNG 图片
+    const { pngBlob, width, height } = await renderTextToPng(
+      options.text,
+      options.fontSize,
+      options.fontName,
+      options.fontColor,
+    )
+    const pngBytes = new Uint8Array(await pngBlob.arrayBuffer())
+    wmImage = await pdfDoc.embedPng(pngBytes)
+    wmWidth = width
+    wmHeight = height
+  } else if (options.type === 'image' && options.imageFile) {
     const imgBytes = new Uint8Array(await options.imageFile.arrayBuffer())
     const imgName = options.imageFile.name.toLowerCase()
     if (imgName.endsWith('.png')) {
-      watermarkImage = await pdfDoc.embedPng(imgBytes)
+      wmImage = await pdfDoc.embedPng(imgBytes)
     } else if (imgName.endsWith('.jpg') || imgName.endsWith('.jpeg')) {
-      watermarkImage = await pdfDoc.embedJpg(imgBytes)
+      wmImage = await pdfDoc.embedJpg(imgBytes)
     } else {
       throw new Error('图片水印仅支持 PNG / JPG 格式')
     }
+    wmWidth = wmImage.width
+    wmHeight = wmImage.height
+  } else {
+    throw new Error('无效的水印配置')
   }
 
   for (const page of pages) {
     const { width, height } = page.getSize()
 
     if (options.tile) {
-      // 平铺模式：在整个页面重复绘制
-      const stepX = (options.type === 'text' ? options.fontSize * 8 : (watermarkImage?.width || 100)) + options.tileGapX
-      const stepY = (options.type === 'text' ? options.fontSize * 1.5 : (watermarkImage?.height || 100)) + options.tileGapY
+      // 平铺模式
+      const stepX = wmWidth + options.tileGapX
+      const stepY = wmHeight + options.tileGapY
 
-      for (let y = 0; y < height + stepY; y += stepY) {
-        for (let x = 0; x < width + stepX; x += stepX) {
-          if (options.type === 'text') {
-            page.drawText(options.text, {
-              x: x + options.offsetX,
-              y: y + options.offsetY,
-              size: options.fontSize,
-              font,
-              color: rgb(...options.fontColor),
-              opacity: options.opacity,
-              rotate: degrees(options.rotation),
-            })
-          } else if (watermarkImage) {
-            const imgW = watermarkImage.width
-            const imgH = watermarkImage.height
-            page.drawImage(watermarkImage, {
-              x: x + options.offsetX,
-              y: y + options.offsetY,
-              width: imgW,
-              height: imgH,
-              opacity: options.opacity,
-              rotate: degrees(options.rotation),
-            })
-          }
+      for (let y = -wmHeight; y < height + stepY; y += stepY) {
+        for (let x = 0; x < width + wmWidth; x += stepX) {
+          page.drawImage(wmImage, {
+            x: x + options.offsetX,
+            y: y + options.offsetY,
+            width: wmWidth,
+            height: wmHeight,
+            opacity: options.opacity,
+            rotate: degrees(options.rotation),
+          })
         }
       }
     } else {
-      // 单点模式：按 9 宫格定位
-      const wmWidth = options.type === 'text'
-        ? font.widthOfTextAtSize(options.text, options.fontSize)
-        : (watermarkImage?.width || 100)
-      const wmHeight = options.type === 'text'
-        ? options.fontSize
-        : (watermarkImage?.height || 100)
-
+      // 单点模式
       const pos = calcPosition(options.position, width, height, wmWidth, wmHeight)
       const x = pos.x + options.offsetX
       const y = pos.y + options.offsetY
 
-      if (options.type === 'text') {
-        page.drawText(options.text, {
-          x, y,
-          size: options.fontSize,
-          font,
-          color: rgb(...options.fontColor),
-          opacity: options.opacity,
-          rotate: degrees(options.rotation),
-        })
-      } else if (watermarkImage) {
-        page.drawImage(watermarkImage, {
-          x, y,
-          width: watermarkImage.width,
-          height: watermarkImage.height,
-          opacity: options.opacity,
-          rotate: degrees(options.rotation),
-        })
-      }
+      page.drawImage(wmImage, {
+        x, y,
+        width: wmWidth,
+        height: wmHeight,
+        opacity: options.opacity,
+        rotate: degrees(options.rotation),
+      })
     }
   }
 
   const outBytes = await pdfDoc.save()
   return new Blob([toStdU8(outBytes) as any], { type: 'application/pdf' })
+}
+
+/** 用 Canvas 将文字渲染为 PNG 图片（支持中文） */
+async function renderTextToPng(
+  text: string,
+  fontSize: number,
+  fontName: string,
+  fontColor: [number, number, number],
+): Promise<{ pngBlob: Blob; width: number; height: number }> {
+  // 创建临时 Canvas
+  const scale = 2 // 2倍分辨率更清晰
+  const canvas = document.createElement('canvas')
+  const ctx = canvas.getContext('2d')!
+
+  // 先用临时 canvas 测量文字尺寸
+  ctx.font = `${fontSize * scale}px ${fontName}, Arial, sans-serif`
+  const metrics = ctx.measureText(text)
+  const textW = Math.ceil(metrics.width)
+  const textH = Math.ceil(fontSize * scale * 1.5) // 1.5 倍行距
+
+  // 调整 canvas 尺寸
+  canvas.width = textW + 20 // 边距
+  canvas.height = textH + 10
+
+  // 重设字体（canvas 尺寸改变后需要重设）
+  ctx.font = `${fontSize * scale}px ${fontName}, Arial, sans-serif`
+  ctx.textBaseline = 'middle'
+  ctx.fillStyle = `rgb(${Math.round(fontColor[0] * 255)}, ${Math.round(fontColor[1] * 255)}, ${Math.round(fontColor[2] * 255)})`
+
+  // 绘制文字
+  ctx.fillText(text, 10, canvas.height / 2)
+
+  // 转为 PNG Blob
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => {
+      if (blob) {
+        // pdf-lib 使用 pt 单位，canvas 的 1px ≈ 0.75pt (96dpi)
+        // 我们用 scale 放大了，所以实际 pt 尺寸 = 像素 / (scale * 96/72)
+        const ptPerPx = 72 / (96 * scale)
+        resolve({
+          pngBlob: blob,
+          width: textW * ptPerPx,
+          height: textH * ptPerPx,
+        })
+      } else {
+        // fallback
+        resolve({ pngBlob: new Blob(), width: fontSize * text.length * 0.5, height: fontSize })
+      }
+    }, 'image/png')
+  })
 }
 
 /** 9 宫格坐标计算（左下角为原点） */

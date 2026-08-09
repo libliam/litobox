@@ -255,8 +255,9 @@ onMounted(async () => {
 
   // 监听窗口大小和位置变化
   const win = getCurrentWindow()
-  windowResizeHandler = await win.on('resize', () => saveWindowState())
-  windowMoveHandler = await win.on('move', () => saveWindowState())
+  // Tauri 2.x 使用 win.listen() 监听窗口事件
+  windowResizeHandler = await win.listen('resize', () => saveWindowState())
+  windowMoveHandler = await win.listen('move', () => saveWindowState())
 
   unlistenShortcut = await listen('global-shortcut-triggered', (event) => {
     const toolId = event.payload as string

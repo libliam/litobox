@@ -889,11 +889,30 @@
       </div>
     </div>
 
+    <!-- Tab 8: PDF 加水印（预览卡片） -->
+    <div v-if="activeTab === 'watermark' && watermarkPdfFile" class="tool-card">
+      <div class="card-header">
+        <span class="card-title">水印预览（第 1 页）</span>
+        <div class="card-actions">
+          <el-button size="small" @click="refreshPreview" :disabled="isPreviewRendering">刷新预览</el-button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div v-if="isPreviewRendering" style="text-align: center; padding: 40px; color: var(--text-secondary)">
+          正在渲染预览...
+        </div>
+        <div v-else-if="previewError" class="error-message">{{ previewError }}</div>
+        <div v-else class="preview-container">
+          <canvas ref="previewCanvasRef" class="preview-canvas"></canvas>
+        </div>
+      </div>
+    </div>
+
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
 import { ElMessage, ElLoading } from 'element-plus'
 import { QuestionFilled, Warning } from '@element-plus/icons-vue'
 import {
@@ -1427,6 +1446,240 @@ const handleSaveWatermarkedPdf = async () => {
   await saveFileWithDialog(watermarkResult.value, `${baseName}_watermarked.pdf`, 'pdf')
   ElMessage.success('已保存')
 }
+
+// ============ 水印预览 ============
+const previewCanvasRef = ref<HTMLCanvasElement | null>(null)
+const isPreviewRendering = ref(false)
+const previewError = ref('')
+let previewRenderTimer: ReturnType<typeof setTimeout> | null = null
+let previewPdfDoc: any = null // 缓存 PDFDocument 避免重复解析
+
+/** 渲染预览：画一个示例页面 + 叠加水印 */
+const renderWatermarkPreview = async () => {
+  if (!watermarkPdfFile.value) return
+  // Canvas ref 可能还没就绪（v-if 延迟），等几个 tick
+  if (!previewCanvasRef.value) {
+    await nextTick()
+    await nextTick()
+  }
+  if (!previewCanvasRef.value) {
+    previewError.value = '预览 Canvas 未就绪，请手动点击「刷新预览」'
+    return
+  }
+  isPreviewRendering.value = true
+  previewError.value = ''
+
+  try {
+    const canvas = previewCanvasRef.value
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('Canvas context 不可用')
+
+    // 使用 A4 比例 (595 x 842 pt)，最大宽度 550px
+    const pageW = 595
+    const pageH = 842
+    const maxW = 550
+    const scale = maxW / pageW
+    const canvasW = Math.round(pageW * scale)
+    const canvasH = Math.round(pageH * scale)
+    canvas.width = canvasW
+    canvas.height = canvasH
+
+    // 画白色背景
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, canvasW, canvasH)
+
+    // 画示例页面内容（模拟 PDF 文本）
+    drawSamplePage(ctx, canvasW, canvasH, scale)
+
+    // 叠加水印
+    ctx.save()
+    ctx.globalAlpha = wmOpacity.value
+    const rotationRad = (wmRotation.value * Math.PI) / 180
+
+    if (wmType.value === 'text' && wmText.value) {
+      const fontSize = wmFontSize.value * scale
+      ctx.font = `${fontSize}px ${wmFontName.value === 'TimesRoman' ? 'Times New Roman' : wmFontName.value}, sans-serif`
+      ctx.fillStyle = wmFontColor.value
+      ctx.textBaseline = 'bottom'
+
+      const textW = ctx.measureText(wmText.value).width
+      const textH = fontSize
+
+      if (wmTile.value) {
+        // 平铺模式
+        const stepX = textW * 1.5 + wmTileGapX.value * scale
+        const stepY = textH * 2 + wmTileGapY.value * scale
+        for (let y = -textH; y < canvasH + textH; y += stepY) {
+          for (let x = 0; x < canvasW + textW; x += stepX) {
+            ctx.save()
+            ctx.translate(x + wmOffsetX.value * scale, y + wmOffsetY.value * scale)
+            ctx.rotate(rotationRad)
+            ctx.fillText(wmText.value, 0, 0)
+            ctx.restore()
+          }
+        }
+      } else {
+        // 单点模式
+        const pos = calcCanvasPosition(wmPosition.value, canvasW, canvasH, textW, textH)
+        ctx.save()
+        ctx.translate(pos.x + wmOffsetX.value * scale, pos.y + wmOffsetY.value * scale)
+        ctx.rotate(rotationRad)
+        ctx.fillText(wmText.value, 0, 0)
+        ctx.restore()
+      }
+    } else if (wmType.value === 'image' && wmImageFile.value) {
+      const img = new Image()
+      img.src = URL.createObjectURL(wmImageFile.value)
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve()
+        img.onerror = () => reject(new Error('图片加载失败'))
+      })
+
+      const imgW = img.width * scale * 0.5
+      const imgH = img.height * scale * 0.5
+
+      if (wmTile.value) {
+        const stepX = imgW + wmTileGapX.value * scale
+        const stepY = imgH + wmTileGapY.value * scale
+        for (let y = 0; y < canvasH + imgH; y += stepY) {
+          for (let x = 0; x < canvasW + imgW; x += stepX) {
+            ctx.save()
+            ctx.translate(x + wmOffsetX.value * scale, y + wmOffsetY.value * scale)
+            ctx.rotate(rotationRad)
+            ctx.drawImage(img, 0, 0, imgW, imgH)
+            ctx.restore()
+          }
+        }
+      } else {
+        const pos = calcCanvasPosition(wmPosition.value, canvasW, canvasH, imgW, imgH)
+        ctx.save()
+        ctx.translate(pos.x + wmOffsetX.value * scale, pos.y + wmOffsetY.value * scale)
+        ctx.rotate(rotationRad)
+        ctx.drawImage(img, 0, 0, imgW, imgH)
+        ctx.restore()
+      }
+      URL.revokeObjectURL(img.src)
+    }
+
+    ctx.restore()
+  } catch (e: any) {
+    previewError.value = e.message || '预览渲染失败'
+  } finally {
+    isPreviewRendering.value = false
+  }
+}
+
+/** 绘制示例 PDF 页面内容 */
+function drawSamplePage(ctx: CanvasRenderingContext2D, w: number, h: number, scale: number) {
+  const pad = 50 * scale
+
+  // 标题
+  ctx.fillStyle = '#1a1a1a'
+  ctx.font = `bold ${24 * scale}px Arial, sans-serif`
+  ctx.textBaseline = 'top'
+  ctx.fillText('示例 PDF 文档', pad, pad)
+
+  // 分割线
+  ctx.strokeStyle = '#333333'
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  ctx.moveTo(pad, pad + 40 * scale)
+  ctx.lineTo(w - pad, pad + 40 * scale)
+  ctx.stroke()
+
+  // 正文
+  ctx.font = `${14 * scale}px Arial, sans-serif`
+  ctx.fillStyle = '#333333'
+
+  const lines = [
+    '这是一段示例文本，用于预览水印效果。',
+    '您可以在此页面上调整水印的位置、大小、透明度等参数，',
+    '实时查看水印叠加效果。',
+    '',
+    'Lorem ipsum dolor sit amet, consectetur adipiscing elit.',
+    'Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.',
+    'Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.',
+    '',
+    '1. 支持文字水印',
+    '2. 支持图片水印',
+    '3. 支持9宫格定位',
+    '4. 支持平铺模式',
+  ]
+
+  lines.forEach((line, i) => {
+    ctx.fillText(line, pad, pad + 60 * scale + i * 22 * scale)
+  })
+
+  // 页脚
+  ctx.fillStyle = '#999999'
+  ctx.font = `${12 * scale}px Arial, sans-serif`
+  ctx.textAlign = 'center'
+  ctx.fillText('— 第 1 页 —', w / 2, h - pad)
+}
+
+/** Canvas 坐标系下的 9 宫格定位（左上角为原点） */
+function calcCanvasPosition(
+  pos: string, canvasW: number, canvasH: number, itemW: number, itemH: number,
+): { x: number; y: number } {
+  const margin = 12
+  const colX: Record<string, number> = {
+    tl: margin, tc: (canvasW - itemW) / 2, tr: canvasW - itemW - margin,
+    ml: margin, mc: (canvasW - itemW) / 2, mr: canvasW - itemW - margin,
+    bl: margin, bc: (canvasW - itemW) / 2, br: canvasW - itemW - margin,
+  }
+  const rowY: Record<string, number> = {
+    tl: margin + itemH, tc: margin + itemH, tr: margin + itemH,
+    ml: (canvasH + itemH) / 2, mc: (canvasH + itemH) / 2, mr: (canvasH + itemH) / 2,
+    bl: canvasH - margin, bc: canvasH - margin, br: canvasH - margin,
+  }
+  return { x: colX[pos] ?? margin, y: rowY[pos] ?? (canvasH - margin) }
+}
+
+const refreshPreview = () => {
+  previewPdfDoc = null // 强制重新加载
+  renderWatermarkPreview()
+}
+
+/** 防抖预览：参数变化后 400ms 自动重绘 */
+function schedulePreviewRefresh() {
+  if (previewRenderTimer) clearTimeout(previewRenderTimer)
+  previewRenderTimer = setTimeout(() => {
+    previewPdfDoc = null
+    renderWatermarkPreview()
+  }, 400)
+}
+
+// 监听所有水印参数变化，自动刷新预览
+watch(
+  [wmType, wmText, wmFontSize, wmFontName, wmFontColor, wmOpacity, wmRotation, wmPosition, wmTile, wmTileGapX, wmTileGapY, wmOffsetX, wmOffsetY],
+  () => {
+    if (watermarkPdfFile.value && !isPreviewRendering.value) {
+      schedulePreviewRefresh()
+    }
+  }
+)
+
+// 监听图片文件变化
+watch(wmImageFile, () => {
+  if (watermarkPdfFile.value && !isPreviewRendering.value) {
+    schedulePreviewRefresh()
+  }
+})
+
+// 监听 PDF 文件变化，触发首次预览
+watch(watermarkPdfFile, async (newFile) => {
+  if (newFile) {
+    previewPdfDoc = null
+    // 等待 v-if 渲染 Canvas 元素，多等几 tick 确保 ref 就绪
+    await nextTick()
+    await nextTick()
+    if (!previewCanvasRef.value) {
+      // 兜底：再等 100ms
+      await new Promise(r => setTimeout(r, 100))
+    }
+    renderWatermarkPreview()
+  }
+})
 
 // ============ OCR 识别 ============
 const ocrResults = ref<string[]>([])
@@ -2302,6 +2555,24 @@ html.light .pdf-tabs :deep(.el-tabs__header) {
 .image-label {
   font-size: 12px;
   color: var(--text-secondary);
+}
+
+/* 水印预览 */
+.preview-container {
+  padding: 16px;
+  background: #ffffff;
+  border-radius: 6px;
+  overflow: auto;
+  max-height: 700px;
+  text-align: center;
+}
+
+.preview-canvas {
+  max-width: 100%;
+  height: auto;
+  display: inline-block;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
 }
 
 /* 图片列表 */
