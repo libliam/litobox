@@ -1,11 +1,12 @@
 {
   "name": "litobox",
-  "version": "7.1.4",
+  "version": "7.2.0",
   "description": "栗的百宝箱",
   "author": "liam",
   "scripts": {
-    "dev": "vite",
-    "build": "vue-tsc --noEmit && vite build",
+    "gen-changelog": "node scripts/gen-changelog.cjs",
+    "dev": "node scripts/gen-changelog.cjs && vite",
+    "build": "node scripts/gen-changelog.cjs && vue-tsc --noEmit && vite build",
     "tauri": "tauri"
   },
   "dependencies": {
