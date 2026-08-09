@@ -752,61 +752,34 @@
         <span class="card-title">水印设置</span>
       </div>
       <div class="card-body">
-        <!-- 水印类型 -->
+        <!-- 文字水印设置 -->
         <div class="action-grid" style="margin-bottom: 16px">
           <div class="action-group">
-            <div class="group-label">水印类型</div>
-            <el-radio-group v-model="wmType" size="small">
-              <el-radio-button value="text">文字</el-radio-button>
-              <el-radio-button value="image">图片</el-radio-button>
-            </el-radio-group>
+            <div class="group-label">水印文字</div>
+            <el-input
+              v-model="wmText"
+              placeholder="输入水印文字"
+              size="small"
+              style="width: 260px"
+            />
+          </div>
+          <div class="action-group">
+            <div class="group-label">字号</div>
+            <el-input-number v-model="wmFontSize" :min="8" :max="120" size="small" style="width: 120px" />
+          </div>
+          <div class="action-group">
+            <div class="group-label">字体</div>
+            <el-select v-model="wmFontName" size="small" style="width: 120px">
+              <el-option label="Helvetica" value="Helvetica" />
+              <el-option label="Times Roman" value="TimesRoman" />
+              <el-option label="Courier" value="Courier" />
+            </el-select>
+          </div>
+          <div class="action-group">
+            <div class="group-label">颜色</div>
+            <el-color-picker v-model="wmFontColor" :predefine="['#000000','#ff0000','#0000ff','#808080','#c0c0c0']" size="small" />
           </div>
         </div>
-
-        <!-- 文字水印设置 -->
-        <template v-if="wmType === 'text'">
-          <div class="action-grid" style="margin-bottom: 12px">
-            <div class="action-group">
-              <div class="group-label">水印文字</div>
-              <el-input
-                v-model="wmText"
-                placeholder="输入水印文字"
-                size="small"
-                style="width: 260px"
-              />
-            </div>
-            <div class="action-group">
-              <div class="group-label">字号</div>
-              <el-input-number v-model="wmFontSize" :min="8" :max="120" size="small" style="width: 120px" />
-            </div>
-            <div class="action-group">
-              <div class="group-label">字体</div>
-              <el-select v-model="wmFontName" size="small" style="width: 120px">
-                <el-option label="Helvetica" value="Helvetica" />
-                <el-option label="Times Roman" value="TimesRoman" />
-                <el-option label="Courier" value="Courier" />
-              </el-select>
-            </div>
-            <div class="action-group">
-              <div class="group-label">颜色</div>
-              <el-color-picker v-model="wmFontColor" :predefine="['#000000','#ff0000','#0000ff','#808080','#c0c0c0']" size="small" />
-            </div>
-          </div>
-        </template>
-
-        <!-- 图片水印设置 -->
-        <template v-if="wmType === 'image'">
-          <div class="action-grid" style="margin-bottom: 12px">
-            <div class="action-group">
-              <div class="group-label">水印图片</div>
-              <el-button size="small" @click="triggerWmImageInput">选择图片</el-button>
-              <input ref="wmImageInputRef" type="file" accept="image/png,image/jpeg" style="display:none" @change="handleWmImageSelect" />
-              <span v-if="wmImageFile" style="margin-left: 8px; color: var(--text-secondary); font-size: 13px">
-                {{ wmImageFile.name }} ({{ formatFileSize(wmImageFile.size) }})
-              </span>
-            </div>
-          </div>
-        </template>
 
         <!-- 通用设置 -->
         <div class="action-grid" style="margin-bottom: 12px">
@@ -871,7 +844,7 @@
               <el-button
                 type="primary"
                 size="small"
-                :disabled="!watermarkPdfFile || isAddingWatermark || (wmType === 'text' && !wmText) || (wmType === 'image' && !wmImageFile)"
+                :disabled="!watermarkPdfFile || isAddingWatermark || !wmText"
                 :loading="isAddingWatermark"
                 @click="handleAddWatermark"
               >
@@ -1327,13 +1300,10 @@ const isAddingWatermark = ref(false)
 const watermarkResult = ref<Blob | null>(null)
 const watermarkError = ref('')
 
-const wmType = ref<'text' | 'image'>('text')
 const wmText = ref('CONFIDENTIAL')
 const wmFontSize = ref(48)
 const wmFontName = ref<'Helvetica' | 'TimesRoman' | 'Courier'>('Helvetica')
 const wmFontColor = ref('#808080')
-const wmImageFile = ref<File | null>(null)
-const wmImageInputRef = ref<HTMLInputElement | null>(null)
 const wmOpacity = ref(0.3)
 const wmRotation = ref(-45)
 const wmPosition = ref<'tl' | 'tc' | 'tr' | 'ml' | 'mc' | 'mr' | 'bl' | 'bc' | 'br'>('mc')
@@ -1376,16 +1346,6 @@ const handleClearWatermarkPdf = () => {
   if (watermarkInputRef.value) watermarkInputRef.value.value = ''
 }
 
-const triggerWmImageInput = () => wmImageInputRef.value?.click()
-
-const handleWmImageSelect = (e: Event) => {
-  const input = e.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file) return
-  wmImageFile.value = file
-  input.value = ''
-}
-
 /** 将 hex 颜色转为 pdf-lib rgb 三元组 */
 function hexToRgb(hex: string): [number, number, number] {
   const h = hex.replace('#', '')
@@ -1396,9 +1356,7 @@ function hexToRgb(hex: string): [number, number, number] {
 }
 
 const handleAddWatermark = async () => {
-  if (!watermarkPdfFile.value) return
-  if (wmType.value === 'text' && !wmText.value) return
-  if (wmType.value === 'image' && !wmImageFile.value) return
+  if (!watermarkPdfFile.value || !wmText.value) return
 
   watermarkError.value = ''
   watermarkResult.value = null
@@ -1406,12 +1364,11 @@ const handleAddWatermark = async () => {
 
   try {
     const options: WatermarkOptions = {
-      type: wmType.value,
+      type: 'text',
       text: wmText.value,
       fontSize: wmFontSize.value,
       fontName: wmFontName.value,
       fontColor: hexToRgb(wmFontColor.value),
-      imageFile: wmType.value === 'image' ? wmImageFile.value || undefined : undefined,
       opacity: wmOpacity.value,
       rotation: wmRotation.value,
       position: wmPosition.value,
@@ -1427,11 +1384,11 @@ const handleAddWatermark = async () => {
     ElMessage.success('水印添加完成')
     store.addHistory({
       tool: 'pdf',
-      action: `PDF加水印(${wmType.value === 'text' ? '文字' : '图片'})`,
+      action: 'PDF加水印(文字)',
       inputPreview: watermarkPdfFile.value.name.slice(0, 50),
       outputPreview: formatFileSize(blob.size),
       inputFull: watermarkPdfFile.value.name,
-      outputFull: `${wmType.value === 'text' ? wmText.value : wmImageFile.value?.name} | ${wmPosition.value} | ${Math.round(wmOpacity.value * 100)}% | ${wmRotation.value}°`,
+      outputFull: `${wmText.value} | ${wmPosition.value} | ${Math.round(wmOpacity.value * 100)}% | ${wmRotation.value}°`,
     })
   } catch (e: any) {
     watermarkError.value = e.message || '添加水印失败'
@@ -1491,12 +1448,11 @@ const renderWatermarkPreview = async () => {
     // 画示例页面内容（模拟 PDF 文本）
     drawSamplePage(ctx, canvasW, canvasH, scale)
 
-    // 叠加水印
-    ctx.save()
-    ctx.globalAlpha = wmOpacity.value
-    const rotationRad = (wmRotation.value * Math.PI) / 180
-
-    if (wmType.value === 'text' && wmText.value) {
+    // 叠加水印（Canvas Y轴向下，PDF Y轴向上，所以旋转取反）
+    if (wmText.value) {
+      ctx.save()
+      ctx.globalAlpha = wmOpacity.value
+      const rotationRad = -(wmRotation.value * Math.PI) / 180
       const fontSize = wmFontSize.value * scale
       ctx.font = `${fontSize}px ${wmFontName.value === 'TimesRoman' ? 'Times New Roman' : wmFontName.value}, sans-serif`
       ctx.fillStyle = wmFontColor.value
@@ -1527,41 +1483,8 @@ const renderWatermarkPreview = async () => {
         ctx.fillText(wmText.value, 0, 0)
         ctx.restore()
       }
-    } else if (wmType.value === 'image' && wmImageFile.value) {
-      const img = new Image()
-      img.src = URL.createObjectURL(wmImageFile.value)
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => resolve()
-        img.onerror = () => reject(new Error('图片加载失败'))
-      })
-
-      const imgW = img.width * scale * 0.5
-      const imgH = img.height * scale * 0.5
-
-      if (wmTile.value) {
-        const stepX = imgW + wmTileGapX.value * scale
-        const stepY = imgH + wmTileGapY.value * scale
-        for (let y = 0; y < canvasH + imgH; y += stepY) {
-          for (let x = 0; x < canvasW + imgW; x += stepX) {
-            ctx.save()
-            ctx.translate(x + wmOffsetX.value * scale, y + wmOffsetY.value * scale)
-            ctx.rotate(rotationRad)
-            ctx.drawImage(img, 0, 0, imgW, imgH)
-            ctx.restore()
-          }
-        }
-      } else {
-        const pos = calcCanvasPosition(wmPosition.value, canvasW, canvasH, imgW, imgH)
-        ctx.save()
-        ctx.translate(pos.x + wmOffsetX.value * scale, pos.y + wmOffsetY.value * scale)
-        ctx.rotate(rotationRad)
-        ctx.drawImage(img, 0, 0, imgW, imgH)
-        ctx.restore()
-      }
-      URL.revokeObjectURL(img.src)
+      ctx.restore()
     }
-
-    ctx.restore()
   } catch (e: any) {
     previewError.value = e.message || '预览渲染失败'
   } finally {
@@ -1571,50 +1494,44 @@ const renderWatermarkPreview = async () => {
 
 /** 绘制示例 PDF 页面内容 */
 function drawSamplePage(ctx: CanvasRenderingContext2D, w: number, h: number, scale: number) {
-  const pad = 50 * scale
+  const pad = 40
 
   // 标题
-  ctx.fillStyle = '#1a1a1a'
-  ctx.font = `bold ${24 * scale}px Arial, sans-serif`
+  ctx.fillStyle = '#000000'
+  ctx.font = 'bold 20px Arial, sans-serif'
   ctx.textBaseline = 'top'
-  ctx.fillText('示例 PDF 文档', pad, pad)
+  ctx.fillText('Sample PDF Document', pad, pad)
 
   // 分割线
-  ctx.strokeStyle = '#333333'
-  ctx.lineWidth = 1
+  ctx.strokeStyle = '#000000'
+  ctx.lineWidth = 2
   ctx.beginPath()
-  ctx.moveTo(pad, pad + 40 * scale)
-  ctx.lineTo(w - pad, pad + 40 * scale)
+  ctx.moveTo(pad, pad + 35)
+  ctx.lineTo(w - pad, pad + 35)
   ctx.stroke()
 
   // 正文
-  ctx.font = `${14 * scale}px Arial, sans-serif`
+  ctx.font = '14px Arial, sans-serif'
   ctx.fillStyle = '#333333'
 
   const lines = [
-    '这是一段示例文本，用于预览水印效果。',
-    '您可以在此页面上调整水印的位置、大小、透明度等参数，',
-    '实时查看水印叠加效果。',
+    'This is a sample page for watermark preview.',
+    'Adjust watermark settings to see the effect in real-time.',
     '',
-    'Lorem ipsum dolor sit amet, consectetur adipiscing elit.',
-    'Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.',
-    'Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.',
-    '',
-    '1. 支持文字水印',
-    '2. 支持图片水印',
-    '3. 支持9宫格定位',
-    '4. 支持平铺模式',
+    '1. Text watermark supported',
+    '2. 9-grid positioning',
+    '3. Tile mode supported',
   ]
 
   lines.forEach((line, i) => {
-    ctx.fillText(line, pad, pad + 60 * scale + i * 22 * scale)
+    ctx.fillText(line, pad, pad + 55 + i * 24)
   })
 
   // 页脚
-  ctx.fillStyle = '#999999'
-  ctx.font = `${12 * scale}px Arial, sans-serif`
+  ctx.fillStyle = '#666666'
+  ctx.font = '12px Arial, sans-serif'
   ctx.textAlign = 'center'
-  ctx.fillText('— 第 1 页 —', w / 2, h - pad)
+  ctx.fillText('— Page 1 —', w / 2, h - 30)
 }
 
 /** Canvas 坐标系下的 9 宫格定位（左上角为原点） */
@@ -1651,20 +1568,13 @@ function schedulePreviewRefresh() {
 
 // 监听所有水印参数变化，自动刷新预览
 watch(
-  [wmType, wmText, wmFontSize, wmFontName, wmFontColor, wmOpacity, wmRotation, wmPosition, wmTile, wmTileGapX, wmTileGapY, wmOffsetX, wmOffsetY],
+  [wmText, wmFontSize, wmFontName, wmFontColor, wmOpacity, wmRotation, wmPosition, wmTile, wmTileGapX, wmTileGapY, wmOffsetX, wmOffsetY],
   () => {
     if (watermarkPdfFile.value && !isPreviewRendering.value) {
       schedulePreviewRefresh()
     }
   }
 )
-
-// 监听图片文件变化
-watch(wmImageFile, () => {
-  if (watermarkPdfFile.value && !isPreviewRendering.value) {
-    schedulePreviewRefresh()
-  }
-})
 
 // 监听 PDF 文件变化，触发首次预览
 watch(watermarkPdfFile, async (newFile) => {

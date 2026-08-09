@@ -888,14 +888,11 @@ export async function extractEmbeddedImages(pdfFile: File): Promise<ExtractedIma
 // ============ PDF 加水印 ============
 
 export interface WatermarkOptions {
-  type: 'text' | 'image'
   // 文字水印
   text: string
   fontSize: number
   fontName: 'Helvetica' | 'TimesRoman' | 'Courier'
   fontColor: [number, number, number] // RGB 0-1
-  // 图片水印
-  imageFile?: File
   // 通用
   opacity: number        // 0.1 ~ 1.0
   rotation: number       // -90 ~ 90 度
@@ -915,38 +912,17 @@ export async function addWatermark(
   const pdfDoc = await PDFDocument.load(buffer)
   const pages = pdfDoc.getPages()
 
-  // 统一将水印渲染为图片（支持中文等任意语言）
-  let wmImage: any
-  let wmWidth: number
-  let wmHeight: number
-
-  if (options.type === 'text' && options.text) {
-    // 用 Canvas 渲染文字为 PNG 图片
-    const { pngBlob, width, height } = await renderTextToPng(
-      options.text,
-      options.fontSize,
-      options.fontName,
-      options.fontColor,
-    )
-    const pngBytes = new Uint8Array(await pngBlob.arrayBuffer())
-    wmImage = await pdfDoc.embedPng(pngBytes)
-    wmWidth = width
-    wmHeight = height
-  } else if (options.type === 'image' && options.imageFile) {
-    const imgBytes = new Uint8Array(await options.imageFile.arrayBuffer())
-    const imgName = options.imageFile.name.toLowerCase()
-    if (imgName.endsWith('.png')) {
-      wmImage = await pdfDoc.embedPng(imgBytes)
-    } else if (imgName.endsWith('.jpg') || imgName.endsWith('.jpeg')) {
-      wmImage = await pdfDoc.embedJpg(imgBytes)
-    } else {
-      throw new Error('图片水印仅支持 PNG / JPG 格式')
-    }
-    wmWidth = wmImage.width
-    wmHeight = wmImage.height
-  } else {
-    throw new Error('无效的水印配置')
-  }
+  // 用 Canvas 渲染文字为 PNG 图片（支持中文等任意语言）
+  const { pngBlob, width, height } = await renderTextToPng(
+    options.text,
+    options.fontSize,
+    options.fontName,
+    options.fontColor,
+  )
+  const pngBytes = new Uint8Array(await pngBlob.arrayBuffer())
+  const wmImage = await pdfDoc.embedPng(pngBytes)
+  const wmWidth = width
+  const wmHeight = height
 
   for (const page of pages) {
     const { width, height } = page.getSize()
