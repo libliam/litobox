@@ -1409,7 +1409,6 @@ const previewCanvasRef = ref<HTMLCanvasElement | null>(null)
 const isPreviewRendering = ref(false)
 const previewError = ref('')
 let previewRenderTimer: ReturnType<typeof setTimeout> | null = null
-let previewPdfDoc: any = null // 缓存 PDFDocument 避免重复解析
 
 /** 渲染预览：画一个示例页面 + 叠加水印 */
 const renderWatermarkPreview = async () => {
@@ -1493,7 +1492,7 @@ const renderWatermarkPreview = async () => {
 }
 
 /** 绘制示例 PDF 页面内容 */
-function drawSamplePage(ctx: CanvasRenderingContext2D, w: number, h: number, scale: number) {
+function drawSamplePage(ctx: CanvasRenderingContext2D, w: number, h: number, _scale: number) {
   const pad = 40
 
   // 标题
@@ -1553,7 +1552,6 @@ function calcCanvasPosition(
 }
 
 const refreshPreview = () => {
-  previewPdfDoc = null // 强制重新加载
   renderWatermarkPreview()
 }
 
@@ -1561,7 +1559,6 @@ const refreshPreview = () => {
 function schedulePreviewRefresh() {
   if (previewRenderTimer) clearTimeout(previewRenderTimer)
   previewRenderTimer = setTimeout(() => {
-    previewPdfDoc = null
     renderWatermarkPreview()
   }, 400)
 }
@@ -1579,7 +1576,6 @@ watch(
 // 监听 PDF 文件变化，触发首次预览
 watch(watermarkPdfFile, async (newFile) => {
   if (newFile) {
-    previewPdfDoc = null
     // 等待 v-if 渲染 Canvas 元素，多等几 tick 确保 ref 就绪
     await nextTick()
     await nextTick()

@@ -1,5 +1,5 @@
 import * as pdfjsLib from 'pdfjs-dist'
-import { PDFDocument, rgb, degrees } from 'pdf-lib'
+import { PDFDocument, degrees } from 'pdf-lib'
 
 // 配置 pdfjs worker（模块加载时执行一次）
 pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js'
@@ -888,6 +888,8 @@ export async function extractEmbeddedImages(pdfFile: File): Promise<ExtractedIma
 // ============ PDF 加水印 ============
 
 export interface WatermarkOptions {
+  // 水印类型（预留图片水印扩展）
+  type?: 'text' | 'image'
   // 文字水印
   text: string
   fontSize: number
