@@ -526,12 +526,19 @@ body {
   border-top: 1px solid var(--border-color) !important;
 }
 
+.el-select .el-select__wrapper,
 .el-select .el-input__wrapper {
   background-color: var(--bg-card) !important;
   border-color: var(--border-color) !important;
+  box-shadow: 0 0 0 1px var(--border-color) inset !important;
 }
+.el-select .el-select__wrapper:hover,
 .el-select .el-input__wrapper:hover {
-  border-color: var(--accent-cyan) !important;
+  box-shadow: 0 0 0 1px var(--accent-cyan) inset !important;
+}
+.el-select .el-select__wrapper.is-focused,
+.el-select .el-input__wrapper.is-focused {
+  box-shadow: 0 0 0 1px var(--accent-cyan) inset !important;
 }
 .el-select-dropdown {
   background: var(--bg-card) !important;
@@ -549,10 +556,19 @@ body {
 }
 
 /* Dialog / Popover 等浮层深色主题 */
-:root {
+:root,
+html.dark,
+html.light {
   --el-bg-color-overlay: var(--bg-card);
   --el-popover-bg-color: var(--bg-card);
   --el-dialog-bg-color: var(--bg-card);
+  --el-bg-color: var(--bg-primary);
+  --el-text-color-primary: var(--text-primary);
+  --el-text-color-regular: var(--text-secondary);
+  --el-text-color-secondary: var(--text-muted);
+  --el-border-color: var(--border-color);
+  --el-fill-color-light: var(--bg-input);
+  --el-mask-color: rgba(0, 0, 0, 0.5);
 }
 
 /* 强制覆盖弹窗内部元素 */
@@ -643,4 +659,26 @@ input.search-input:-webkit-autofill {
   -webkit-box-shadow: 0 0 0 1000px var(--bg-input) inset !important;
   -webkit-text-fill-color: var(--text-primary) !important;
   caret-color: var(--text-primary);
+}
+
+/* 侧边栏主题选择器 popper 样式 */
+.sidebar-theme-popper.el-select-dropdown {
+  min-width: 90px !important;
+  padding: 4px !important;
+  border-radius: 6px !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3) !important;
+  font-size: 12px !important;
+}
+
+.sidebar-theme-popper.el-select-dropdown .el-select-dropdown__item {
+  padding: 6px 10px !important;
+  min-height: 28px !important;
+  font-size: 12px !important;
+  line-height: 1.2 !important;
+  border-radius: 4px !important;
+  margin: 1px 0 !important;
+}
+
+.sidebar-theme-popper.el-select-dropdown .el-select-dropdown__item + .el-select-dropdown__item {
+  margin-top: 2px !important;
 }

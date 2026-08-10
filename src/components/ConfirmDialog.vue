@@ -4,7 +4,7 @@ import { ref, watch, onBeforeUnmount, type PropType } from 'vue'
 export interface ConfirmOptions {
   title: string
   message: string
-  type?: 'warning' | 'danger'
+  type?: 'warning' | 'danger' | 'info'
   confirmText?: string
   cancelText?: string
   closeOnClickOverlay?: boolean
@@ -16,7 +16,7 @@ const props = defineProps({
   title: String,
   message: String,
   type: {
-    type: String as PropType<'warning' | 'danger'>,
+    type: String as PropType<'warning' | 'danger' | 'info'>,
     default: 'warning',
   },
   confirmText: {
@@ -98,8 +98,8 @@ onBeforeUnmount(() => {
               <span class="confirm-title">{{ title }}</span>
               <button class="confirm-close" @click="handleCancel" aria-label="关闭">×</button>
             </div>
-            <div class="confirm-body">
-              <div class="confirm-icon" :class="type">
+            <div class="confirm-body" :class="{ 'no-icon': type === 'info' }">
+              <div v-if="type !== 'info'" class="confirm-icon" :class="type">
                 <svg v-if="type === 'warning'" viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
                   <line x1="12" y1="9" x2="12" y2="13"/>
@@ -200,6 +200,15 @@ onBeforeUnmount(() => {
 .confirm-icon.warning { color: var(--accent-orange, #f59e0b); }
 .confirm-icon.danger { color: var(--accent-red, #ef4444); }
 
+.confirm-body.no-icon {
+  justify-content: center;
+}
+
+.confirm-body.no-icon .confirm-message {
+  text-align: center;
+  padding-top: 0;
+}
+
 .confirm-message {
   flex: 1;
   font-size: 14px;
@@ -247,6 +256,10 @@ onBeforeUnmount(() => {
 
 .confirm-btn.ok.danger {
   background: linear-gradient(135deg, #ef4444, #dc2626);
+}
+
+.confirm-btn.ok.info {
+  background: linear-gradient(135deg, var(--accent-cyan, #06b6d4), #0891b2);
 }
 
 .confirm-btn.ok:hover {

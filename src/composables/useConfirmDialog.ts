@@ -6,7 +6,7 @@ interface ConfirmState {
   visible: boolean
   title: string
   message: string
-  type: 'warning' | 'danger'
+  type: 'warning' | 'danger' | 'info'
   confirmText: string
   cancelText: string
   closeOnClickOverlay: boolean

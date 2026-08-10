@@ -3,8 +3,10 @@
     <div class="tool-card sticky-card">
       <el-tabs v-model="activeTab" class="image-tabs">
         <el-tab-pane label="批量压缩/转换" name="compress" />
-        <el-tab-pane label="图片拼图" name="merge" />
+        <el-tab-pane label="尺寸缩放" name="resize" />
+        <el-tab-pane label="图片转Base64" name="base64" />
         <el-tab-pane label="加水印" name="watermark" />
+        <el-tab-pane label="图片拼图" name="merge" />
         <el-tab-pane label="调色板提取" name="palette" />
       </el-tabs>
     </div>
@@ -267,6 +269,130 @@
         <div v-if="error" class="error-message">{{ error }}</div>
       </div>
     </div>
+
+    <!-- 单图上传（尺寸缩放/Base64 共用） -->
+    <div v-if="activeTab === 'resize' || activeTab === 'base64'" class="tool-card">
+      <div class="card-header">
+        <span class="card-title">图片输入</span>
+        <div class="card-actions">
+          <el-button size="small" type="primary" @click="triggerSingleFileInput">上传文件</el-button>
+          <el-button v-if="singleImageFile" size="small" @click="handleClearSingleImage">移除</el-button>
+        </div>
+      </div>
+      <div
+        class="card-body upload-area"
+        :class="{ 'drag-over': isSingleDragging }"
+        @dragover="handleSingleDragOver"
+        @dragleave="handleSingleDragLeave"
+        @drop="handleSingleDrop"
+      >
+        <input
+          ref="singleFileInputRef"
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/bmp"
+          style="display: none"
+          @change="handleSingleFileSelect"
+        />
+        <div v-if="singleImageFile" class="image-info">
+          <span class="info-name">{{ singleImageFile.name }}</span>
+          <span class="info-size">{{ formatBytes(singleImageInfo?.size || 0) }}</span>
+          <span class="info-dimensions">{{ singleImageInfo?.width }}×{{ singleImageInfo?.height }}</span>
+        </div>
+        <div v-else class="upload-hint">
+          点击「上传文件」或拖拽图片到此处
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 2: 尺寸缩放 -->
+    <div v-if="activeTab === 'resize'" class="tool-card">
+      <div class="card-header">
+        <span class="card-title">尺寸缩放</span>
+      </div>
+      <div class="card-body">
+        <div class="resize-controls">
+          <div class="input-row">
+            <label>宽度 (px)</label>
+            <input
+              type="number"
+              v-model.number="resizeWidth"
+              :disabled="lockAspect && !resizeTarget"
+              class="resize-input"
+              @input="handleWidthChange"
+            />
+          </div>
+          <div class="input-row">
+            <label>高度 (px)</label>
+            <input
+              type="number"
+              v-model.number="resizeHeight"
+              :disabled="lockAspect && !resizeTarget"
+              class="resize-input"
+              @input="handleHeightChange"
+            />
+          </div>
+          <div class="input-row">
+            <label>百分比 (%)</label>
+            <input
+              type="number"
+              v-model.number="resizePercent"
+              class="resize-input"
+              @input="handlePercentChange"
+            />
+          </div>
+          <div class="lock-row">
+            <el-checkbox v-model="lockAspect">等比例缩放</el-checkbox>
+          </div>
+        </div>
+        <div class="action-grid">
+          <div class="action-group">
+            <el-button size="small" type="primary" :disabled="!singleImageFile" @click="handleResize">
+              开始缩放
+            </el-button>
+            <el-button size="small" :disabled="!resizedBlob" @click="handleDownloadResized">
+              下载缩放图
+            </el-button>
+          </div>
+        </div>
+        <div v-if="resizedBlob" class="result-info">
+          <span>原尺寸: {{ resizeOrigWidth }}×{{ resizeOrigHeight }}</span>
+          <span class="arrow">→</span>
+          <span>新尺寸: {{ resizeWidth }}×{{ resizeHeight }}</span>
+        </div>
+        <div v-if="resizeError" class="error-message">{{ resizeError }}</div>
+      </div>
+    </div>
+
+    <!-- Tab 3: 图片转Base64 -->
+    <div v-if="activeTab === 'base64'" class="tool-card">
+      <div class="card-header">
+        <span class="card-title">Base64 输出</span>
+        <div class="card-actions">
+          <el-button size="small" :disabled="!base64Result" @click="handleCopyBase64">复制</el-button>
+          <el-button size="small" :disabled="!base64Result" @click="handleDownloadBase64">下载.txt</el-button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="action-grid">
+          <div class="action-group">
+            <el-button size="small" type="primary" :disabled="!singleImageFile" @click="handleToBase64">
+              生成Base64
+            </el-button>
+          </div>
+        </div>
+        <div v-if="base64Result" class="base64-info">
+          <span>大小: {{ formatBytes(base64Result.length) }}</span>
+        </div>
+        <el-input
+          v-model="base64Result"
+          type="textarea"
+          :rows="10"
+          placeholder="生成Base64后在此显示..."
+          readonly
+        />
+        <div v-if="base64Error" class="error-message">{{ base64Error }}</div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -276,6 +402,7 @@ import { ElMessage } from 'element-plus'
 import { invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
 import { saveFileWithDialog } from '@/utils/fileSaver'
+import * as imageUtils from '@/utils/imageUtils'
 
 const activeTab = ref('compress')
 const error = ref('')
@@ -1096,6 +1223,178 @@ const copyPaletteCss = async () => {
   await navigator.clipboard.writeText(css)
   ElMessage.success('已复制 CSS 变量')
 }
+
+// ============ 单图上传（尺寸缩放/Base64 共用） ============
+const singleFileInputRef = ref<HTMLInputElement | null>(null)
+const singleImageFile = ref<File | null>(null)
+const singleImageInfo = ref<{ size: number; width: number; height: number } | null>(null)
+const isSingleDragging = ref(false)
+
+const triggerSingleFileInput = () => singleFileInputRef.value?.click()
+
+const handleSingleFileSelect = async (e: Event) => {
+  const target = e.target as HTMLInputElement
+  if (!target.files || target.files.length === 0) return
+  await setSingleImage(target.files[0])
+}
+
+const handleSingleDragOver = (e: DragEvent) => {
+  e.preventDefault()
+  isSingleDragging.value = true
+}
+
+const handleSingleDragLeave = () => {
+  isSingleDragging.value = false
+}
+
+const handleSingleDrop = async (e: DragEvent) => {
+  e.preventDefault()
+  isSingleDragging.value = false
+  if (e.dataTransfer?.files.length) {
+    await setSingleImage(e.dataTransfer.files[0])
+  }
+}
+
+const setSingleImage = async (file: File) => {
+  if (!file.type.startsWith('image/')) {
+    ElMessage.error('请选择图片文件')
+    return
+  }
+  singleImageFile.value = file
+  singleImageInfo.value = { size: file.size, width: 0, height: 0 }
+  try {
+    const info = await imageUtils.getImageInfo(file)
+    singleImageInfo.value.width = info.width
+    singleImageInfo.value.height = info.height
+    resizeOrigWidth.value = info.width
+    resizeOrigHeight.value = info.height
+    resizeWidth.value = info.width
+    resizeHeight.value = info.height
+    resizePercent.value = 100
+  } catch {
+    // ignore
+  }
+  // 清理之前的处理结果
+  resizedBlob.value = null
+  base64Result.value = ''
+  resizeError.value = ''
+}
+
+const handleClearSingleImage = () => {
+  singleImageFile.value = null
+  singleImageInfo.value = null
+  resizedBlob.value = null
+  base64Result.value = ''
+  resizeError.value = ''
+}
+
+// ============ Tab 2: 尺寸缩放 ============
+const resizeWidth = ref(800)
+const resizeHeight = ref(600)
+const resizePercent = ref(100)
+const lockAspect = ref(true)
+const resizeTarget = ref<'width' | 'height' | null>(null)
+const resizedBlob = ref<Blob | null>(null)
+const resizeOrigWidth = ref(0)
+const resizeOrigHeight = ref(0)
+const resizeError = ref('')
+
+const handleWidthChange = () => {
+  if (lockAspect.value && resizeOrigWidth.value) {
+    const ratio = resizeHeight.value / resizeWidth.value
+    resizeHeight.value = Math.round(resizeWidth.value * ratio)
+  }
+  if (resizeOrigWidth.value) {
+    resizePercent.value = Math.round((resizeWidth.value / resizeOrigWidth.value) * 100)
+  }
+}
+
+const handleHeightChange = () => {
+  if (lockAspect.value && resizeOrigHeight.value) {
+    const ratio = resizeWidth.value / resizeHeight.value
+    resizeWidth.value = Math.round(resizeHeight.value * ratio)
+  }
+  if (resizeOrigHeight.value) {
+    resizePercent.value = Math.round((resizeHeight.value / resizeOrigHeight.value) * 100)
+  }
+}
+
+const handlePercentChange = () => {
+  if (!resizeOrigWidth.value) return
+  const w = Math.max(1, Math.round((resizePercent.value / 100) * resizeOrigWidth.value))
+  const h = Math.max(1, Math.round((resizePercent.value / 100) * resizeOrigHeight.value))
+  resizeWidth.value = w
+  resizeHeight.value = h
+}
+
+const handleResize = async () => {
+  if (!singleImageFile.value) return
+  resizeError.value = ''
+  try {
+    const result = await imageUtils.resizeImage(singleImageFile.value, resizeWidth.value, resizeHeight.value)
+    resizedBlob.value = result
+    ElMessage.success('缩放完成')
+  } catch (e: any) {
+    resizeError.value = e
+    ElMessage.error('缩放失败: ' + e)
+  }
+}
+
+const handleDownloadResized = () => {
+  if (!resizedBlob.value) return
+  const url = URL.createObjectURL(resizedBlob.value)
+  const a = document.createElement('a')
+  a.href = url
+  const originalName = singleImageFile.value?.name || 'image'
+  const nameWithoutExt = originalName.replace(/\.[^.]+$/, '')
+  a.download = `${nameWithoutExt}_${resizeWidth.value}x${resizeHeight.value}.png`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+// ============ Tab 3: 图片转Base64 ============
+const base64Result = ref('')
+const base64Error = ref('')
+
+const handleToBase64 = async () => {
+  if (!singleImageFile.value) return
+  base64Error.value = ''
+  try {
+    const result = await imageUtils.imageToBase64(singleImageFile.value)
+    base64Result.value = result
+    ElMessage.success('生成成功')
+  } catch (e: any) {
+    base64Error.value = e
+    ElMessage.error('生成失败: ' + e)
+  }
+}
+
+const handleCopyBase64 = async () => {
+  if (!base64Result.value) return
+  try {
+    await navigator.clipboard.writeText(base64Result.value)
+    ElMessage.success('已复制到剪贴板')
+  } catch (e: any) {
+    ElMessage.error('复制失败: ' + e)
+  }
+}
+
+const handleDownloadBase64 = () => {
+  if (!base64Result.value) return
+  const blob = new Blob([base64Result.value], { type: 'text/plain' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  const originalName = singleImageFile.value?.name || 'image'
+  const nameWithoutExt = originalName.replace(/\.[^.]+$/, '')
+  a.download = `${nameWithoutExt}_base64.txt`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
 </script>
 
 <style scoped>
@@ -1380,5 +1679,90 @@ html.light .image-tabs :deep(.el-tabs__header) {
   border-radius: 4px;
   color: var(--accent-red);
   font-size: 13px;
+}
+
+/* ===== 尺寸缩放 & Base64 样式 ===== */
+.upload-area {
+  min-height: 120px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.upload-area.drag-over {
+  background: rgba(0, 212, 255, 0.1);
+  border: 2px dashed var(--accent-cyan);
+}
+
+.resize-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.input-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.input-row label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.resize-input {
+  padding: 8px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 14px;
+  outline: none;
+}
+
+.resize-input:focus {
+  border-color: var(--accent-cyan);
+}
+
+.resize-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.lock-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.result-info {
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: var(--bg-input);
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.result-info .arrow {
+  color: var(--accent-cyan);
+  font-weight: bold;
+}
+
+.base64-info {
+  margin: 8px 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.info-dimensions {
+  color: var(--text-secondary);
 }
 </style>

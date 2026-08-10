@@ -19,6 +19,7 @@
       </div>
     </div>
     <CommandPalette />
+    <QuickLaunchOverlay v-model:visible="store.isQuickLaunchOpen" />
     <ConfirmDialogWrapper />
   </div>
 </template>
@@ -26,6 +27,7 @@
 <script setup lang="ts">
 import { watch, onMounted, onUnmounted, computed } from 'vue'
 import { listen } from '@tauri-apps/api/event'
+import { getCurrentWindow, PhysicalSize, PhysicalPosition } from '@tauri-apps/api/window'
 import { useToolboxStore } from '@/store'
 import { storeToRefs } from 'pinia'
 import SidebarNav from '@/components/SidebarNav.vue'
@@ -47,7 +49,6 @@ import MockDataTool from '@/views/MockDataTool.vue'
 import OcrTool from '@/views/OcrTool.vue'
 import DiffTool from '@/views/DiffTool.vue'
 import ClipboardTool from '@/views/ClipboardTool.vue'
-import ImageTool from '@/views/ImageTool.vue'
 import CsvTool from '@/views/CsvTool.vue'
 import PdfTool from '@/views/PdfTool.vue'
 import HashTool from '@/views/HashTool.vue'
@@ -89,7 +90,13 @@ import StartupItemsView from '@/views/StartupItemsView.vue'
 import EnvVarsView from '@/views/EnvVarsView.vue'
 import CertViewer from '@/views/CertViewer.vue'
 import BoostView from '@/views/BoostView.vue'
+import PasswordVault from '@/views/PasswordVault.vue'
+import FileRenamer from '@/views/FileRenamer.vue'
+import QuickLaunchTool from '@/views/QuickLaunchTool.vue'
+import SvgTool from '@/views/SvgTool.vue'
+import ChangelogView from '@/views/ChangelogView.vue'
 import CommandPalette from '@/components/CommandPalette.vue'
+import QuickLaunchOverlay from '@/components/QuickLaunchOverlay.vue'
 import { ConfirmDialogWrapper } from '@/composables/useConfirmDialog'
 
 // toolId → 组件 映射表（替代 v-if 链）
@@ -111,7 +118,7 @@ const toolComponentMap: Record<string, any> = {
   ocr: OcrTool,
   diff: DiffTool,
   clipboard: ClipboardTool,
-  image: ImageTool,
+  image: ImageToolEnhanced,
   csv: CsvTool,
   pdf: PdfTool,
   hash: HashTool,
@@ -140,7 +147,6 @@ const toolComponentMap: Record<string, any> = {
   diskAnalyzer: DiskSpaceAnalyzer,
   fileSearcher: FileSearcher,
   iconGenerator: IconGenerator,
-  imageToolEnhanced: ImageToolEnhanced,
   audioTool: AudioTool,
   videoTool: VideoTool,
   mediaInfo: MediaInfoTool,
@@ -153,6 +159,11 @@ const toolComponentMap: Record<string, any> = {
   envVars: EnvVarsView,
   certViewer: CertViewer,
   boost: BoostView,
+  passwordVault: PasswordVault,
+  fileRenamer: FileRenamer,
+  quickLaunch: QuickLaunchTool,
+  svg: SvgTool,
+  changelog: ChangelogView,
 }
 
 const store = useToolboxStore()
@@ -170,6 +181,8 @@ store.openTab(store.config.lastTool || 'home')
 let unlistenShortcut: (() => void) | null = null
 let unlistenPalette: (() => void) | null = null
 let globalKeydownHandler: ((e: KeyboardEvent) => void) | null = null
+let windowResizeHandler: (() => void) | null = null
+let windowMoveHandler: (() => void) | null = null
 
 const handleSelectTool = (toolId: string) => {
   store.openTab(toolId)
@@ -199,6 +212,37 @@ const applyTheme = (theme: string) => {
   }
 }
 
+// 保存窗口大小和位置
+const saveWindowState = async () => {
+  try {
+    const win = getCurrentWindow()
+    const size = await win.outerSize()
+    const position = await win.outerPosition()
+    localStorage.setItem('window_size', JSON.stringify({
+      width: size.width,
+      height: size.height,
+      x: position.x,
+      y: position.y,
+    }))
+  } catch {}
+}
+
+// 恢复窗口大小和位置
+const restoreWindowState = async () => {
+  try {
+    const saved = localStorage.getItem('window_size')
+    if (!saved) return
+    const state = JSON.parse(saved)
+    if (state.width && state.height) {
+      const win = getCurrentWindow()
+      await win.setSize(new PhysicalSize(state.width, state.height))
+      if (state.x !== undefined && state.y !== undefined) {
+        await win.setPosition(new PhysicalPosition(state.x, state.y))
+      }
+    }
+  } catch {}
+}
+
 onMounted(async () => {
   applyTheme(store.config.theme)
 
@@ -208,9 +252,23 @@ onMounted(async () => {
     }
   })
 
+  // 恢复窗口大小
+  await restoreWindowState()
+
+  // 监听窗口大小和位置变化
+  const win = getCurrentWindow()
+  windowResizeHandler = await win.onResized(() => saveWindowState())
+  windowMoveHandler = await win.onMoved(() => saveWindowState())
+
   unlistenShortcut = await listen('global-shortcut-triggered', (event) => {
     const toolId = event.payload as string
-    if (toolId) {
+    if (toolId === '__quick_launch__') {
+      if (store.isQuickLaunchOpen) {
+        store.closeQuickLaunch()
+      } else {
+        store.openQuickLaunch()
+      }
+    } else if (toolId) {
       store.openTab(toolId)
       store.addRecentTool(toolId)
     }
@@ -237,6 +295,9 @@ onMounted(async () => {
     }
   }
   window.addEventListener('keydown', globalKeydownHandler)
+
+  // 页面关闭前保存窗口状态
+  window.addEventListener('beforeunload', saveWindowState)
 })
 
 onUnmounted(() => {
@@ -249,6 +310,15 @@ onUnmounted(() => {
   if (globalKeydownHandler) {
     window.removeEventListener('keydown', globalKeydownHandler)
   }
+  if (windowResizeHandler) {
+    windowResizeHandler()
+  }
+  if (windowMoveHandler) {
+    windowMoveHandler()
+  }
+  window.removeEventListener('beforeunload', saveWindowState)
+  // 组件销毁前再次保存
+  saveWindowState()
 })
 </script>
 

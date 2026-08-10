@@ -1,5 +1,16 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+// ponytail: debug 模式输出日志到 stderr，release 模式编译时移除（零开销）
+// 必须放在 mod 声明之前，这样子模块才能使用该宏
+#[macro_export]
+macro_rules! debug_log {
+    ($($arg:tt)*) => {
+        if cfg!(debug_assertions) {
+            eprintln!($($arg)*)
+        }
+    };
+}
+
 mod clipboard;
 mod db;
 mod file_encoding;
@@ -26,15 +37,9 @@ mod startup_items;
 mod env_vars;
 mod boost;
 mod cert_reader;
-
-// ponytail: debug 模式输出日志到 stderr，release 模式编译时移除（零开销）
-macro_rules! debug_log {
-    ($($arg:tt)*) => {
-        if cfg!(debug_assertions) {
-            eprintln!($($arg)*)
-        }
-    };
-}
+mod password_vault;
+mod file_renamer;
+mod quick_launch;
 
 use tauri::{Manager, Emitter};
 use tauri_plugin_dialog::{DialogExt, MessageDialogBuilder, MessageDialogButtons, MessageDialogKind};
@@ -50,6 +55,11 @@ fn main() {
             clipboard::stop_clipboard_monitor,
             clipboard::is_monitoring,
             clipboard::copy_to_clipboard,
+            clipboard::clipboard_get_image,
+            clipboard::clipboard_set_image,
+            clipboard::clipboard_read_image_file,
+            clipboard::clipboard_delete_image_file,
+            clipboard::clipboard_clear_image_cache,
             file_encoding::read_file_with_encoding,
             file_encoding::convert_file_encoding,
             file_encoding::detect_file_encoding,
@@ -152,6 +162,26 @@ fn main() {
             cert_reader::read_cert_store,
             cert_reader::get_cert_detail,
             cert_reader::parse_cert_file,
+            // 密码保管箱命令
+            password_vault::pv_has_master_password,
+            password_vault::pv_set_master_password,
+            password_vault::pv_verify_master_password,
+            password_vault::pv_list_credentials,
+            password_vault::pv_search_credentials,
+            password_vault::pv_add_credential,
+            password_vault::pv_update_credential,
+            password_vault::pv_delete_credential,
+            password_vault::pv_reset_master_password,
+            password_vault::pv_import_credentials,
+            password_vault::pv_change_master_password,
+            password_vault::pv_check_duplicates,
+            password_vault::pv_batch_delete,
+            // 文件批量重命名命令
+            file_renamer::rename_list_files,
+            file_renamer::rename_preview,
+            file_renamer::rename_execute,
+            file_renamer::rename_undo,
+            file_renamer::rename_pick_folder,
             // SQLite 查看器命令
             sqlite_viewer::sqlite_list_tables,
             sqlite_viewer::sqlite_get_schema,
@@ -206,6 +236,8 @@ fn main() {
             video_tools::video_speed_change,
             video_tools::video_rotate_flip,
             video_tools::video_volume,
+            video_tools::video_watermark,
+            video_tools::video_watermark_preview,
             audio_tools::generate_waveform,
             audio_tools::audio_crop,
             audio_tools::get_audio_preview,
@@ -242,6 +274,13 @@ fn main() {
             hosts_manager::hosts_profile_save,
             hosts_manager::hosts_profile_delete,
             hosts_manager::hosts_profile_apply,
+            // 快速启动命令
+            quick_launch::ql_search,
+            quick_launch::ql_index_status,
+            quick_launch::ql_build_index,
+            quick_launch::ql_rebuild_index,
+            quick_launch::ql_cancel_index,
+            quick_launch::ql_open_file,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -276,13 +315,12 @@ fn main() {
                     Err(_) => continue,
                 };
                 let tool = tool_id.to_string();
-                let h = handle.clone();
                 
-                manager.on_shortcut(shortcut, move |_app, _sc, event| {
+                manager.on_shortcut(shortcut, move |app_handle, _sc, event| {
                     if let tauri_plugin_global_shortcut::ShortcutState::Pressed = event.state {
-                        if let Some(window) = h.get_webview_window("main") {
-                            if tool == "__palette__" {
-                                // 命令面板：先唤起窗口到前台（最小化状态也能正确恢复）
+                        if let Some(window) = app_handle.get_webview_window("main") {
+                            if tool == "__palette__" || tool == "__quick_launch__" {
+                                // 命令面板/快速启动：先唤起窗口到前台（最小化状态也能正确恢复）
                                 #[cfg(target_os = "windows")]
                                 if let Ok(hwnd) = window.hwnd() {
                                     use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SetForegroundWindow, SW_RESTORE};
@@ -293,8 +331,11 @@ fn main() {
                                 }
                                 let _ = window.show();
                                 let _ = window.set_focus();
-                                debug_log!("[command_palette] global hotkey triggered, window shown");
-                                let _ = window.emit("command-palette-triggered", ());
+                                if tool == "__palette__" {
+                                    let _ = window.emit("command-palette-triggered", ());
+                                } else {
+                                    let _ = window.emit("global-shortcut-triggered", &tool);
+                                }
                             } else {
                                 let _ = window.emit("global-shortcut-triggered", &tool);
                             }

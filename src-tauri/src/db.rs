@@ -22,7 +22,7 @@ fn do_init() -> Result<Connection, String> {
     Ok(conn)
 }
 
-fn with_conn<T, F: FnOnce(&mut Connection) -> Result<T, String>>(f: F) -> Result<T, String> {
+pub fn with_conn<T, F: FnOnce(&mut Connection) -> Result<T, String>>(f: F) -> Result<T, String> {
     let lock = get_conn()?;
     let mut conn = lock.lock().map_err(|e| e.to_string())?;
     f(&mut conn)
@@ -80,6 +80,8 @@ pub struct ClipboardRecord {
     pub id: Option<i64>,
     pub text: String,
     pub timestamp: String,
+    pub r#type: String,
+    pub meta: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -221,6 +223,40 @@ fn init_tables(conn: &Connection) -> Result<()> {
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS password_vault (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            url TEXT DEFAULT '',
+            username TEXT NOT NULL,
+            encrypted_password TEXT NOT NULL,
+            notes TEXT DEFAULT '',
+            salt TEXT NOT NULL,
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_password_vault_name ON password_vault(name);
+        -- 快速启动文件名索引
+        CREATE TABLE IF NOT EXISTS quick_launch_files(
+          id          INTEGER PRIMARY KEY AUTOINCREMENT,
+          name        TEXT NOT NULL,
+          path        TEXT NOT NULL UNIQUE,
+          extension   TEXT DEFAULT '',
+          size_bytes  INTEGER DEFAULT 0,
+          modified_at INTEGER DEFAULT 0,
+          drive       TEXT NOT NULL
+        );
+        CREATE VIRTUAL TABLE IF NOT EXISTS quick_launch_fts USING fts5(
+          name,
+          content='quick_launch_files',
+          content_rowid='id',
+          tokenize='unicode61'
+        );
+        CREATE TABLE IF NOT EXISTS quick_launch_meta(
+          drive        TEXT PRIMARY KEY,
+          last_scanned INTEGER NOT NULL DEFAULT 0,
+          file_count   INTEGER NOT NULL DEFAULT 0,
+          status       TEXT NOT NULL DEFAULT 'pending'
+        );
     "#)?;
 
     // 迁移：旧版 snippets 表有 category 列但无 lang/note 列
@@ -231,6 +267,14 @@ fn init_tables(conn: &Connection) -> Result<()> {
         // 列已存在，忽略
     }
     if let Err(_) = conn.execute("ALTER TABLE http_environments ADD COLUMN base_url TEXT NOT NULL DEFAULT ''", []) {
+        // 列已存在，忽略
+    }
+
+    // 迁移：clipboard_history 表新增 type 和 meta 列
+    if let Err(_) = conn.execute("ALTER TABLE clipboard_history ADD COLUMN type TEXT NOT NULL DEFAULT 'text'", []) {
+        // 列已存在，忽略
+    }
+    if let Err(_) = conn.execute("ALTER TABLE clipboard_history ADD COLUMN meta TEXT NOT NULL DEFAULT '{}'", []) {
         // 列已存在，忽略
     }
 
@@ -425,17 +469,28 @@ pub fn db_clear_ocr_history() -> Result<(), String> {
 
 // ========== 剪贴板历史 CRUD ==========
 
-pub fn db_list_clipboard_history(limit: i64, offset: i64) -> Result<Vec<ClipboardRecord>, String> {
+pub fn db_list_clipboard_history(limit: i64, offset: i64, filter_type: Option<String>) -> Result<Vec<ClipboardRecord>, String> {
     with_conn(|conn| {
-        let mut stmt = conn
-            .prepare("SELECT id, text, timestamp FROM clipboard_history ORDER BY id DESC LIMIT ?1 OFFSET ?2")
-            .map_err(|e| e.to_string())?;
+        let (sql, params_vec): (String, Vec<Box<dyn rusqlite::ToSql>>) = match &filter_type {
+            Some(ft) if !ft.is_empty() => (
+                "SELECT id, text, timestamp, type, meta FROM clipboard_history WHERE type = ?1 ORDER BY id DESC LIMIT ?2 OFFSET ?3".to_string(),
+                vec![Box::new(ft.clone()), Box::new(limit), Box::new(offset)],
+            ),
+            _ => (
+                "SELECT id, text, timestamp, type, meta FROM clipboard_history ORDER BY id DESC LIMIT ?1 OFFSET ?2".to_string(),
+                vec![Box::new(limit), Box::new(offset)],
+            ),
+        };
+        let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+        let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
         let rows = stmt
-            .query_map(params![limit, offset], |row| {
+            .query_map(params_refs.as_slice(), |row| {
                 Ok(ClipboardRecord {
                     id: Some(row.get(0)?),
                     text: row.get(1)?,
                     timestamp: row.get(2)?,
+                    r#type: row.get(3)?,
+                    meta: row.get(4)?,
                 })
             })
             .map_err(|e| e.to_string())?;
@@ -447,7 +502,7 @@ pub fn db_list_clipboard_history(limit: i64, offset: i64) -> Result<Vec<Clipboar
 pub fn db_search_clipboard_history(query: String, limit: i64) -> Result<Vec<ClipboardRecord>, String> {
     with_conn(|conn| {
         let mut stmt = conn
-            .prepare("SELECT id, text, timestamp FROM clipboard_history WHERE text LIKE '%' || ?1 || '%' ORDER BY id DESC LIMIT ?2")
+            .prepare("SELECT id, text, timestamp, type, meta FROM clipboard_history WHERE text LIKE '%' || ?1 || '%' ORDER BY id DESC LIMIT ?2")
             .map_err(|e| e.to_string())?;
         let rows = stmt
             .query_map(params![query, limit], |row| {
@@ -455,6 +510,8 @@ pub fn db_search_clipboard_history(query: String, limit: i64) -> Result<Vec<Clip
                     id: Some(row.get(0)?),
                     text: row.get(1)?,
                     timestamp: row.get(2)?,
+                    r#type: row.get(3)?,
+                    meta: row.get(4)?,
                 })
             })
             .map_err(|e| e.to_string())?;
@@ -463,11 +520,11 @@ pub fn db_search_clipboard_history(query: String, limit: i64) -> Result<Vec<Clip
     })
 }
 
-pub fn db_add_clipboard_record(text: String) -> Result<(), String> {
+pub fn db_add_clipboard_record(text: String, record_type: String, meta: String) -> Result<(), String> {
     with_conn(|conn| {
         conn.execute(
-            "INSERT INTO clipboard_history (text, timestamp) VALUES (?1, datetime('now'))",
-            params![text],
+            "INSERT INTO clipboard_history (text, type, meta, timestamp) VALUES (?1, ?2, ?3, datetime('now'))",
+            params![text, record_type, meta],
         ).map_err(|e| e.to_string())?;
         Ok(())
     })
@@ -1181,8 +1238,8 @@ pub fn cmd_db_clear_ocr_history() -> Result<(), String> {
 // ========== 剪贴板历史 Tauri 命令 ==========
 
 #[tauri::command]
-pub fn cmd_db_list_clipboard_history(limit: i64, offset: i64) -> Result<Vec<ClipboardRecord>, String> {
-    db_list_clipboard_history(limit, offset)
+pub fn cmd_db_list_clipboard_history(limit: i64, offset: i64, filter_type: Option<String>) -> Result<Vec<ClipboardRecord>, String> {
+    db_list_clipboard_history(limit, offset, filter_type)
 }
 
 #[tauri::command]
@@ -1191,8 +1248,8 @@ pub fn cmd_db_search_clipboard_history(query: String, limit: i64) -> Result<Vec<
 }
 
 #[tauri::command]
-pub fn cmd_db_add_clipboard_record(text: String) -> Result<(), String> {
-    db_add_clipboard_record(text)
+pub fn cmd_db_add_clipboard_record(text: String, record_type: String, meta: String) -> Result<(), String> {
+    db_add_clipboard_record(text, record_type, meta)
 }
 
 #[tauri::command]
@@ -1823,6 +1880,8 @@ pub fn db_read_shortcuts() -> Vec<(String, String)> {
         ("http".to_string(), "CmdOrCtrl+Alt+H".to_string()),
         // 命令面板特殊 id（非真实工具），main.rs 触发时走 show+focus+emit 分支
         ("__palette__".to_string(), "CmdOrCtrl+Alt+P".to_string()),
+        // 快速启动浮层
+        ("__quick_launch__".to_string(), "Alt+Space".to_string()),
     ];
     let config = db_get_config("shortcuts".to_string()).unwrap_or_default();
     if config.is_empty() {
@@ -1905,4 +1964,156 @@ mod shortcut_merge_tests {
         let result = merge_shortcut_defaults(existing, &defaults);
         assert_eq!(result.len(), 1);
     }
+}
+
+// ========== 快速启动 ==========
+
+/// 在 CJK 字符前后插入空格，使 FTS5 unicode61 分词器能单独索引每个字符
+pub fn preprocess_name_for_fts(name: &str) -> String {
+    let mut result = String::with_capacity(name.len() * 2);
+    for c in name.chars() {
+        if is_cjk(c) {
+            result.push(' ');
+            result.push(c);
+            result.push(' ');
+        } else {
+            result.push(c);
+        }
+    }
+    // 折叠连续空格为单个空格，并 trim
+    let trimmed = result.trim();
+    let mut cleaned = String::with_capacity(trimmed.len());
+    let mut prev_space = false;
+    for c in trimmed.chars() {
+        if c == ' ' {
+            if !prev_space {
+                cleaned.push(' ');
+                prev_space = true;
+            }
+        } else {
+            cleaned.push(c);
+            prev_space = false;
+        }
+    }
+    cleaned
+}
+
+fn is_cjk(c: char) -> bool {
+    matches!(
+        c,
+        '\u{4E00}'..='\u{9FFF}'
+            | '\u{3400}'..='\u{4DBF}'
+            | '\u{F900}'..='\u{FAFF}'
+            | '\u{2F800}'..='\u{2FA1F}'
+    )
+}
+
+pub fn do_ql_insert_files(conn: &mut Connection, files: &[(String, String, String, i64, i64, String)]) -> Result<(), String> {
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    {
+        let mut stmt = tx.prepare(
+            "INSERT OR IGNORE INTO quick_launch_files (name, path, extension, size_bytes, modified_at, drive) VALUES (?1, ?2, ?3, ?4, ?5, ?6)"
+        ).map_err(|e| e.to_string())?;
+        for (name, path, ext, size, modified, drive) in files {
+            stmt.execute(params![name, path, ext, size, modified, drive]).map_err(|e| e.to_string())?;
+        }
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn do_ql_delete_file(conn: &mut Connection, path: &str) -> Result<(), String> {
+    conn.execute("DELETE FROM quick_launch_files WHERE path = ?1", params![path])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn do_ql_search(conn: &mut Connection, query: &str) -> Result<Vec<(i64, String, String, String, i64, i64, String)>, String> {
+    let mut stmt = conn.prepare(
+        "SELECT f.id, f.name, f.path, f.extension, f.size_bytes, f.modified_at, f.drive
+         FROM quick_launch_fts
+         JOIN quick_launch_files f ON f.id = quick_launch_fts.rowid
+         WHERE quick_launch_fts MATCH ?1
+         ORDER BY f.modified_at DESC
+         LIMIT 100"
+    ).map_err(|e| e.to_string())?;
+    let rows = stmt.query_map(params![query], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, String>(3)?,
+            row.get::<_, i64>(4)?,
+            row.get::<_, i64>(5)?,
+            row.get::<_, String>(6)?,
+        ))
+    }).map_err(|e| e.to_string())?;
+    let mut results = Vec::new();
+    for row in rows {
+        results.push(row.map_err(|e| e.to_string())?);
+    }
+    Ok(results)
+}
+
+pub fn do_ql_get_meta(conn: &mut Connection) -> Result<Vec<(String, i64, i64, String)>, String> {
+    let mut stmt = conn.prepare("SELECT drive, last_scanned, file_count, status FROM quick_launch_meta ORDER BY drive")
+        .map_err(|e| e.to_string())?;
+    let rows = stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, i64>(2)?,
+            row.get::<_, String>(3)?,
+        ))
+    }).map_err(|e| e.to_string())?;
+    let mut metas = Vec::new();
+    for r in rows {
+        metas.push(r.map_err(|e| e.to_string())?);
+    }
+    Ok(metas)
+}
+
+pub fn do_ql_update_meta(conn: &mut Connection, drive: &str, file_count: i64, status: &str) -> Result<(), String> {
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
+    conn.execute(
+        "INSERT INTO quick_launch_meta (drive, last_scanned, file_count, status) VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(drive) DO UPDATE SET last_scanned=?2, file_count=?3, status=?4",
+        params![drive, now, file_count, status],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn do_ql_clear_all(conn: &mut Connection) -> Result<(), String> {
+    conn.execute_batch(
+        "DELETE FROM quick_launch_files;
+         DELETE FROM quick_launch_meta;
+         INSERT INTO quick_launch_fts(quick_launch_fts) VALUES('rebuild');"
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn do_ql_rebuild_fts(conn: &mut Connection) -> Result<(), String> {
+    // 清空旧索引
+    conn.execute("DELETE FROM quick_launch_fts", [])
+        .map_err(|e| e.to_string())?;
+    // 逐行插入预处理的名称（CJK 字符间加空格，使分词器能单独索引）
+    let mut stmt = conn
+        .prepare("SELECT id, name FROM quick_launch_files")
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|e| e.to_string())?;
+    let mut insert_stmt = conn
+        .prepare("INSERT INTO quick_launch_fts(rowid, name) VALUES (?1, ?2)")
+        .map_err(|e| e.to_string())?;
+    for result in rows {
+        let (id, name) = result.map_err(|e| e.to_string())?;
+        let processed = preprocess_name_for_fts(&name);
+        insert_stmt
+            .execute(params![id, processed])
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }

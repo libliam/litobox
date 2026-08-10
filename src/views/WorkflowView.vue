@@ -717,6 +717,15 @@ async function executeStep(tool: string, action: string, input: string): Promise
       return executeCalculatorAction(action, input)
     case 'certViewer':
       return executeCertAction(action, input)
+    case 'fileRenamer':
+    case 'boost':
+    case 'passwordVault':
+      return input  // 文件/系统操作类工具，工作流中透传输入
+    case 'quickLaunch': {
+      const { qlSearch } = await import('@/utils/quickLaunchClient')
+      const results = await qlSearch(input)
+      return JSON.stringify(results.map(r => ({ name: r.name, path: r.path })), null, 2)
+    }
     default:
       return input
   }

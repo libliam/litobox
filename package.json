@@ -1,12 +1,14 @@
 {
   "name": "litobox",
-  "version": "6.6.0",
+  "version": "7.2.0",
   "description": "栗的百宝箱",
   "author": "liam",
   "scripts": {
-    "dev": "vite",
-    "build": "vue-tsc --noEmit && vite build",
-    "tauri": "tauri"
+    "gen-changelog": "node scripts/gen-changelog.cjs",
+    "dev": "node scripts/gen-changelog.cjs && vite",
+    "build": "node scripts/gen-changelog.cjs && vue-tsc --noEmit && vite build",
+    "tauri": "tauri",
+    "release": "npm run tauri build && node scripts/rename-exe.cjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.4",
@@ -37,6 +39,7 @@
     "js-base64": "^3.7.6",
     "json5": "^2.2.3",
     "jsqr": "^1.4.0",
+    "jszip": "^3.10.1",
     "lodash": "^4.17.21",
     "markdown-it": "^14.2.0",
     "mathjs": "^15.2.0",
