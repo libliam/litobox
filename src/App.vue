@@ -35,11 +35,13 @@ import TabBar from '@/components/TabBar.vue'
 import HomeView from '@/views/HomeView.vue'
 import JsonTool from '@/views/JsonTool.vue'
 import StringTool from '@/views/StringTool.vue'
+import PinyinTool from '@/views/PinyinTool.vue'
 import EncodeTool from '@/views/EncodeTool.vue'
 import TimeTool from '@/views/TimeTool.vue'
 import URLTool from '@/views/URLTool.vue'
 import RegexTool from '@/views/RegexTool.vue'
 import BaseConverter from '@/views/BaseConverter.vue'
+import IpSubnetTool from '@/views/IpSubnetTool.vue'
 import UUIDTool from '@/views/UUIDTool.vue'
 import DevTools from '@/views/DevTools.vue'
 import FileProcessing from '@/views/FileProcessing.vue'
@@ -62,6 +64,7 @@ import MarkdownTool from '@/views/MarkdownTool.vue'
 import ColorTool from '@/views/ColorTool.vue'
 import PasswordTool from '@/views/PasswordTool.vue'
 import QrTool from '@/views/QrTool.vue'
+import BarcodeTool from '@/views/BarcodeTool.vue'
 import SnippetTool from '@/views/SnippetTool.vue'
 import HttpTool from '@/views/HttpTool.vue'
 import HistoryView from '@/views/HistoryView.vue'
@@ -104,11 +107,13 @@ const toolComponentMap: Record<string, any> = {
   home: HomeView,
   json: JsonTool,
   string: StringTool,
+  pinyin: PinyinTool,
   encode: EncodeTool,
   time: TimeTool,
   url: URLTool,
   regex: RegexTool,
   baseConverter: BaseConverter,
+  ipSubnet: IpSubnetTool,
   uuid: UUIDTool,
   devtools: DevTools,
   fileprocessing: FileProcessing,
@@ -132,6 +137,7 @@ const toolComponentMap: Record<string, any> = {
   color: ColorTool,
   password: PasswordTool,
   qr: QrTool,
+  barcode: BarcodeTool,
   snippet: SnippetTool,
   http: HttpTool,
   history: HistoryView,
