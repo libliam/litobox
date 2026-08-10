@@ -1023,6 +1023,7 @@ pub async fn hotkey_probe_export_csv(results: Vec<HotkeyResult>) -> Result<Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hotkey_data::{MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN};
 
     #[test]
     fn test_parse_accelerator_ctrl_shift_s() {

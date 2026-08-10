@@ -1,6 +1,6 @@
 {
   "name": "litobox",
-  "version": "7.6.0",
+  "version": "7.11.0",
   "description": "栗的百宝箱",
   "author": "liam",
   "scripts": {
@@ -35,12 +35,15 @@
     "@types/jsbarcode": "^3.11.4",
     "@types/markdown-it": "^14.1.2",
     "@types/qrcode": "^1.5.6",
+    "ajv": "^8.20.0",
     "colord": "^2.9.3",
     "crypto-js": "^4.2.0",
     "diff": "^9.0.0",
     "element-plus": "^2.5.0",
+    "handlebars": "^4.7.9",
     "js-base64": "^3.7.6",
     "jsbarcode": "^3.12.3",
+    "json-schema-faker": "^0.5.9",
     "json5": "^2.2.3",
     "jsqr": "^1.4.0",
     "jszip": "^3.10.1",
@@ -53,7 +56,8 @@
     "pinia": "^2.1.0",
     "pinyin-pro": "^3.28.2",
     "qrcode": "^1.5.4",
-    "vue": "^3.4.0"
+    "vue": "^3.4.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",

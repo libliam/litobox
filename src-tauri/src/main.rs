@@ -40,6 +40,7 @@ mod cert_reader;
 mod password_vault;
 mod file_renamer;
 mod quick_launch;
+mod git_stats;
 
 use tauri::{Manager, Emitter};
 use tauri_plugin_dialog::{DialogExt, MessageDialogBuilder, MessageDialogButtons, MessageDialogKind};
@@ -281,6 +282,10 @@ fn main() {
             quick_launch::ql_rebuild_index,
             quick_launch::ql_cancel_index,
             quick_launch::ql_open_file,
+            // Git 仓库统计命令
+            git_stats::git_check_available,
+            git_stats::git_repo_info,
+            git_stats::git_analyze,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

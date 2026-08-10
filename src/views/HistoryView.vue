@@ -108,7 +108,11 @@ const getToolName = (tool: string): string => {
     sql: 'SQL工具',
     time: '时间工具',
     url: 'URL工具',
-    markdown: 'Markdown工具'
+    markdown: 'Markdown工具',
+    excelTool: 'Excel工具',
+    schemaTool: 'JSON Schema',
+    templateTool: '模板渲染',
+    gitStats: 'Git统计'
   }
   return names[tool] || tool
 }

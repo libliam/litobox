@@ -51,7 +51,12 @@ import MockDataTool from '@/views/MockDataTool.vue'
 import OcrTool from '@/views/OcrTool.vue'
 import DiffTool from '@/views/DiffTool.vue'
 import ClipboardTool from '@/views/ClipboardTool.vue'
+import ClipboardConvertTool from '@/views/ClipboardConvertTool.vue'
 import CsvTool from '@/views/CsvTool.vue'
+import ExcelTool from '@/views/ExcelTool.vue'
+import SchemaTool from '@/views/SchemaTool.vue'
+import TemplateTool from '@/views/TemplateTool.vue'
+import GitStatsTool from '@/views/GitStatsTool.vue'
 import PdfTool from '@/views/PdfTool.vue'
 import HashTool from '@/views/HashTool.vue'
 import XmlYamlTool from '@/views/XmlYamlTool.vue'
@@ -123,8 +128,13 @@ const toolComponentMap: Record<string, any> = {
   ocr: OcrTool,
   diff: DiffTool,
   clipboard: ClipboardTool,
+  clipboardConvert: ClipboardConvertTool,
   image: ImageToolEnhanced,
   csv: CsvTool,
+  excelTool: ExcelTool,
+  schemaTool: SchemaTool,
+  templateTool: TemplateTool,
+  gitStats: GitStatsTool,
   pdf: PdfTool,
   hash: HashTool,
   xmlYaml: XmlYamlTool,

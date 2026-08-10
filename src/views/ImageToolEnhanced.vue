@@ -16,6 +16,7 @@
       <div class="card-header">
         <span class="card-title">图片选择</span>
         <div class="card-actions">
+          <el-button size="small" @click="pasteCompressImage">从剪贴板</el-button>
           <el-button size="small" type="primary" @click="selectCompressFiles">选择图片</el-button>
           <el-button v-if="compressFiles.length" size="small" @click="clearCompressFiles">清空</el-button>
         </div>
@@ -27,7 +28,7 @@
             <span class="file-size">{{ formatBytes(f.size) }}</span>
           </div>
         </div>
-        <div v-else class="upload-hint">选择多张图片进行批量压缩或格式转换</div>
+        <div v-else class="upload-hint">选择多张图片进行批量压缩或格式转换，也可 Ctrl+V 粘贴</div>
       </div>
     </div>
     <div v-if="activeTab === 'compress'" class="tool-card">
@@ -74,6 +75,7 @@
       <div class="card-header">
         <span class="card-title">图片选择</span>
         <div class="card-actions">
+          <el-button size="small" @click="pasteMergeImage">从剪贴板</el-button>
           <el-button size="small" type="primary" @click="selectMergeFiles">选择图片</el-button>
           <el-button v-if="mergeImages.length" size="small" @click="clearMergeImages">清空</el-button>
         </div>
@@ -87,7 +89,7 @@
             <el-button size="small" text type="danger" @click="removeMergeImage(i)">移除</el-button>
           </div>
         </div>
-        <div v-else class="upload-hint">选择图片开始拼图</div>
+        <div v-else class="upload-hint">选择图片开始拼图，也可 Ctrl+V 粘贴</div>
       </div>
     </div>
 
@@ -172,6 +174,7 @@
       <div class="card-header">
         <span class="card-title">图片选择</span>
         <div class="card-actions">
+          <el-button size="small" @click="pasteWatermarkImage">从剪贴板</el-button>
           <el-button size="small" type="primary" @click="selectWatermarkFile">选择图片</el-button>
           <el-button v-if="watermarkFile" size="small" @click="clearWatermarkFile">移除</el-button>
         </div>
@@ -181,7 +184,7 @@
           <span class="info-name">{{ watermarkFile.name }}</span>
           <span class="info-size">{{ formatBytes(watermarkFile.size) }}</span>
         </div>
-        <div v-else class="upload-hint">选择一张图片添加水印</div>
+        <div v-else class="upload-hint">选择一张图片添加水印，也可 Ctrl+V 粘贴</div>
       </div>
     </div>
     <div v-if="activeTab === 'watermark'" class="tool-card">
@@ -231,6 +234,7 @@
       <div class="card-header">
         <span class="card-title">图片选择</span>
         <div class="card-actions">
+          <el-button size="small" @click="pastePaletteImage">从剪贴板</el-button>
           <el-button size="small" type="primary" @click="selectPaletteFile">选择图片</el-button>
           <el-button v-if="paletteFile" size="small" @click="clearPaletteFile">移除</el-button>
         </div>
@@ -240,7 +244,7 @@
           <span class="info-name">{{ paletteFile.name }}</span>
           <span class="info-size">{{ formatBytes(paletteFile.size) }}</span>
         </div>
-        <div v-else class="upload-hint">选择图片提取主色调</div>
+        <div v-else class="upload-hint">选择图片提取主色调，也可 Ctrl+V 粘贴</div>
       </div>
     </div>
     <div v-if="activeTab === 'palette'" class="tool-card">
@@ -275,6 +279,7 @@
       <div class="card-header">
         <span class="card-title">图片输入</span>
         <div class="card-actions">
+          <el-button size="small" @click="pasteSingleImage">从剪贴板</el-button>
           <el-button size="small" type="primary" @click="triggerSingleFileInput">上传文件</el-button>
           <el-button v-if="singleImageFile" size="small" @click="handleClearSingleImage">移除</el-button>
         </div>
@@ -299,7 +304,7 @@
           <span class="info-dimensions">{{ singleImageInfo?.width }}×{{ singleImageInfo?.height }}</span>
         </div>
         <div v-else class="upload-hint">
-          点击「上传文件」或拖拽图片到此处
+          点击「上传文件」、拖拽图片到此处、或 Ctrl+V 粘贴
         </div>
       </div>
     </div>
@@ -397,15 +402,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
 import { saveFileWithDialog } from '@/utils/fileSaver'
 import * as imageUtils from '@/utils/imageUtils'
+import { useClipboardImage, type ClipboardImage } from '@/composables/useClipboardImage'
 
 const activeTab = ref('compress')
 const error = ref('')
+
+const { readImageWithToast, saveClipboardImageAsTemp, onPasteImage } = useClipboardImage()
 
 // ============ 通用 ============
 const formatBytes = (bytes: number) => {
@@ -475,6 +483,18 @@ const clearCompressFiles = () => {
   compressFiles.value = []
   compressResults.value = []
   error.value = ''
+}
+
+const pasteCompressImage = async (clipImg?: ClipboardImage) => {
+  const img = clipImg || await readImageWithToast()
+  if (!img) return
+  try {
+    const path = await saveClipboardImageAsTemp(img)
+    compressFiles.value.push({ name: `clip_${Date.now()}.png`, path, size: img.blob.size })
+    error.value = ''
+  } catch (e: any) {
+    ElMessage.error('保存剪贴板图片失败: ' + e)
+  }
 }
 
 const handleCompress = async () => {
@@ -979,6 +999,31 @@ const clearMergeImages = () => {
   nextTick(() => drawCanvas())
 }
 
+const pasteMergeImage = async (clipImg?: ClipboardImage) => {
+  const img = clipImg || await readImageWithToast()
+  if (!img) return
+  try {
+    const path = await saveClipboardImageAsTemp(img)
+    const name = `clip_${Date.now()}.png`
+    // 预加载 Image 对象
+    const imgEl = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image()
+      el.onload = () => resolve(el)
+      el.onerror = reject
+      el.src = img.dataUrl
+    })
+    mergeImages.value.push({ path, name, size: img.blob.size, thumb: img.dataUrl, img: imgEl })
+    if (!currentTemplate.value && availableTemplates.value.length > 0) {
+      selectTemplate(availableTemplates.value[0])
+    } else if (currentTemplate.value) {
+      selectTemplate(currentTemplate.value)
+    }
+    error.value = ''
+  } catch (e: any) {
+    ElMessage.error('保存剪贴板图片失败: ' + e)
+  }
+}
+
 // 获取点击位置对应的槽位索引
 const getSlotAtPoint = (clientX: number, clientY: number): number | null => {
   const canvas = mergeCanvas.value
@@ -1138,6 +1183,19 @@ const clearWatermarkFile = () => {
   error.value = ''
 }
 
+const pasteWatermarkImage = async (clipImg?: ClipboardImage) => {
+  const img = clipImg || await readImageWithToast()
+  if (!img) return
+  try {
+    const path = await saveClipboardImageAsTemp(img)
+    watermarkFile.value = { name: `clip_${Date.now()}.png`, path, size: img.blob.size }
+    watermarkResult.value = null
+    error.value = ''
+  } catch (e: any) {
+    ElMessage.error('保存剪贴板图片失败: ' + e)
+  }
+}
+
 const handleWatermark = async () => {
   if (!watermarkFile.value || !watermarkText.value) return
   error.value = ''
@@ -1193,6 +1251,19 @@ const clearPaletteFile = () => {
   paletteFile.value = null
   paletteColors.value = []
   error.value = ''
+}
+
+const pastePaletteImage = async (clipImg?: ClipboardImage) => {
+  const img = clipImg || await readImageWithToast()
+  if (!img) return
+  try {
+    const path = await saveClipboardImageAsTemp(img)
+    paletteFile.value = { name: `clip_${Date.now()}.png`, path, size: img.blob.size }
+    paletteColors.value = []
+    error.value = ''
+  } catch (e: any) {
+    ElMessage.error('保存剪贴板图片失败: ' + e)
+  }
 }
 
 const handlePalette = async () => {
@@ -1286,6 +1357,13 @@ const handleClearSingleImage = () => {
   resizedBlob.value = null
   base64Result.value = ''
   resizeError.value = ''
+}
+
+const pasteSingleImage = async (clipImg?: ClipboardImage) => {
+  const img = clipImg || await readImageWithToast()
+  if (!img) return
+  const file = new File([img.blob], `clip_${Date.now()}.png`, { type: img.blob.type || 'image/png' })
+  await setSingleImage(file)
 }
 
 // ============ Tab 2: 尺寸缩放 ============
@@ -1395,6 +1473,22 @@ const handleDownloadBase64 = () => {
   document.body.removeChild(a)
   URL.revokeObjectURL(url)
 }
+
+// ============ Ctrl+V 剪贴板粘贴（路由到当前 Tab） ============
+let unlistenPaste: (() => void) | null = null
+onMounted(() => {
+  unlistenPaste = onPasteImage((img: ClipboardImage) => {
+    switch (activeTab.value) {
+      case 'compress': pasteCompressImage(img); break
+      case 'merge': pasteMergeImage(img); break
+      case 'watermark': pasteWatermarkImage(img); break
+      case 'palette': pastePaletteImage(img); break
+      case 'resize':
+      case 'base64': pasteSingleImage(img); break
+    }
+  })
+})
+onUnmounted(() => { unlistenPaste?.() })
 </script>
 
 <style scoped>

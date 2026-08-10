@@ -15,8 +15,43 @@ export interface ChangelogData {
 }
 
 export const changelogData: ChangelogData = {
-  versionRange: "从 v1.0 到 v7.6.0 更新内容",
+  versionRange: "从 v1.0 到 v7.11.0 更新内容",
   entries: [
+  {
+    "version": "7.11.0",
+    "date": "2026-08-10",
+    "content": "Git 仓库统计：选择本地 Git 仓库目录，统计总提交数/新增删除行数/贡献者数，贡献者排行（提交数进度条）、每日提交趋势图（30/90/365天/全部切换，SVG 柱状图悬停看明细）、文件改动 Top 10，基于系统 git 命令解析，异步后台分析不卡界面",
+    "isEnhancement": false,
+    "isNewFeature": true
+  },
+  {
+    "version": "7.10.0",
+    "date": "2026-08-10",
+    "content": "模板渲染工具：Handlebars 模板实时渲染（300ms 防抖），左侧模板/右侧 JSON 数据双栏编辑，实时开关，渲染预览 / HTML 源码两种视图切换，快捷插入常用语法片段（变量/#each/#if/条件逻辑），模板或数据解析错误实时提示，内置示例模板与示例数据",
+    "isEnhancement": false,
+    "isNewFeature": false
+  },
+  {
+    "version": "7.9.0",
+    "date": "2026-08-10",
+    "content": "JSON Schema 工具：draft-07 Schema 数据校验（错误路径/关键字/消息逐条展示）、依据 Schema 一键生成 Mock 测试数据（支持可选字段/默认值选项）、导出 TypeScript 接口定义，内置示例 Schema 与示例数据，基于 ajv + json-schema-faker 纯前端实现",
+    "isEnhancement": false,
+    "isNewFeature": false
+  },
+  {
+    "version": "7.8.0",
+    "date": "2026-08-10",
+    "content": "Excel 处理工具：读取 .xlsx/.xls/.csv 多 Sheet 浏览与切换、多文件合并（纵向追加行 / 横向拼接列）、数据清洗（去空行 / 按行去重 / 修剪空格 / 空值填充）、导出 CSV / JSON / Markdown / SQL INSERT，或另存为 .xlsx，数据预览开关（前100行 / 全部），基于 SheetJS 纯前端实现",
+    "isEnhancement": false,
+    "isNewFeature": false
+  },
+  {
+    "version": "7.7.0",
+    "date": "2026-08-10",
+    "content": "剪贴板格式转换工具：一键读取剪贴板内容并自动识别类型，剪贴板图片 ↔ Base64（DataURL）互转、HTML富文本 → Markdown 纯文本、表格（HTML table / TSV）→ Markdown / CSV / JSON / TSV 四种格式互转，彩色分组卡片样式，全部纯前端实现零额外依赖",
+    "isEnhancement": false,
+    "isNewFeature": false
+  },
   {
     "version": "7.6.0",
     "date": "2026-08-10",
