@@ -15,7 +15,7 @@
       </main>
 
       <div class="app-footer">
-        <span>© 2026 栗的百宝箱 · Made by liam</span>
+        <span>© 2026 栗的百宝箱（精简版） · Made by liam</span>
       </div>
     </div>
     <CommandPalette />

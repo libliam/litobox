@@ -1,7 +1,7 @@
 {
-  "productName": "LitoBox",
+  "productName": "litobox-lite",
   "version": "8.0.0",
-  "identifier": "com.dev.toolbox",
+  "identifier": "com.litobox.lite",
   "build": {
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build",
@@ -12,7 +12,7 @@
     "withGlobalTauri": false,
     "windows": [
       {
-        "title": "栗的百宝箱",
+        "title": "栗的百宝箱（精简版）",
         "width": 1300,
         "height": 850,
         "minWidth": 800,

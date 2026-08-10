@@ -1,7 +1,7 @@
 {
-  "name": "litobox",
+  "name": "litobox-lite",
   "version": "8.0.0",
-  "description": "栗的百宝箱",
+  "description": "栗的百宝箱（精简版）",
   "author": "liam",
   "scripts": {
     "dev": "vite",

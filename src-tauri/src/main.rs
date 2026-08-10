@@ -238,7 +238,7 @@ fn main() {
                     MessageDialogBuilder::new(
                         window.dialog().clone(),
                         "退出确认",
-                        "确定要退出栗的百宝箱吗？",
+                        "确定要退出栗的百宝箱（精简版）吗？",
                     )
                     .buttons(MessageDialogButtons::YesNo)
                     .kind(MessageDialogKind::Warning)

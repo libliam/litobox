@@ -1,4 +1,4 @@
-# LitoBox - 栗的百宝箱 (Lite 精简版)
+# litobox-lite - 栗的百宝箱（精简版）
 
 <p align="center">
   <strong>零成本 AI 驱动开发的 Windows 桌面工具箱 · 精简分支</strong>

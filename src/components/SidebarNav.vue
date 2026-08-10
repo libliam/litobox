@@ -4,7 +4,7 @@
       <div class="logo-area">
         <span class="logo-icon">⚡</span>
         <div class="logo-text" v-show="!collapsed">
-          <h1 class="app-title">栗的百宝箱</h1>
+          <h1 class="app-title">栗的百宝箱<small class="app-tag">精简版</small></h1>
           <span class="app-version">v{{ appVersion }}</span>
         </div>
       </div>
@@ -584,6 +584,18 @@ const applyTheme = (theme: string) => {
   letter-spacing: 1px;
   margin: 0;
   line-height: 1.2;
+}
+
+.app-tag {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--accent-cyan);
+  background: rgba(8, 145, 178, 0.1);
+  border-radius: 4px;
+  padding: 1px 5px;
+  margin-left: 4px;
+  letter-spacing: 0;
+  vertical-align: middle;
 }
 
 .app-version {
