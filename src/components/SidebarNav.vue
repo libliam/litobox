@@ -170,6 +170,17 @@
           </svg>
         </button>
       </el-tooltip>
+      <el-tooltip content="更新日志" placement="right">
+        <button class="pin-btn changelog-btn" @click="openChangelog">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="16" y1="13" x2="8" y2="13"/>
+            <line x1="16" y1="17" x2="8" y2="17"/>
+            <polyline points="10 9 9 9 8 9"/>
+          </svg>
+        </button>
+      </el-tooltip>
     </div>
   </aside>
   
@@ -410,6 +421,11 @@ const handleSelect = (toolId: string) => {
 
 const handleToggleFavorite = (toolId: string) => {
   store.toggleFavorite(toolId)
+}
+
+const openChangelog = () => {
+  emit('update:modelValue', 'changelog')
+  store.addRecentTool('changelog')
 }
 
 watch(currentTheme, (newTheme) => {
@@ -753,6 +769,41 @@ const applyTheme = (theme: string) => {
   background: rgba(0, 212, 255, 0.15);
   border-color: var(--accent-cyan);
   color: var(--accent-cyan);
+}
+
+.changelog-btn {
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.12), rgba(59, 130, 246, 0.12));
+  border-color: rgba(168, 85, 247, 0.3);
+  color: #c084fc;
+  position: relative;
+  overflow: hidden;
+}
+
+.changelog-btn::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(
+    45deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.1) 50%,
+    transparent 70%
+  );
+  transform: translateX(-100%);
+  transition: transform 0.6s;
+}
+
+.changelog-btn:hover {
+  border-color: #a855f7 !important;
+  color: #c084fc !important;
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.3);
+}
+
+.changelog-btn:hover::after {
+  transform: translateX(100%);
 }
 
 .theme-select {
