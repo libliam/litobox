@@ -131,7 +131,7 @@
 
 ### 一键运行
 
-下载 [最新版](../../releases) `litobox-v{version}.exe`（如 `litobox-v7.2.0.exe`），双击即可运行，无需安装。
+下载 [最新版](../../releases) `litobox-{version}.exe`（如 `litobox-7.2.0.exe`），双击即可运行，无需安装。
 
 ### 开发环境
 
