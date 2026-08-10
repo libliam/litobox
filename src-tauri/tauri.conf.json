@@ -1,6 +1,6 @@
 {
   "productName": "LitoBox",
-  "version": "7.2.0",
+  "version": "7.6.0",
   "identifier": "com.dev.toolbox",
   "build": {
     "beforeDevCommand": "npm run dev",

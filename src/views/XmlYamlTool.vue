@@ -137,15 +137,99 @@
           </div>
         </div>
       </el-tab-pane>
+      <!-- 配置格式互转 Tab -->
+      <el-tab-pane label="配置互转" name="convert">
+        <div class="tool-card sticky-card">
+          <div class="card-header">
+            <div class="header-left">
+              <span class="card-title">格式</span>
+              <el-tooltip placement="bottom" effect="dark">
+                <template #content>
+                  <div class="tooltip-content">
+                    <p>支持 JSON / YAML / TOML / INI / Properties 5 种格式环形互转</p>
+                    <p>统一以 JS 对象为中间层：源格式 → 对象 → 目标格式</p>
+                  </div>
+                </template>
+                <el-icon class="hint-icon"><QuestionFilled /></el-icon>
+              </el-tooltip>
+            </div>
+            <div class="card-actions">
+              <el-button size="small" @click="swapFormat">
+                <el-icon><ArrowRightBold /></el-icon>
+                <span>交换 ↔</span>
+              </el-button>
+              <el-button size="small" type="primary" @click="handleConvert">转换</el-button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="action-grid">
+              <div class="action-group">
+                <div class="group-label">源格式</div>
+                <el-select v-model="convSrc" size="small" style="width: 130px">
+                  <el-option v-for="f in CONFIG_FORMATS" :key="f.value" :label="f.label" :value="f.value" />
+                </el-select>
+              </div>
+              <el-icon class="arrow-icon"><Right /></el-icon>
+              <div class="action-group">
+                <div class="group-label">目标格式</div>
+                <el-select v-model="convDst" size="small" style="width: 130px">
+                  <el-option v-for="f in CONFIG_FORMATS" :key="f.value" :label="f.label" :value="f.value" />
+                </el-select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tool-card">
+          <div class="card-header">
+            <span class="card-title">输入 ({{ convSrcLabel }})</span>
+            <div class="card-actions">
+              <VariablePicker @select="convInput += `{{${$event}}}`" />
+              <el-button size="small" @click="convInput = ''; convOutput = ''; convError = ''">清空</el-button>
+              <el-button size="small" @click="handleConvPaste">粘贴</el-button>
+            </div>
+          </div>
+          <div class="card-body">
+            <el-input
+              v-model="convInput"
+              type="textarea"
+              :rows="8"
+              :placeholder="convPlaceholder"
+              resize="vertical"
+            />
+          </div>
+        </div>
+
+        <div class="tool-card">
+          <div class="card-header">
+            <span class="card-title">输出 ({{ convDstLabel }})</span>
+            <el-button size="small" @click="handleConvCopy">复制</el-button>
+          </div>
+          <div class="card-body">
+            <el-input
+              :model-value="convOutput"
+              type="textarea"
+              :rows="8"
+              readonly
+              resize="vertical"
+              :class="{ 'error': convIsError }"
+            />
+            <div v-if="convError" class="error-message">{{ convError }}</div>
+          </div>
+        </div>
+      </el-tab-pane>
     </el-tabs>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import { QuestionFilled } from '@element-plus/icons-vue'
-import { formatXml, validateXml, xmlToJson, jsonToXml, parseYaml, jsonToYaml } from '@/utils/xmlYamlUtils'
+import { QuestionFilled, Right, ArrowRightBold } from '@element-plus/icons-vue'
+import {
+  formatXml, validateXml, xmlToJson, jsonToXml, parseYaml, jsonToYaml,
+  parseConfig, stringifyConfig, type ConfigFormat,
+} from '@/utils/xmlYamlUtils'
 import { useToolboxStore } from '@/store'
 import VariablePicker from '@/components/VariablePicker.vue'
 
@@ -165,6 +249,70 @@ const yamlInput = ref('')
 const yamlOutput = ref('')
 const yamlError = ref('')
 const yamlIsError = ref(false)
+
+// ============ 配置互转 Tab ============
+const CONFIG_FORMATS: { value: ConfigFormat; label: string; example: string }[] = [
+  { value: 'json', label: 'JSON', example: '{"name": "test", "port": 8080, "server": {"host": "localhost"}}' },
+  { value: 'yaml', label: 'YAML', example: 'name: test\nport: 8080\nserver:\n  host: localhost' },
+  { value: 'toml', label: 'TOML', example: 'name = "test"\nport = 8080\n\n[server]\nhost = "localhost"' },
+  { value: 'ini', label: 'INI', example: 'name=test\nport=8080\n\n[server]\nhost=localhost' },
+  { value: 'properties', label: 'Properties', example: 'name=test\nport=8080\nserver.host=localhost' },
+]
+
+const convSrc = ref<ConfigFormat>('json')
+const convDst = ref<ConfigFormat>('toml')
+const convInput = ref('')
+const convOutput = ref('')
+const convError = ref('')
+const convIsError = ref(false)
+
+const convSrcLabel = computed(() => CONFIG_FORMATS.find(f => f.value === convSrc.value)?.label || convSrc.value)
+const convDstLabel = computed(() => CONFIG_FORMATS.find(f => f.value === convDst.value)?.label || convDst.value)
+const convPlaceholder = computed(() => {
+  const f = CONFIG_FORMATS.find(x => x.value === convSrc.value)
+  return `示例（${convSrcLabel.value}）：\n${f?.example || ''}`
+})
+
+const swapFormat = () => {
+  const s = convSrc.value; convSrc.value = convDst.value; convDst.value = s
+  // 把已有输出反过来作为输入
+  if (convOutput.value || convInput.value) {
+    const tmp = convInput.value
+    convInput.value = convOutput.value
+    convOutput.value = tmp
+    convError.value = ''
+  }
+}
+
+const handleConvert = () => {
+  if (!convInput.value.trim()) {
+    ElMessage.warning('请输入内容')
+    return
+  }
+  try {
+    const obj = parseConfig(convInput.value, convSrc.value)
+    convOutput.value = stringifyConfig(obj, convDst.value)
+    convError.value = ''
+    convIsError.value = false
+    ElMessage.success(`${convSrcLabel.value} → ${convDstLabel.value} 转换完成`)
+    store.addHistory({
+      tool: 'xmlYaml',
+      action: `${convSrcLabel.value}→${convDstLabel.value}`,
+      inputPreview: convInput.value.slice(0, 50),
+      outputPreview: convOutput.value.slice(0, 50),
+      inputFull: `${convSrc.value}→${convDst.value}\n${convInput.value}`,
+      outputFull: convOutput.value,
+    })
+  } catch (e: any) {
+    convOutput.value = ''
+    convError.value = '转换失败: ' + (e.message || '未知错误')
+    convIsError.value = true
+    ElMessage.error('转换失败')
+  }
+}
+
+const handleConvPaste = async () => { try { convInput.value = await navigator.clipboard.readText() } catch { ElMessage.warning('无法读取剪贴板') } }
+const handleConvCopy = () => { navigator.clipboard.writeText(convOutput.value || convError.value); ElMessage.success('已复制') }
 
 // XML 操作
 const handleXmlFormat = () => {
@@ -380,4 +528,11 @@ const handleYamlCopy = () => { navigator.clipboard.writeText(yamlOutput.value ||
 
 .error-message { margin-top: 8px; padding: 8px 12px; background: rgba(239, 68, 68, 0.1); border: 1px solid var(--accent-red); border-radius: 4px; color: var(--accent-red); font-size: 13px; line-height: 1.5; }
 :deep(.el-textarea.error .el-textarea__inner) { border-color: var(--accent-red); box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.1); }
+
+/* ===== 配置互转 Tab ===== */
+.arrow-icon {
+  font-size: 18px;
+  color: var(--accent-cyan);
+  margin: 0 4px;
+}
 </style>

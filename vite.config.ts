@@ -30,6 +30,8 @@ export default defineConfig({
   },
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
+    // ponytail: @iarna/toml 是 Node.js 库，引用浏览器不存在的 global 变量，polyfill 成 globalThis
+    global: 'globalThis',
   },
   build: {
     modulePreload: false,

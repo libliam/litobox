@@ -15,8 +15,36 @@ export interface ChangelogData {
 }
 
 export const changelogData: ChangelogData = {
-  versionRange: "从 v1.0 到 v7.2.0 更新内容",
+  versionRange: "从 v1.0 到 v7.6.0 更新内容",
   entries: [
+  {
+    "version": "7.6.0",
+    "date": "2026-08-10",
+    "content": "XML/YAML工具新增\"配置互转\"Tab：JSON / YAML / TOML / INI / Java Properties 5 种配置格式环形互转（统一中间层：源格式 → JS对象 → 目标格式），一键交换源↔目标格式（同时互换输入输出），选择格式时显示对应示例，INI 支持 section / 引号字符串 / 注释，Properties 支持点号键→嵌套对象 / \\n\\t 转义，手写 INI/Properties 解析器零额外依赖，仅 TOML 引入 @iarna/toml",
+    "isEnhancement": true,
+    "isNewFeature": true
+  },
+  {
+    "version": "7.5.0",
+    "date": "2026-08-10",
+    "content": "拼音工具：中文转拼音，5 种输出模式（全拼带声调/全拼无声调/首字母大写/驼峰式/全小写无间隔），可调分隔符（空格/无/下划线/短横线），多音字候选展示（开启后列出所有多音字的所有读音），批量逐行处理，实时转换，历史记录还原",
+    "isEnhancement": false,
+    "isNewFeature": false
+  },
+  {
+    "version": "7.4.0",
+    "date": "2026-08-10",
+    "content": "条形码生成工具：支持 CODE128/EAN-13/EAN-8/UPC-A/CODE39/ITF-14/Codabar/MSI/Pharmacode 9 种一维条码格式，可调条宽/条高/边距/前景色/背景色/显示文字/字号，批量生成（每行一条，CSV/TXT 导入，ZIP 打包下载，序号/文本命名），格式切换自动提示输入要求，历史记录还原",
+    "isEnhancement": false,
+    "isNewFeature": false
+  },
+  {
+    "version": "7.3.0",
+    "date": "2026-08-10",
+    "content": "IP 子网计算器：IPv4 子网计算（网络地址/广播/掩码/反掩码/首末主机/主机数/IP类别/私网判断/二进制可视化，网络位与主机位分色高亮）、子网划分（按子网数量或每子网主机数，表格列出所有子网）、IP范围合并（起止IP转最少CIDR块列表）、IP↔整数互转（含十六进制/二进制），CIDR 与点分掩码两种输入格式，历史记录还原",
+    "isEnhancement": false,
+    "isNewFeature": false
+  },
   {
     "version": "7.2.0",
     "date": "2026-08-09",

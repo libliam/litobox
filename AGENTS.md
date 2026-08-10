@@ -29,6 +29,7 @@ Rules:
 - **版本号更新必须同步更新 README**：每次更新版本号意味着新增了功能，必须在 README.md 的功能阶段记录中添加新功能条目。
 - **经验总结注重通用性**：当需要总结经验、提炼解决方法时，要考虑通用性和可复用性，避免只针对特定场景。
 - **开发新功能时主动沟通确认**：在实现过程中遇到模糊需求、多种可行方案、或需要做取舍决策时，主动向用户提问确认，而不是自行猜测。宁可多问一句，也不要做出不符合用户预期的实现。沟通内容包括但不限于：功能边界确认、UI交互细节、参数默认值、异常场景处理策略。目标是确保最终交付的功能真正满足用户需求，减少返工。
+- **不生成设计/计划文档，节省 token**：开发新功能时跳过 brainstorming/writing-plans 的写文档环节（spec/plan/dispatch/report 等一律不写）。需求在对话中通过提问确认即可，确认后直接实现。仅在用户明确要求时才产出文档。
 
 Not lazy about: understanding the problem (read it fully and trace the real flow before picking a rung, a small diff you don't understand is just laziness dressed up as efficiency), input validation at trust boundaries, error handling that prevents data loss, security, accessibility, the calibration real hardware needs (the platform is never the spec ideal, a clock drifts, a sensor reads off), anything explicitly requested. Lazy code without its check is unfinished: non-trivial logic leaves ONE runnable check behind, the smallest thing that fails if the logic breaks (an assert-based demo/self-check or one small test file; no frameworks, no fixtures). Trivial one-liners need no test.
 
