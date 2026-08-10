@@ -15,8 +15,15 @@ export interface ChangelogData {
 }
 
 export const changelogData: ChangelogData = {
-  versionRange: "从 v1.0 到 v7.11.0 更新内容",
+  versionRange: "从 v1.0 到 v7.12.0 更新内容",
   entries: [
+  {
+    "version": "7.12.0",
+    "date": "2026-08-10",
+    "content": "图片对比：两张图片像素级对比，三种模式——滑动对比（拖动分割线左右查看）、差异高亮（红色标记差异像素，容差 0-128 可调，实时差异率统计）、半透明叠加（B 图透明度可调），自动统一尺寸对齐，大图等比降采样保证性能",
+    "isEnhancement": true,
+    "isNewFeature": false
+  },
   {
     "version": "7.11.0",
     "date": "2026-08-10",

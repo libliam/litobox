@@ -57,6 +57,7 @@ import ExcelTool from '@/views/ExcelTool.vue'
 import SchemaTool from '@/views/SchemaTool.vue'
 import TemplateTool from '@/views/TemplateTool.vue'
 import GitStatsTool from '@/views/GitStatsTool.vue'
+import ImageCompareTool from '@/views/ImageCompareTool.vue'
 import PdfTool from '@/views/PdfTool.vue'
 import HashTool from '@/views/HashTool.vue'
 import XmlYamlTool from '@/views/XmlYamlTool.vue'
@@ -135,6 +136,7 @@ const toolComponentMap: Record<string, any> = {
   schemaTool: SchemaTool,
   templateTool: TemplateTool,
   gitStats: GitStatsTool,
+  imageCompare: ImageCompareTool,
   pdf: PdfTool,
   hash: HashTool,
   xmlYaml: XmlYamlTool,

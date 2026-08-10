@@ -112,7 +112,8 @@ const getToolName = (tool: string): string => {
     excelTool: 'Excel工具',
     schemaTool: 'JSON Schema',
     templateTool: '模板渲染',
-    gitStats: 'Git统计'
+    gitStats: 'Git统计',
+    imageCompare: '图片对比'
   }
   return names[tool] || tool
 }
