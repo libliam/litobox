@@ -58,6 +58,7 @@ import SchemaTool from '@/views/SchemaTool.vue'
 import TemplateTool from '@/views/TemplateTool.vue'
 import GitStatsTool from '@/views/GitStatsTool.vue'
 import ImageCompareTool from '@/views/ImageCompareTool.vue'
+import CodeFormatterTool from '@/views/CodeFormatterTool.vue'
 import PdfTool from '@/views/PdfTool.vue'
 import HashTool from '@/views/HashTool.vue'
 import XmlYamlTool from '@/views/XmlYamlTool.vue'
@@ -103,6 +104,7 @@ import PasswordVault from '@/views/PasswordVault.vue'
 import FileRenamer from '@/views/FileRenamer.vue'
 import QuickLaunchTool from '@/views/QuickLaunchTool.vue'
 import SvgTool from '@/views/SvgTool.vue'
+import BatchReplaceTool from '@/views/BatchReplaceTool.vue'
 import ChangelogView from '@/views/ChangelogView.vue'
 import CommandPalette from '@/components/CommandPalette.vue'
 import QuickLaunchOverlay from '@/components/QuickLaunchOverlay.vue'
@@ -124,6 +126,7 @@ const toolComponentMap: Record<string, any> = {
   devtools: DevTools,
   fileprocessing: FileProcessing,
   sql: SqlTool,
+  batchReplace: BatchReplaceTool,
   js: JSTool,
   mockData: MockDataTool,
   ocr: OcrTool,
@@ -136,6 +139,7 @@ const toolComponentMap: Record<string, any> = {
   schemaTool: SchemaTool,
   templateTool: TemplateTool,
   gitStats: GitStatsTool,
+  codeFormatter: CodeFormatterTool,
   imageCompare: ImageCompareTool,
   pdf: PdfTool,
   hash: HashTool,

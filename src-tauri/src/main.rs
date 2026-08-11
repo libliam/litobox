@@ -66,6 +66,7 @@ fn main() {
             file_encoding::detect_file_encoding,
             file_encoding::batch_read_txt_files,
             file_encoding::batch_replace_in_files,
+            file_encoding::batch_replace_execute,
             file_encoding::batch_convert_encoding,
             file_saver::save_file_with_dialog,
             file_saver::save_text_with_dialog,

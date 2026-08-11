@@ -333,6 +333,7 @@ const TOOL_ACTIONS: Record<string, string[]> = {
   sql: ['转SQL IN', '转SQL VALUES'],
   base64: ['编码', '解码'],
   calculator: ['表达式计算'],
+  codeFormatter: ['格式化JS', '格式化JSON', '格式化CSS', '格式化HTML', '格式化Markdown', '格式化YAML'],
 }
 
 // 预置工作流模板
@@ -715,6 +716,8 @@ async function executeStep(tool: string, action: string, input: string): Promise
     }
     case 'calculator':
       return executeCalculatorAction(action, input)
+    case 'codeFormatter':
+      return executeCodeFormatterAction(action, input)
     case 'certViewer':
       return executeCertAction(action, input)
     case 'fileRenamer':
@@ -735,6 +738,24 @@ async function executeStep(tool: string, action: string, input: string): Promise
 function executeCertAction(_action: string, input: string): string {
   if (!input.trim()) return ''
   return input
+}
+
+// 代码格式化执行 — 复用 codeFormatterUtils（懒加载 prettier）
+const FORMATTER_LANG_MAP: Record<string, string> = {
+  '格式化JS': 'javascript',
+  '格式化JSON': 'json',
+  '格式化CSS': 'css',
+  '格式化HTML': 'html',
+  '格式化Markdown': 'markdown',
+  '格式化YAML': 'yaml',
+}
+
+async function executeCodeFormatterAction(action: string, input: string): Promise<string> {
+  if (!input.trim()) return ''
+  const { formatCode } = await import('@/utils/codeFormatterUtils')
+  const lang = FORMATTER_LANG_MAP[action] || 'javascript'
+  const r = await formatCode(input, lang, { tabWidth: 2 })
+  return r.success ? r.data! : (r.error || '格式化失败')
 }
 
 // 字符串处理 — 复用 stringUtils

@@ -1,6 +1,6 @@
 {
   "name": "litobox",
-  "version": "7.12.0",
+  "version": "7.13.0",
   "description": "栗的百宝箱",
   "author": "liam",
   "scripts": {
@@ -55,6 +55,7 @@
     "pdfjs-dist": "^3.11.174",
     "pinia": "^2.1.0",
     "pinyin-pro": "^3.28.2",
+    "prettier": "^3.9.6",
     "qrcode": "^1.5.4",
     "vue": "^3.4.0",
     "xlsx": "^0.18.5"

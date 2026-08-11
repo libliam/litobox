@@ -15,8 +15,15 @@ export interface ChangelogData {
 }
 
 export const changelogData: ChangelogData = {
-  versionRange: "从 v1.0 到 v7.12.0 更新内容",
+  versionRange: "从 v1.0 到 v7.13.0 更新内容",
   entries: [
+  {
+    "version": "7.13.0",
+    "date": "2026-08-11",
+    "content": "代码格式化工具（基于 Prettier 的多语言格式化：JS/TS/JSON/JSON5/CSS/SCSS/HTML/Vue/Markdown/YAML，缩进/分号/引号可调，插件按需懒加载，工作流可调用）+ 批量替换工具（多文件内容搜索替换，正则模式，UTF-8/GBK 编码自动保留，替换前自动备份到 .litobox_backup 目录）",
+    "isEnhancement": false,
+    "isNewFeature": false
+  },
   {
     "version": "7.12.0",
     "date": "2026-08-10",
