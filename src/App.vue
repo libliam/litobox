@@ -57,6 +57,7 @@ import ExcelTool from '@/views/ExcelTool.vue'
 import SchemaTool from '@/views/SchemaTool.vue'
 import TemplateTool from '@/views/TemplateTool.vue'
 import GitStatsTool from '@/views/GitStatsTool.vue'
+import StaticServerTool from '@/views/StaticServerTool.vue'
 import ImageCompareTool from '@/views/ImageCompareTool.vue'
 import CodeFormatterTool from '@/views/CodeFormatterTool.vue'
 import PdfTool from '@/views/PdfTool.vue'
@@ -139,6 +140,7 @@ const toolComponentMap: Record<string, any> = {
   schemaTool: SchemaTool,
   templateTool: TemplateTool,
   gitStats: GitStatsTool,
+  staticServer: StaticServerTool,
   codeFormatter: CodeFormatterTool,
   imageCompare: ImageCompareTool,
   pdf: PdfTool,

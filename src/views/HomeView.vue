@@ -20,6 +20,7 @@
               class="search-input"
               placeholder="输入关键词搜索工具..."
               @input="handleSearch"
+              @keydown="handleSearchKeydown"
             />
             <button v-if="searchQuery" class="search-clear" @click="searchQuery = ''">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
@@ -32,10 +33,12 @@
         <!-- 搜索结果 -->
         <div v-if="searchResults.length > 0" class="search-results">
           <div
-            v-for="tool in searchResults"
+            v-for="(tool, idx) in searchResults"
             :key="tool.id"
             class="search-result-item"
+            :class="{ active: selectedIndex === idx }"
             @click="handleSelectTool(tool.id)"
+            @mouseenter="selectedIndex = idx"
           >
             <span class="result-icon" v-html="tool.iconSvg"></span>
             <div class="result-info">
@@ -114,7 +117,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { useToolboxStore, TOOL_LIST } from '@/store'
 
 const props = defineProps<{
@@ -155,6 +158,44 @@ const allToolItems = computed(() => {
 
 const handleSearch = () => {
   // 搜索逻辑由 computed 处理
+}
+
+// ============ 搜索结果键盘导航（↑↓ 选择 / Enter 跳转 / Esc 清空） ============
+const selectedIndex = ref(-1)
+
+// 输入变化时重置选中项
+watch(searchQuery, () => {
+  selectedIndex.value = -1
+})
+
+function scrollActiveIntoView() {
+  nextTick(() => {
+    const activeEl = document.querySelector('.search-result-item.active')
+    activeEl?.scrollIntoView({ block: 'nearest' })
+  })
+}
+
+function handleSearchKeydown(e: KeyboardEvent) {
+  console.log('[首页搜索] 按键:', e.key) // ponytail: 排查键盘事件是否触发
+  const items = searchResults.value
+  if (items.length === 0) return
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault()
+    const step = e.key === 'ArrowDown' ? 1 : -1
+    let next = selectedIndex.value === -1 ? (step > 0 ? 0 : items.length - 1) : selectedIndex.value + step
+    next = Math.max(0, Math.min(next, items.length - 1))
+    selectedIndex.value = next
+    scrollActiveIntoView()
+  } else if (e.key === 'Enter') {
+    e.preventDefault()
+    const idx = selectedIndex.value === -1 ? 0 : selectedIndex.value
+    const tool = items[idx]
+    if (tool) handleSelectTool(tool.id)
+  } else if (e.key === 'Escape') {
+    e.preventDefault()
+    searchQuery.value = ''
+    selectedIndex.value = -1
+  }
 }
 
 const handleSelectTool = (toolId: string) => {
@@ -277,6 +318,11 @@ html.light .search-input {
 .search-result-item:hover {
   background: rgba(0, 212, 255, 0.06);
   border-color: rgba(0, 212, 255, 0.2);
+}
+
+.search-result-item.active {
+  background: rgba(0, 212, 255, 0.1);
+  border-color: rgba(0, 212, 255, 0.45);
 }
 
 .result-icon {

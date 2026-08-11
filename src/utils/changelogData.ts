@@ -15,8 +15,36 @@ export interface ChangelogData {
 }
 
 export const changelogData: ChangelogData = {
-  versionRange: "从 v1.0 到 v7.13.0 更新内容",
+  versionRange: "从 v1.0 到 v7.15.0 更新内容",
   entries: [
+  {
+    "version": "7.15.0",
+    "date": "2026-08-11",
+    "content": "~~文件占用检测~~ 已放弃：曾实现 PowerToys FileLocksmith 同款句柄枚举方案（NtQuerySystemInformation + NtDuplicateObject + GetFinalPathNameByHandleW），因 Windows API 环境兼容性问题无法可靠检测占用进程——Restart Manager（RmRegisterResources）在部分机器上内部挂起导致检测卡死，句柄枚举受 SeDebugPrivilege 与系统环境限制不稳定；**以后不再实现文件占用检测功能**",
+    "isEnhancement": true,
+    "isNewFeature": false
+  },
+  {
+    "version": "7.14.2",
+    "date": "2026-08-11",
+    "content": "搜索键盘导航：首页搜索工具下拉列表支持 ↑↓ 方向键选择（高亮+自动滚动）、Enter 跳转、Esc 清空；全文搜索工具结果表格支持 ↑↓ 选择行、Enter 在资源管理器中定位；命令面板与快速启动弹窗确认支持 ↑↓/Enter/Esc，全程无需鼠标",
+    "isEnhancement": true,
+    "isNewFeature": false
+  },
+  {
+    "version": "7.14.1",
+    "date": "2026-08-11",
+    "content": "媒体信息工具优化：支持选择图片文件（JPG/PNG/WebP/GIF/BMP/TIFF/AVIF/ICO）与所有文件类型（默认选中），图片直接展示原图预览（点击放大）；视频流卡片适配图像流展示（帧率/时长/比特率为 0 时自动隐藏），增补图片编解码器（PNG/MJPEG/WebP/BMP/TIFF）、像素格式（BGR/BGRA/Pal8）、格式名称中文翻译",
+    "isEnhancement": true,
+    "isNewFeature": false
+  },
+  {
+    "version": "7.14.0",
+    "date": "2026-08-11",
+    "content": "本地静态服务器：一键启动 HTTP 静态文件服务，选择目录即起服务，自动展示本机 + 局域网访问地址（端口占用自动 +1 避让，可手动指定）；内建目录浏览页（上级导航/子目录/文件大小/修改时间，中文路径友好），文件点击内联打开或强制下载，子目录一键打包 ZIP 下载，网页端上传文件到当前目录（手机/局域网设备可直接传文件到电脑），实时访问日志（时间/IP/方法/路径/状态码）；后端基于 Rust 手写轻量 HTTP/1.1 服务，零新增依赖，支持 keep-alive、CORS、路径穿越防护、MIME 识别、GBK/中文文件名 URL 编码",
+    "isEnhancement": false,
+    "isNewFeature": true
+  },
   {
     "version": "7.13.0",
     "date": "2026-08-11",

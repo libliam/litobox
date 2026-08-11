@@ -60,7 +60,7 @@
             <span class="info-key">格式名称</span>
             <span class="info-value">{{ translateFormatName(mediaInfo.structured.format.format_long_name) || translateFormatName(mediaInfo.structured.format.format_name) }}</span>
           </div>
-          <div class="info-row">
+          <div class="info-row" v-if="mediaInfo.structured.format.duration > 0">
             <span class="info-key">时长</span>
             <span class="info-value">{{ formatDuration(mediaInfo.structured.format.duration) }}</span>
           </div>
@@ -80,10 +80,22 @@
       </div>
     </div>
 
+    <!-- 图片文件原图预览 -->
+    <div v-if="mediaInfo && imagePreviewUrl" class="tool-card">
+      <div class="card-header">
+        <span class="card-title">图片预览</span>
+      </div>
+      <div class="card-body">
+        <div class="image-preview-wrap">
+          <img :src="imagePreviewUrl" class="image-preview" @click="showImagePreview" alt="图片预览" />
+        </div>
+      </div>
+    </div>
+
     <!-- 视频流 / 封面图信息 -->
     <div v-for="(stream, idx) in mediaInfo?.structured.video_streams" :key="'video-' + idx" class="tool-card">
       <div class="card-header">
-        <span class="card-title">{{ isCoverArt(stream) ? '封面图' : '视频流' }} #{{ stream.index }}</span>
+        <span class="card-title">{{ isCoverArt(stream) ? '封面图' : (isImageFile(mediaInfo?.structured.file_path || '') ? '图像流' : '视频流') }} #{{ stream.index }}</span>
         <div class="card-actions">
           <el-button size="small" @click="copyVideoStreamInfo(stream)">复制</el-button>
         </div>
@@ -138,7 +150,7 @@
             <span class="info-value">{{ stream.width }}×{{ stream.height }}{{ stream.display_aspect_ratio ? ` (${stream.display_aspect_ratio})` : '' }}</span>
           </div>
           <template v-if="!isCoverArt(stream)">
-            <div class="info-row">
+            <div class="info-row" v-if="stream.fps > 0">
               <span class="info-key">
                 帧率
                 <el-tooltip placement="top" effect="dark">
@@ -171,7 +183,7 @@
               </span>
               <span class="info-value">{{ translateColorSpace(stream.color_space) || '未知' }} / {{ stream.color_primaries || '未知' }} / {{ translateColorTransfer(stream.color_transfer) || '未知' }}</span>
             </div>
-            <div class="info-row">
+            <div class="info-row" v-if="stream.bitrate > 0">
               <span class="info-key">
                 比特率
                 <el-tooltip placement="top" effect="dark">
@@ -460,7 +472,7 @@
     <!-- 封面图预览弹窗 -->
     <el-dialog
       v-model="coverPreviewVisible"
-      title="封面图预览"
+      title="图片预览"
       width="80%"
       center
       @close="coverPreviewUrl = ''"
@@ -591,6 +603,17 @@ const mediaInfo = ref<MediaInfoResult | null>(null)
 const errorMessage = ref('')
 const rawJsonVisible = ref(false)
 
+// 图片文件扩展名（ffprobe 支持的静态/动态图片格式）
+const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'tif', 'tiff', 'avif', 'ico']
+
+function isImageFile(path: string): boolean {
+  const ext = path.split('.').pop()?.toLowerCase() ?? ''
+  return IMAGE_EXTENSIONS.includes(ext)
+}
+
+// 图片文件原图预览（data URL）
+const imagePreviewUrl = ref('')
+
 // 封面图相关
 const coverArtUrls = ref<Record<number, string>>({})
 const coverArtLoading = ref<Record<number, boolean>>({})
@@ -615,10 +638,13 @@ async function checkFfmpeg() {
 async function selectFile() {
   const selected = await open({
     multiple: false,
-    filters: [{
-      name: '媒体文件',
-      extensions: ['mp4', 'mkv', 'avi', 'mov', 'webm', 'flv', 'wmv', 'mp3', 'wav', 'flac', 'aac', 'ogg', 'm4a', 'm4v']
-    }]
+    filters: [
+      // 默认选中第一项：所有文件
+      { name: '所有文件', extensions: ['*'] },
+      { name: '视频文件', extensions: ['mp4', 'mkv', 'avi', 'mov', 'webm', 'flv', 'wmv', 'm4v', 'mpg', 'mpeg', 'ts', 'm2ts'] },
+      { name: '音频文件', extensions: ['mp3', 'wav', 'flac', 'aac', 'ogg', 'm4a', 'wma', 'opus', 'amr'] },
+      { name: '图片文件', extensions: IMAGE_EXTENSIONS },
+    ]
   })
 
   if (!selected) return
@@ -657,6 +683,8 @@ async function loadMediaInfo(path: string) {
 
     // 加载封面图
     await loadCoverArts(path)
+    // 图片文件直接展示原图预览
+    await loadImagePreview(path)
   } catch (e) {
     errorMessage.value = String(e)
     ElMessage.error('加载失败')
@@ -698,6 +726,26 @@ function showCoverPreview(loopIdx: number) {
   }
 }
 
+/** 图片文件原图预览：后端读文件转 base64，前端以 data URL 展示 */
+async function loadImagePreview(filePath: string) {
+  if (!isImageFile(filePath)) return
+  try {
+    const base64 = await invoke<string>('read_file_base64', { filePath })
+    const ext = filePath.split('.').pop()?.toLowerCase() ?? 'png'
+    const mime = ext === 'jpg' ? 'jpeg' : ext
+    imagePreviewUrl.value = `data:image/${mime};base64,${base64}`
+  } catch (e) {
+    console.error('图片预览加载失败:', e)
+  }
+}
+
+function showImagePreview() {
+  if (imagePreviewUrl.value) {
+    coverPreviewUrl.value = imagePreviewUrl.value
+    coverPreviewVisible.value = true
+  }
+}
+
 function clearInfo() {
   mediaInfo.value = null
   errorMessage.value = ''
@@ -706,6 +754,7 @@ function clearInfo() {
   coverArtLoading.value = {}
   coverPreviewVisible.value = false
   coverPreviewUrl.value = ''
+  imagePreviewUrl.value = ''
 }
 
 function toggleRawJson() {
@@ -751,6 +800,8 @@ const FORMAT_NAME_MAP: Record<string, string> = {
   mp3: 'MP3', wav: 'WAV', flac: 'FLAC', aac: 'AAC',
   ogg: 'Ogg Vorbis', m4a: 'M4A', m4v: 'M4V',
   'is,om,iso2,mp41': 'MP4 (ISO Base)',
+  'image2 sequence': '图片', image2: '图片', png: 'PNG', gif: 'GIF',
+  webp: 'WebP', bmp: 'BMP', tiff: 'TIFF', ico: 'ICO', avif: 'AVIF',
 }
 
 /** 编解码器名称翻译 */
@@ -762,13 +813,15 @@ const CODEC_NAME_MAP: Record<string, string> = {
   opus: 'Opus', ac3: 'AC-3', eac3: 'E-AC-3', dts: 'DTS',
   pcm_s16le: 'PCM 16 位 LE', pcm_s24le: 'PCM 24 位 LE', pcm_f32le: 'PCM 32 位浮点',
   subrip: 'SubRip (SRT)', ass: 'ASS/SSA', srt: 'SRT',
+  png: 'PNG', mjpeg: 'MJPEG/JPEG', gif: 'GIF', webp: 'WebP',
+  bmp: 'BMP', tiff: 'TIFF', targa: 'TGA',
 }
 
 /** 像素格式翻译 */
 const PIX_FMT_MAP: Record<string, string> = {
   yuv420p: 'YUV 4:2:0', yuv422p: 'YUV 4:2:2', yuv444p: 'YUV 4:4:4',
   yuv420p10le: 'YUV 4:2:0 10 位', yuv422p10le: 'YUV 4:2:2 10 位', yuv444p10le: 'YUV 4:4:4 10 位',
-  rgb24: 'RGB 24 位', rgba: 'RGBA',
+  rgb24: 'RGB 24 位', rgba: 'RGBA', bgr24: 'BGR 24 位', bgra: 'BGRA', pal8: '8 位调色板',
   nv12: 'NV12', nv21: 'NV21',
 }
 
@@ -1134,6 +1187,29 @@ function copyRawJson() {
   max-height: 70vh;
   object-fit: contain;
   border-radius: 8px;
+}
+
+/* 图片文件原图预览 */
+.image-preview-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0;
+}
+
+.image-preview {
+  max-width: 100%;
+  max-height: 400px;
+  object-fit: contain;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.image-preview:hover {
+  transform: scale(1.02);
+  box-shadow: 0 4px 20px rgba(6, 182, 212, 0.3);
+  border-color: var(--accent-cyan, #06b6d4);
 }
 
 /* Tooltip 内容 */
