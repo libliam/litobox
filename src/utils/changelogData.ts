@@ -15,8 +15,15 @@ export interface ChangelogData {
 }
 
 export const changelogData: ChangelogData = {
-  versionRange: "从 v1.0 到 v7.15.0 更新内容",
+  versionRange: "从 v1.0 到 v7.16.0 更新内容",
   entries: [
+  {
+    "version": "7.16.0",
+    "date": "2026-08-12",
+    "content": "压缩/解压工具：多文件/文件夹 ZIP 打包（压缩级别存储/最快/默认/最大可调）、ZIP 内容预览列表（名称/类型/原始大小/压缩后大小/修改时间）与勾选部分条目解压、密码加密压缩（ZipCrypto 兼容 Windows/7-Zip/WinRAR）与密码解密（支持 AES-256 加密包）、防路径穿越（Zip Slip）、实时进度事件（当前文件+百分比）；后端基于 zip crate 纯 Rust 实现，目录递归收集、UTF-8 文件名、跳过已存在/不安全路径统计",
+    "isEnhancement": true,
+    "isNewFeature": false
+  },
   {
     "version": "7.15.0",
     "date": "2026-08-11",
@@ -28,8 +35,8 @@ export const changelogData: ChangelogData = {
     "version": "7.14.2",
     "date": "2026-08-11",
     "content": "搜索键盘导航：首页搜索工具下拉列表支持 ↑↓ 方向键选择（高亮+自动滚动）、Enter 跳转、Esc 清空；全文搜索工具结果表格支持 ↑↓ 选择行、Enter 在资源管理器中定位；命令面板与快速启动弹窗确认支持 ↑↓/Enter/Esc，全程无需鼠标",
-    "isEnhancement": true,
-    "isNewFeature": false
+    "isEnhancement": false,
+    "isNewFeature": true
   },
   {
     "version": "7.14.1",

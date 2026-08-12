@@ -1,6 +1,6 @@
 [package]
 name = "litobox"
-version = "7.14.2"
+version = "7.16.0"
 description = "栗的百宝箱"
 authors = ["developer"]
 edition = "2021"
@@ -40,6 +40,7 @@ mp3lame-encoder = "0.2.4"
 lopdf = "0.34"
 mp4 = "0.14"
 flate2 = "1.0"
+zip = { version = "=0.6.6", features = ["aes-crypto", "deflate", "time"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [

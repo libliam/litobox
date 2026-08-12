@@ -42,6 +42,7 @@ mod file_renamer;
 mod quick_launch;
 mod git_stats;
 mod http_server;
+mod zip_tools;
 
 use tauri::{Manager, Emitter};
 use tauri_plugin_dialog::{DialogExt, MessageDialogBuilder, MessageDialogButtons, MessageDialogKind};
@@ -295,6 +296,10 @@ fn main() {
             http_server::http_server_logs,
             http_server::http_server_clear_logs,
             http_server::http_open_url,
+            // 压缩/解压命令
+            zip_tools::zip_create,
+            zip_tools::zip_list,
+            zip_tools::zip_extract,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

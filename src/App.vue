@@ -92,6 +92,7 @@ import ImageToolEnhanced from '@/views/ImageToolEnhanced.vue'
 import AudioTool from '@/views/AudioTool.vue'
 import VideoTool from '@/views/VideoTool.vue'
 import MediaInfoTool from '@/views/MediaInfoTool.vue'
+import ZipTool from '@/views/ZipTool.vue'
 import ServiceListView from '@/views/ServiceListView.vue'
 import HotkeyView from '@/views/HotkeyView.vue'
 import HostsView from '@/views/HostsView.vue'
@@ -126,6 +127,7 @@ const toolComponentMap: Record<string, any> = {
   uuid: UUIDTool,
   devtools: DevTools,
   fileprocessing: FileProcessing,
+  zipTool: ZipTool,
   sql: SqlTool,
   batchReplace: BatchReplaceTool,
   js: JSTool,
