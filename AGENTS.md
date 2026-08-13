@@ -152,12 +152,12 @@ if (!ok) return
 - 耗时操作必须显示加载提示 — 使用 `ElLoading.service()` + `finally` 确保关闭
 - **历史记录必须传 `inputFull` / `outputFull`** — `store.addHistory()` 调用时必须同时传入完整输入输出（`inputFull: 完整输入, outputFull: 完整输出`），否则操作历史页面的双击跳转功能无法还原数据。`inputPreview`/`outputPreview` 仅用于列表展示（截断50字符），`inputFull`/`outputFull` 用于详情还原
 
-### CSV 导出规范（所有导出功能必须遵循）
+### 下载/导出规范（所有下载、导出功能必须遵循）
 
-- 使用 `save_text_with_dialog` 后端命令弹出保存对话框，**禁止**浏览器 blob 自动下载
-- 必须显示完整保存路径：`ElMessage.success(\`已导出到: ${savedPath}\`)`
+- **必须弹出保存对话框**：文本用 `save_text_with_dialog`，二进制/Blob 用 `save_file_with_dialog`（前端统一封装 `saveFileWithDialog`），**禁止**浏览器 blob 自动下载（`a.download` + `createObjectURL`）
+- 必须显示完整保存路径：`ElMessage.success(\`已保存至: ${savedPath}\`)`；用户取消时提示 `已取消保存`
 - BOM 前缀 `\uFEFF` 确保 Excel 正确识别 UTF-8
-- 文件名带时间戳到秒，避免覆盖；含逗号/换行的字段用双引号包裹并转义
+- 文件名带时间戳，避免覆盖；含逗号/换行的字段用双引号包裹并转义
 
 ## 后端开发指南
 

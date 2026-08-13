@@ -729,6 +729,20 @@ async function executeStep(tool: string, action: string, input: string): Promise
       const results = await qlSearch(input)
       return JSON.stringify(results.map(r => ({ name: r.name, path: r.path })), null, 2)
     }
+    case 'mermaid': {
+      // 工作流输入为 mermaid 源码，输出渲染后的 SVG 字符串
+      const { renderMermaid } = await import('@/utils/mermaidUtils')
+      try {
+        return await renderMermaid(input)
+      } catch (e: any) {
+        return '渲染失败: ' + (e?.message || e)
+      }
+    }
+    case 'openApi': {
+      // 解析 OpenAPI 文档，输出接口清单摘要 JSON
+      const { parseOpenApiText, exportOperationsJson } = await import('@/utils/openApiUtils')
+      return exportOperationsJson(parseOpenApiText(input))
+    }
     default:
       return input
   }

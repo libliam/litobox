@@ -27,7 +27,7 @@
 <script setup lang="ts">
 import { watch, onMounted, onUnmounted, computed } from 'vue'
 import { listen } from '@tauri-apps/api/event'
-import { getCurrentWindow, PhysicalSize, PhysicalPosition } from '@tauri-apps/api/window'
+import { getCurrentWindow, availableMonitors, PhysicalSize, PhysicalPosition } from '@tauri-apps/api/window'
 import { useToolboxStore } from '@/store'
 import { storeToRefs } from 'pinia'
 import SidebarNav from '@/components/SidebarNav.vue'
@@ -55,10 +55,12 @@ import ClipboardConvertTool from '@/views/ClipboardConvertTool.vue'
 import CsvTool from '@/views/CsvTool.vue'
 import ExcelTool from '@/views/ExcelTool.vue'
 import SchemaTool from '@/views/SchemaTool.vue'
+import OpenApiTool from '@/views/OpenApiTool.vue'
 import TemplateTool from '@/views/TemplateTool.vue'
 import GitStatsTool from '@/views/GitStatsTool.vue'
 import StaticServerTool from '@/views/StaticServerTool.vue'
 import ImageCompareTool from '@/views/ImageCompareTool.vue'
+import ExifTool from '@/views/ExifTool.vue'
 import CodeFormatterTool from '@/views/CodeFormatterTool.vue'
 import PdfTool from '@/views/PdfTool.vue'
 import HashTool from '@/views/HashTool.vue'
@@ -93,6 +95,8 @@ import AudioTool from '@/views/AudioTool.vue'
 import VideoTool from '@/views/VideoTool.vue'
 import MediaInfoTool from '@/views/MediaInfoTool.vue'
 import ZipTool from '@/views/ZipTool.vue'
+import MermaidTool from '@/views/MermaidTool.vue'
+import PomodoroTool from '@/views/PomodoroTool.vue'
 import ServiceListView from '@/views/ServiceListView.vue'
 import HotkeyView from '@/views/HotkeyView.vue'
 import HostsView from '@/views/HostsView.vue'
@@ -128,6 +132,8 @@ const toolComponentMap: Record<string, any> = {
   devtools: DevTools,
   fileprocessing: FileProcessing,
   zipTool: ZipTool,
+  mermaid: MermaidTool,
+  pomodoro: PomodoroTool,
   sql: SqlTool,
   batchReplace: BatchReplaceTool,
   js: JSTool,
@@ -140,11 +146,13 @@ const toolComponentMap: Record<string, any> = {
   csv: CsvTool,
   excelTool: ExcelTool,
   schemaTool: SchemaTool,
+  openApi: OpenApiTool,
   templateTool: TemplateTool,
   gitStats: GitStatsTool,
   staticServer: StaticServerTool,
   codeFormatter: CodeFormatterTool,
   imageCompare: ImageCompareTool,
+  exif: ExifTool,
   pdf: PdfTool,
   hash: HashTool,
   xmlYaml: XmlYamlTool,
@@ -253,18 +261,27 @@ const saveWindowState = async () => {
   } catch {}
 }
 
-// 恢复窗口大小和位置
+// 恢复窗口大小和位置（校验异常状态：最小化/屏幕外时存的垃圾值会被忽略）
 const restoreWindowState = async () => {
   try {
     const saved = localStorage.getItem('window_size')
     if (!saved) return
     const state = JSON.parse(saved)
-    if (state.width && state.height) {
-      const win = getCurrentWindow()
-      await win.setSize(new PhysicalSize(state.width, state.height))
-      if (state.x !== undefined && state.y !== undefined) {
-        await win.setPosition(new PhysicalPosition(state.x, state.y))
-      }
+    if (!state.width || !state.height || state.width < 400 || state.height < 300) return
+    const win = getCurrentWindow()
+    // 位置必须与至少一个显示器有实际交集，否则忽略（防止窗口落在屏幕外找不到）
+    if (state.x !== undefined && state.y !== undefined) {
+      const monitors = await availableMonitors()
+      const onScreen = monitors.some((m) => {
+        const overlapX = Math.min(state.x + state.width, m.position.x + m.size.width) - Math.max(state.x, m.position.x)
+        const overlapY = Math.min(state.y + state.height, m.position.y + m.size.height) - Math.max(state.y, m.position.y)
+        return overlapX >= 100 && overlapY >= 100
+      })
+      if (!onScreen) return
+    }
+    await win.setSize(new PhysicalSize(state.width, state.height))
+    if (state.x !== undefined && state.y !== undefined) {
+      await win.setPosition(new PhysicalPosition(state.x, state.y))
     }
   } catch {}
 }

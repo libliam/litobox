@@ -1418,18 +1418,11 @@ const handleResize = async () => {
   }
 }
 
-const handleDownloadResized = () => {
+const handleDownloadResized = async () => {
   if (!resizedBlob.value) return
-  const url = URL.createObjectURL(resizedBlob.value)
-  const a = document.createElement('a')
-  a.href = url
   const originalName = singleImageFile.value?.name || 'image'
   const nameWithoutExt = originalName.replace(/\.[^.]+$/, '')
-  a.download = `${nameWithoutExt}_${resizeWidth.value}x${resizeHeight.value}.png`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  await saveFileWithDialog(resizedBlob.value, `${nameWithoutExt}_${resizeWidth.value}x${resizeHeight.value}.png`, 'png')
 }
 
 // ============ Tab 3: 图片转Base64 ============
@@ -1459,19 +1452,12 @@ const handleCopyBase64 = async () => {
   }
 }
 
-const handleDownloadBase64 = () => {
+const handleDownloadBase64 = async () => {
   if (!base64Result.value) return
   const blob = new Blob([base64Result.value], { type: 'text/plain' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
   const originalName = singleImageFile.value?.name || 'image'
   const nameWithoutExt = originalName.replace(/\.[^.]+$/, '')
-  a.download = `${nameWithoutExt}_base64.txt`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  await saveFileWithDialog(blob, `${nameWithoutExt}_base64.txt`, 'txt')
 }
 
 // ============ Ctrl+V 剪贴板粘贴（路由到当前 Tab） ============

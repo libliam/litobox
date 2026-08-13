@@ -15,8 +15,36 @@ export interface ChangelogData {
 }
 
 export const changelogData: ChangelogData = {
-  versionRange: "从 v1.0 到 v7.16.0 更新内容",
+  versionRange: "从 v1.0 到 v8.0.0 更新内容",
   entries: [
+  {
+    "version": "8.0.0",
+    "date": "2026-08-13",
+    "content": "图片 EXIF 工具：选择/拖拽图片即时读取 EXIF 信息（相机品牌型号、镜头、拍摄时间、光圈/快门/ISO/焦距、曝光补偿、白平衡、闪光灯、作者/版权/软件/图片描述等隐私字段），GPS 定位高亮展示（度分秒 + 十进制坐标一键复制），支持 JPEG/TIFF/PNG/WebP 等格式，无 EXIF 时明确提示；一键清除隐私元数据——JPEG 无损剥离 EXIF/XMP/IPTC/注释段（不重编码不损失画质），PNG/WebP 通过 Canvas 重绘剥离，剥离后对比展示文件大小，保存走系统保存对话框；基于 exifr 纯前端实现",
+    "isEnhancement": false,
+    "isNewFeature": false
+  },
+  {
+    "version": "7.19.0",
+    "date": "2026-08-13",
+    "content": "OpenAPI 解析工具：解析 OpenAPI 3.x / Swagger 2.0 文档（JSON/YAML），接口清单按标签分组过滤展示（方法彩色徽标/路径/摘要/弃用标记），展开查看参数表（名称/位置/类型/必填/描述）、请求体、各状态码响应 Schema 与媒体类型；每个接口一键生成 curl / fetch 请求示例（路径/查询/Header 参数自动填充示例值、请求体自动 Mock）、响应 Mock 数据、响应 TS 类型；支持导出全量接口清单 JSON 与全部命名 Schema 的 TS 类型，Base URL 自定义，粘贴自动解析（300ms 防抖），工作流可调用（输出接口清单 JSON）；基于 js-yaml + json-schema-faker 纯前端实现",
+    "isEnhancement": false,
+    "isNewFeature": false
+  },
+  {
+    "version": "7.18.0",
+    "date": "2026-08-12",
+    "content": "番茄钟工具：专注+休息循环（25/5/15 分钟默认，专注/短休/长休时长与长休间隔均可自定义）、Rust 后端秒级计时状态机（主窗口最小化/遮挡不影响计时，到点自动切换下一阶段）、到点双重提醒（蜂鸣声 + Windows 系统通知）、全局快捷键 Ctrl+Alt+Shift+P 一键开始/暂停（可在快捷键设置中修改）；基于 tauri-plugin-notification 系统通知实现",
+    "isEnhancement": false,
+    "isNewFeature": false
+  },
+  {
+    "version": "7.17.0",
+    "date": "2026-08-12",
+    "content": "Mermaid 图表渲染工具：输入 Mermaid 语法实时渲染预览（300ms 防抖），内置 10 种常用模板一键插入（流程图/时序图/类图/状态图/ER图/甘特图/饼图/思维导图/用户旅程/Git图），12 种主题切换（跟随应用/经典/森林/中性/新潮/新潮暗色/暗色/基础/Redux系列）与字号调节、预览缩放与背景模式（跟随主题/白色/透明棋盘格）、导出 SVG / PNG（2x 高清栅格化、PNG 背景跟随所选模式、大图自动限幅）、模板 classDef 美化配色、渲染失败定位错误信息，工作流可调用（输入源码输出 SVG）；基于 mermaid 库纯前端实现",
+    "isEnhancement": false,
+    "isNewFeature": false
+  },
   {
     "version": "7.16.0",
     "date": "2026-08-12",

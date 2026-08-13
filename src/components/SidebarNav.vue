@@ -251,6 +251,7 @@ const SHORTCUT_TOOLS = [
   { id: 'diff', label: '文本对比' },
   { id: 'color', label: '颜色工具' },
   { id: 'password', label: '密码工具' },
+  { id: 'pomodoro', label: '番茄钟' },
   { id: 'snippet', label: '代码片段' },
   { id: '__palette__', label: '命令面板' },
 ]
