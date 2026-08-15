@@ -338,7 +338,7 @@ html.light .css-tool-tabs :deep(.el-tabs__header) {
 }
 
 .tool-container {
-  height: 100vh;
+  height: 100%;
   overflow-y: auto;
   padding: 20px;
   background: var(--bg-primary);

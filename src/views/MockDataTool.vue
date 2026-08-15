@@ -641,8 +641,7 @@ const handleCopy = async (text: string) => {
 
 <style scoped>
 .tool-container {
-  height: 100vh;
-  overflow-y: auto;
+  height: 100%; /* 与全局 main.css 一致，100vh 会导致底部超出视口被裁剪 */
   padding: 20px;
   background: var(--bg-primary);
 }

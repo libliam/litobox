@@ -122,9 +122,10 @@
               <el-button size="small" @click="doTsvTo('json')">JSON数组</el-button>
             </div>
           </div>
-          <div class="action-group config-group" style="--group-color: #10b981">
+          <div class="action-group" style="--group-color: #10b981">
             <div class="group-label">配置格式互转</div>
             <div class="group-buttons" style="flex-direction: column; align-items: stretch;">
+              <!-- 交换与下拉框同一行（功能不同，不与转换按钮并排） -->
               <div class="format-pickers">
                 <el-select v-model="srcFmt" size="small" placeholder="源格式">
                   <el-option v-for="o in fmtOptions" :key="o.v" :label="o.l" :value="o.v" />
@@ -133,10 +134,10 @@
                 <el-select v-model="dstFmt" size="small" placeholder="目标格式">
                   <el-option v-for="o in fmtOptions" :key="o.v" :label="o.l" :value="o.v" />
                 </el-select>
+                <el-button size="small" @click="swapFmt">交换</el-button>
               </div>
               <div class="fmt-btns">
                 <el-button size="small" type="primary" @click="doConfigConvert">转换</el-button>
-                <el-button size="small" @click="swapFmt">交换 ↔</el-button>
               </div>
             </div>
           </div>
@@ -702,12 +703,12 @@ onUnmounted(() => document.removeEventListener('paste', onDocPaste))
 
 .format-pickers {
   display: flex;
+  flex-wrap: wrap; /* 小窗口下自动换行，不强行挤一行 */
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
 }
-.format-pickers .el-select { flex: 1; min-width: 140px; }
-.config-group { flex: 2 1 280px; }
+.format-pickers .el-select { flex: 1; min-width: 100px; }
 .fmt-arrow {
   color: var(--accent-cyan);
   font-weight: 700;
@@ -716,7 +717,6 @@ onUnmounted(() => document.removeEventListener('paste', onDocPaste))
   display: flex;
   gap: 6px;
 }
-.fmt-btns .el-button { flex: 1; }
 
 .card-subtitle {
   font-size: 12px;
@@ -744,6 +744,7 @@ onUnmounted(() => document.removeEventListener('paste', onDocPaste))
   border-left: 3px solid var(--group-color, var(--accent-cyan));
   border-radius: 6px;
   min-width: 120px;
+  flex: 1 1 0; /* 三个功能块平分一行 */
 }
 .group-label {
   font-size: 12px;

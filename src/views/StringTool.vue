@@ -360,7 +360,7 @@ onMounted(() => {
 
 <style scoped>
 .tool-container {
-  height: 100vh;
+  height: 100%;
   overflow-y: auto;
   padding: 20px;
 }

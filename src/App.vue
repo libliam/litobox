@@ -217,6 +217,7 @@ let unlistenPalette: (() => void) | null = null
 let globalKeydownHandler: ((e: KeyboardEvent) => void) | null = null
 let windowResizeHandler: (() => void) | null = null
 let windowMoveHandler: (() => void) | null = null
+let windowStateTimer: number | null = null
 
 const handleSelectTool = (toolId: string) => {
   store.openTab(toolId)
@@ -247,16 +248,32 @@ const applyTheme = (theme: string) => {
 }
 
 // 保存窗口大小和位置
+// 注意：统一使用 innerSize/innerPosition，与 setSize/setPosition 保持一致，
+// 避免 outerSize（含标题栏边框）与 setSize（client区）混用导致尺寸漂移
 const saveWindowState = async () => {
   try {
     const win = getCurrentWindow()
-    const size = await win.outerSize()
-    const position = await win.outerPosition()
+    // 窗口最大化/最小化时不保存，避免记录垃圾尺寸
+    const isMaximized = await win.isMaximized()
+    const isMinimized = await win.isMinimized()
+    if (isMaximized || isMinimized) {
+      // 只保存最大化状态，不更新尺寸
+      const prev = localStorage.getItem('window_size')
+      const prevState = prev ? JSON.parse(prev) : {}
+      localStorage.setItem('window_size', JSON.stringify({
+        ...prevState,
+        maximized: isMaximized,
+      }))
+      return
+    }
+    const size = await win.innerSize()
+    const position = await win.innerPosition()
     localStorage.setItem('window_size', JSON.stringify({
       width: size.width,
       height: size.height,
       x: position.x,
       y: position.y,
+      maximized: false,
     }))
   } catch {}
 }
@@ -267,20 +284,27 @@ const restoreWindowState = async () => {
     const saved = localStorage.getItem('window_size')
     if (!saved) return
     const state = JSON.parse(saved)
-    if (!state.width || !state.height || state.width < 400 || state.height < 300) return
     const win = getCurrentWindow()
+
+    // 先恢复最大化状态
+    if (state.maximized) {
+      await win.maximize()
+      return
+    }
+
+    if (!state.width || !state.height || state.width < 400 || state.height < 300) return
     // 位置必须与至少一个显示器有实际交集，否则忽略（防止窗口落在屏幕外找不到）
+    let positionValid = true
     if (state.x !== undefined && state.y !== undefined) {
       const monitors = await availableMonitors()
-      const onScreen = monitors.some((m) => {
+      positionValid = monitors.some((m) => {
         const overlapX = Math.min(state.x + state.width, m.position.x + m.size.width) - Math.max(state.x, m.position.x)
         const overlapY = Math.min(state.y + state.height, m.position.y + m.size.height) - Math.max(state.y, m.position.y)
         return overlapX >= 100 && overlapY >= 100
       })
-      if (!onScreen) return
     }
     await win.setSize(new PhysicalSize(state.width, state.height))
-    if (state.x !== undefined && state.y !== undefined) {
+    if (positionValid && state.x !== undefined && state.y !== undefined) {
       await win.setPosition(new PhysicalPosition(state.x, state.y))
     }
   } catch {}
@@ -298,10 +322,14 @@ onMounted(async () => {
   // 恢复窗口大小
   await restoreWindowState()
 
-  // 监听窗口大小和位置变化
+  // 监听窗口大小和位置变化（300ms 防抖，避免拖动时高频写 localStorage）
   const win = getCurrentWindow()
-  windowResizeHandler = await win.onResized(() => saveWindowState())
-  windowMoveHandler = await win.onMoved(() => saveWindowState())
+  const debouncedSave = () => {
+    if (windowStateTimer) window.clearTimeout(windowStateTimer)
+    windowStateTimer = window.setTimeout(() => saveWindowState(), 300)
+  }
+  windowResizeHandler = await win.onResized(debouncedSave)
+  windowMoveHandler = await win.onMoved(debouncedSave)
 
   unlistenShortcut = await listen('global-shortcut-triggered', (event) => {
     const toolId = event.payload as string

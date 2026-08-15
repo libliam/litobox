@@ -451,7 +451,7 @@ if (errors.length > 0) {
 
 <style scoped>
 .tool-container {
-  height: 100vh;
+  height: 100%;
   overflow-y: auto;
   padding: 20px 28px;
   background: var(--bg-primary);

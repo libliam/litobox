@@ -15,12 +15,19 @@ export interface ChangelogData {
 }
 
 export const changelogData: ChangelogData = {
-  versionRange: "从 v1.0 到 v8.0.0 更新内容",
+  versionRange: "从 v1.0 到 v8.0.1 更新内容",
   entries: [
+  {
+    "version": "8.0.1",
+    "date": "2026-08-16",
+    "content": "窗口体验优化：默认窗口尺寸从 1300×850 调小为 1100×720，适配 13/15 寸小屏笔记本；修复窗口尺寸记忆失效问题（统一使用 innerSize/innerPosition 替代 outerSize，避免\"保存外部尺寸→恢复内部尺寸\"导致的尺寸漂移）；新增最大化状态记忆；窗口拖动/缩放事件加 300ms 防抖，避免频繁写 localStorage",
+    "isEnhancement": true,
+    "isNewFeature": true
+  },
   {
     "version": "8.0.0",
     "date": "2026-08-13",
-    "content": "图片 EXIF 工具：选择/拖拽图片即时读取 EXIF 信息（相机品牌型号、镜头、拍摄时间、光圈/快门/ISO/焦距、曝光补偿、白平衡、闪光灯、作者/版权/软件/图片描述等隐私字段），GPS 定位高亮展示（度分秒 + 十进制坐标一键复制），支持 JPEG/TIFF/PNG/WebP 等格式，无 EXIF 时明确提示；一键清除隐私元数据——JPEG 无损剥离 EXIF/XMP/IPTC/注释段（不重编码不损失画质），PNG/WebP 通过 Canvas 重绘剥离，剥离后对比展示文件大小，保存走系统保存对话框；基于 exifr 纯前端实现",
+    "content": "图片 EXIF 工具：选择/拖拽图片即时读取 EXIF 信息（相机品牌型号、镜头、拍摄时间、光圈/快门/ISO/焦距、曝光补偿、白平衡、闪光灯、作者/版权/软件/图片描述等隐私字段），GPS 定位高亮展示（度分秒 + 十进制坐标一键复制），支持 JPEG/TIFF/PNG/WebP 等格式；一键清除隐私元数据——JPEG 无损剥离 EXIF/XMP/IPTC/注释段（不重编码不损失画质），PNG/WebP 通过 Canvas 重绘剥离，剥离后对比展示文件大小；基于 exifr 纯前端实现",
     "isEnhancement": false,
     "isNewFeature": false
   },

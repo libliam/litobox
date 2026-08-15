@@ -154,10 +154,6 @@
               </el-tooltip>
             </div>
             <div class="card-actions">
-              <el-button size="small" @click="swapFormat">
-                <el-icon><ArrowRightBold /></el-icon>
-                <span>交换 ↔</span>
-              </el-button>
               <el-button size="small" type="primary" @click="handleConvert">转换</el-button>
             </div>
           </div>
@@ -165,17 +161,19 @@
             <div class="action-grid">
               <div class="action-group">
                 <div class="group-label">源格式</div>
-                <el-select v-model="convSrc" size="small" style="width: 130px">
+                <el-select v-model="convSrc" size="small" style="width: 110px">
                   <el-option v-for="f in CONFIG_FORMATS" :key="f.value" :label="f.label" :value="f.value" />
                 </el-select>
               </div>
               <el-icon class="arrow-icon"><Right /></el-icon>
               <div class="action-group">
                 <div class="group-label">目标格式</div>
-                <el-select v-model="convDst" size="small" style="width: 130px">
+                <el-select v-model="convDst" size="small" style="width: 110px">
                   <el-option v-for="f in CONFIG_FORMATS" :key="f.value" :label="f.label" :value="f.value" />
                 </el-select>
               </div>
+              <!-- 交换与下拉框同一行（功能不同，不与转换按钮并排） -->
+              <el-button size="small" @click="swapFormat">交换</el-button>
             </div>
           </div>
         </div>
@@ -225,7 +223,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import { QuestionFilled, Right, ArrowRightBold } from '@element-plus/icons-vue'
+import { QuestionFilled, Right } from '@element-plus/icons-vue'
 import {
   formatXml, validateXml, xmlToJson, jsonToXml, parseYaml, jsonToYaml,
   parseConfig, stringifyConfig, type ConfigFormat,
@@ -453,7 +451,7 @@ const handleYamlCopy = () => { navigator.clipboard.writeText(yamlOutput.value ||
 
 <style scoped>
 .tool-container {
-  height: 100vh;
+  height: 100%;
   overflow-y: auto;
   padding: 20px;
   background: var(--bg-primary);

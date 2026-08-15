@@ -51,7 +51,7 @@ watch(activeTab, (val) => {
 
 <style scoped>
 .tool-container {
-  height: 100vh;
+  height: 100%;
   overflow-y: auto;
   padding: 16px 16px 16px 8px;
 }
