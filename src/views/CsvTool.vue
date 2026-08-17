@@ -104,6 +104,7 @@ import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { QuestionFilled } from '@element-plus/icons-vue'
 import { parseCsv, csvToJson, csvToSql, type CsvData } from '@/utils/csvUtils'
+import { decodeTextSmart } from '@/utils/textEncoding'
 import { useToolboxStore } from '@/store'
 import VariablePicker from '@/components/VariablePicker.vue'
 
@@ -207,19 +208,19 @@ const handleFileChange = (e: Event) => {
     delimiter.value = '\t'
   }
 
-  const reader = new FileReader()
-  reader.onload = (event) => {
-    input.value = event.target?.result as string
+  file.arrayBuffer().then((buf) => {
+    input.value = decodeTextSmart(new Uint8Array(buf))
     ElMessage.success(`已导入文件: ${file.name}`)
-  }
-  reader.readAsText(file)
+  }).catch(() => {
+    ElMessage.error(`读取 ${file.name} 失败`)
+  })
   target.value = ''
 }
 </script>
 
 <style scoped>
 .tool-container {
-  height: 100vh;
+  height: 100%;
   overflow-y: auto;
   padding: 20px;
   background: var(--bg-primary);

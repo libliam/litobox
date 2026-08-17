@@ -230,7 +230,7 @@ onUnmounted(() => {
 <style scoped>
 .note-editor-container {
   display: flex;
-  height: 100vh;
+  height: 100%; /* 与全局 tool-container 一致，100vh 会溢出 main 底部被裁剪 */
   overflow: hidden;
 }
 

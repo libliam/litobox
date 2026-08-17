@@ -59,6 +59,7 @@
           <div class="action-group action-group-flex-2">
             <div class="group-label">搜索词（正则）</div>
             <el-input
+              ref="queryInputRef"
               v-model="opts.query"
               placeholder="例如 \d{4}-\d{2}-\d{2} 或 TODO"
               size="small"
@@ -161,10 +162,14 @@
       </div>
       <div class="card-body">
         <el-table
+          ref="tableRef"
           :data="resultItems"
           stripe
           size="small"
+          highlight-current-row
+          tabindex="0"
           @row-dblclick="locateInExplorer"
+          @current-change="currentRow = $event"
         >
           <el-table-column label="文件" min-width="300">
             <template #default="{ row }">
@@ -214,8 +219,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick, onActivated, onDeactivated } from 'vue'
+import { ElMessage, ElInput } from 'element-plus'
 import { ArrowDown } from '@element-plus/icons-vue'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
@@ -235,6 +240,7 @@ import type {
   SearchResultItem,
   MatchedLine,
 } from '@/utils/fileSearcherTypes'
+import type { TableInstance } from 'element-plus'
 
 // ============ 状态 ============
 const store = useToolboxStore()
@@ -445,6 +451,7 @@ async function startSearch() {
   currentPage.value = 1
   elapsedMs.value = 0
   progress.value = null
+  currentRow.value = null
   historyRecorded = false
 
   // 保存到搜索历史
@@ -513,6 +520,7 @@ function resetAll() {
   resultItems.value = []
   totalResults.value = 0
   currentPage.value = 1
+  currentRow.value = null
   ElMessage.success('已清空所有条件')
 }
 
@@ -533,6 +541,59 @@ async function locateInExplorer(row: SearchResultItem) {
     await invoke('disk_locate_in_explorer', { path: row.path })
   } catch (e: any) {
     ElMessage.error('定位失败: ' + String(e))
+  }
+}
+
+// ============ 结果列表键盘导航（↑↓ 选择 / Enter 定位） ============
+// ponytail: 组件 @keydown（el-table/el-input）受组件内部 attrs 处理影响不可靠，改为
+// window 级监听 + 焦点位置判断，与组件事件透传解耦；KeepAlive 缓存页面用
+// onActivated/onDeactivated 控制是否响应。
+const tableRef = ref<TableInstance | null>(null)
+const queryInputRef = ref<InstanceType<typeof ElInput> | null>(null)
+const currentRow = ref<SearchResultItem | null>(null)
+let pageVisible = true
+
+function selectRow(idx: number) {
+  const items = resultItems.value
+  if (idx < 0 || idx >= items.length) return
+  tableRef.value?.setCurrentRow(items[idx])
+  // 保持选中行可见（分页列表或长行时滚动到视野内）
+  nextTick(() => {
+    const activeEl = (tableRef.value?.$el as HTMLElement | undefined)?.querySelector('.el-table__body tr.current-row')
+    activeEl?.scrollIntoView({ block: 'nearest' })
+  })
+}
+
+function moveSelection(step: number) {
+  const items = resultItems.value
+  if (items.length === 0) return
+  let idx = currentRow.value ? items.indexOf(currentRow.value) : -1
+  let next = idx === -1 ? (step > 0 ? 0 : items.length - 1) : idx + step
+  next = Math.max(0, Math.min(next, items.length - 1))
+  selectRow(next)
+}
+
+function handleGlobalKeydown(e: KeyboardEvent) {
+  if (!pageVisible || !completed.value || resultItems.value.length === 0) return
+  const tableEl = (tableRef.value?.$el as HTMLElement | undefined) ?? null
+  const target = e.target as HTMLElement | null
+
+  // 焦点在搜索词输入框：按 ↓ 进入结果列表并选中第一行
+  if (e.key === 'ArrowDown' && !e.shiftKey && queryInputRef.value?.$el.contains(target)) {
+    e.preventDefault()
+    selectRow(0)
+    tableEl?.focus()
+    return
+  }
+  // 焦点在结果表格内：↑↓ 移动选中行，Enter 定位
+  if (tableEl?.contains(target)) {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      moveSelection(e.key === 'ArrowDown' ? 1 : -1)
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      if (currentRow.value) locateInExplorer(currentRow.value)
+    }
   }
 }
 
@@ -617,6 +678,9 @@ function restoreFromHistory(data: HistoryRestoreState) {
 onMounted(async () => {
   loadHistory()
 
+  // 结果列表键盘导航（window 级，避免组件事件透传问题）
+  window.addEventListener('keydown', handleGlobalKeydown, true)
+
   // 首次挂载时检查是否有待还原的历史记录
   if (store.pendingHistoryRestore?.tool === 'fileSearcher') {
     restoreFromHistory(store.pendingHistoryRestore)
@@ -678,8 +742,17 @@ watch(
   }
 )
 
+onActivated(() => {
+  pageVisible = true
+})
+
+onDeactivated(() => {
+  pageVisible = false
+})
+
 onUnmounted(() => {
   stopTimer()
+  window.removeEventListener('keydown', handleGlobalKeydown, true)
   unlistenFns.forEach((fn) => fn())
   unlistenFns = []
   // 释放后端内存

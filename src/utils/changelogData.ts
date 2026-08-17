@@ -15,8 +15,155 @@ export interface ChangelogData {
 }
 
 export const changelogData: ChangelogData = {
-  versionRange: "从 v1.0 到 v7.2.0 更新内容",
+  versionRange: "从 v1.0 到 v8.0.1 更新内容",
   entries: [
+  {
+    "version": "8.0.1",
+    "date": "2026-08-16",
+    "content": "窗口体验优化：默认窗口尺寸从 1300×850 调小为 1100×720，适配 13/15 寸小屏笔记本；修复窗口尺寸记忆失效问题（补全 Tauri 2 窗口写操作权限 core:window:allow-set-size/set-position/maximize，此前恢复被权限拦截静默失败）；窗口尺寸/位置/最大化状态改由 Rust 后端持久化（window_state.json），启动时在 setup 阶段窗口首次显示前恢复，消除尺寸跳变，退出确认时兜底保存；窗口拖动/缩放事件加 300ms 防抖保存；工具页组件按需加载（defineAsyncComponent），首屏主包从 4.8MB 降至 103KB，缩短启动白屏",
+    "isEnhancement": true,
+    "isNewFeature": false
+  },
+  {
+    "version": "8.0.0",
+    "date": "2026-08-13",
+    "content": "图片 EXIF 工具：选择/拖拽图片即时读取 EXIF 信息（相机品牌型号、镜头、拍摄时间、光圈/快门/ISO/焦距、曝光补偿、白平衡、闪光灯、作者/版权/软件/图片描述等隐私字段），GPS 定位高亮展示（度分秒 + 十进制坐标一键复制），支持 JPEG/TIFF/PNG/WebP 等格式；一键清除隐私元数据——JPEG 无损剥离 EXIF/XMP/IPTC/注释段（不重编码不损失画质），PNG/WebP 通过 Canvas 重绘剥离，剥离后对比展示文件大小；基于 exifr 纯前端实现",
+    "isEnhancement": false,
+    "isNewFeature": false
+  },
+  {
+    "version": "7.19.0",
+    "date": "2026-08-13",
+    "content": "OpenAPI 解析工具：解析 OpenAPI 3.x / Swagger 2.0 文档（JSON/YAML），接口清单按标签分组过滤展示（方法彩色徽标/路径/摘要/弃用标记），展开查看参数表（名称/位置/类型/必填/描述）、请求体、各状态码响应 Schema 与媒体类型；每个接口一键生成 curl / fetch 请求示例（路径/查询/Header 参数自动填充示例值、请求体自动 Mock）、响应 Mock 数据、响应 TS 类型；支持导出全量接口清单 JSON 与全部命名 Schema 的 TS 类型，Base URL 自定义，粘贴自动解析（300ms 防抖），工作流可调用（输出接口清单 JSON）；基于 js-yaml + json-schema-faker 纯前端实现",
+    "isEnhancement": false,
+    "isNewFeature": false
+  },
+  {
+    "version": "7.18.0",
+    "date": "2026-08-12",
+    "content": "番茄钟工具：专注+休息循环（25/5/15 分钟默认，专注/短休/长休时长与长休间隔均可自定义）、Rust 后端秒级计时状态机（主窗口最小化/遮挡不影响计时，到点自动切换下一阶段）、到点双重提醒（蜂鸣声 + Windows 系统通知）、全局快捷键 Ctrl+Alt+Shift+P 一键开始/暂停（可在快捷键设置中修改）；基于 tauri-plugin-notification 系统通知实现",
+    "isEnhancement": false,
+    "isNewFeature": false
+  },
+  {
+    "version": "7.17.0",
+    "date": "2026-08-12",
+    "content": "Mermaid 图表渲染工具：输入 Mermaid 语法实时渲染预览（300ms 防抖），内置 10 种常用模板一键插入（流程图/时序图/类图/状态图/ER图/甘特图/饼图/思维导图/用户旅程/Git图），12 种主题切换（跟随应用/经典/森林/中性/新潮/新潮暗色/暗色/基础/Redux系列）与字号调节、预览缩放与背景模式（跟随主题/白色/透明棋盘格）、导出 SVG / PNG（2x 高清栅格化、PNG 背景跟随所选模式、大图自动限幅）、模板 classDef 美化配色、渲染失败定位错误信息，工作流可调用（输入源码输出 SVG）；基于 mermaid 库纯前端实现",
+    "isEnhancement": false,
+    "isNewFeature": false
+  },
+  {
+    "version": "7.16.0",
+    "date": "2026-08-12",
+    "content": "压缩/解压工具：多文件/文件夹 ZIP 打包（压缩级别存储/最快/默认/最大可调）、ZIP 内容预览列表（名称/类型/原始大小/压缩后大小/修改时间）与勾选部分条目解压、密码加密压缩（ZipCrypto 兼容 Windows/7-Zip/WinRAR）与密码解密（支持 AES-256 加密包）、防路径穿越（Zip Slip）、实时进度事件（当前文件+百分比）；后端基于 zip crate 纯 Rust 实现，目录递归收集、UTF-8 文件名、跳过已存在/不安全路径统计",
+    "isEnhancement": true,
+    "isNewFeature": false
+  },
+  {
+    "version": "7.15.0",
+    "date": "2026-08-11",
+    "content": "~~文件占用检测~~ 已放弃：曾实现 PowerToys FileLocksmith 同款句柄枚举方案（NtQuerySystemInformation + NtDuplicateObject + GetFinalPathNameByHandleW），因 Windows API 环境兼容性问题无法可靠检测占用进程——Restart Manager（RmRegisterResources）在部分机器上内部挂起导致检测卡死，句柄枚举受 SeDebugPrivilege 与系统环境限制不稳定；**以后不再实现文件占用检测功能**",
+    "isEnhancement": true,
+    "isNewFeature": false
+  },
+  {
+    "version": "7.14.2",
+    "date": "2026-08-11",
+    "content": "搜索键盘导航：首页搜索工具下拉列表支持 ↑↓ 方向键选择（高亮+自动滚动）、Enter 跳转、Esc 清空；全文搜索工具结果表格支持 ↑↓ 选择行、Enter 在资源管理器中定位；命令面板与快速启动弹窗确认支持 ↑↓/Enter/Esc，全程无需鼠标",
+    "isEnhancement": false,
+    "isNewFeature": true
+  },
+  {
+    "version": "7.14.1",
+    "date": "2026-08-11",
+    "content": "媒体信息工具优化：支持选择图片文件（JPG/PNG/WebP/GIF/BMP/TIFF/AVIF/ICO）与所有文件类型（默认选中），图片直接展示原图预览（点击放大）；视频流卡片适配图像流展示（帧率/时长/比特率为 0 时自动隐藏），增补图片编解码器（PNG/MJPEG/WebP/BMP/TIFF）、像素格式（BGR/BGRA/Pal8）、格式名称中文翻译",
+    "isEnhancement": true,
+    "isNewFeature": false
+  },
+  {
+    "version": "7.14.0",
+    "date": "2026-08-11",
+    "content": "本地静态服务器：一键启动 HTTP 静态文件服务，选择目录即起服务，自动展示本机 + 局域网访问地址（端口占用自动 +1 避让，可手动指定）；内建目录浏览页（上级导航/子目录/文件大小/修改时间，中文路径友好），文件点击内联打开或强制下载，子目录一键打包 ZIP 下载，网页端上传文件到当前目录（手机/局域网设备可直接传文件到电脑），实时访问日志（时间/IP/方法/路径/状态码）；后端基于 Rust 手写轻量 HTTP/1.1 服务，零新增依赖，支持 keep-alive、CORS、路径穿越防护、MIME 识别、GBK/中文文件名 URL 编码",
+    "isEnhancement": false,
+    "isNewFeature": true
+  },
+  {
+    "version": "7.13.0",
+    "date": "2026-08-11",
+    "content": "代码格式化工具（基于 Prettier 的多语言格式化：JS/TS/JSON/JSON5/CSS/SCSS/HTML/Vue/Markdown/YAML，缩进/分号/引号可调，插件按需懒加载，工作流可调用）+ 批量替换工具（多文件内容搜索替换，正则模式，UTF-8/GBK 编码自动保留，替换前自动备份到 .litobox_backup 目录）",
+    "isEnhancement": false,
+    "isNewFeature": false
+  },
+  {
+    "version": "7.12.0",
+    "date": "2026-08-10",
+    "content": "图片对比：两张图片像素级对比，三种模式——滑动对比（拖动分割线左右查看）、差异高亮（红色标记差异像素，容差 0-128 可调，实时差异率统计）、半透明叠加（B 图透明度可调），自动统一尺寸对齐，大图等比降采样保证性能",
+    "isEnhancement": true,
+    "isNewFeature": false
+  },
+  {
+    "version": "7.11.0",
+    "date": "2026-08-10",
+    "content": "Git 仓库统计：选择本地 Git 仓库目录，统计总提交数/新增删除行数/贡献者数，贡献者排行（提交数进度条）、每日提交趋势图（30/90/365天/全部切换，SVG 柱状图悬停看明细）、文件改动 Top 10，基于系统 git 命令解析，异步后台分析不卡界面",
+    "isEnhancement": false,
+    "isNewFeature": true
+  },
+  {
+    "version": "7.10.0",
+    "date": "2026-08-10",
+    "content": "模板渲染工具：Handlebars 模板实时渲染（300ms 防抖），左侧模板/右侧 JSON 数据双栏编辑，实时开关，渲染预览 / HTML 源码两种视图切换，快捷插入常用语法片段（变量/#each/#if/条件逻辑），模板或数据解析错误实时提示，内置示例模板与示例数据",
+    "isEnhancement": false,
+    "isNewFeature": false
+  },
+  {
+    "version": "7.9.0",
+    "date": "2026-08-10",
+    "content": "JSON Schema 工具：draft-07 Schema 数据校验（错误路径/关键字/消息逐条展示）、依据 Schema 一键生成 Mock 测试数据（支持可选字段/默认值选项）、导出 TypeScript 接口定义，内置示例 Schema 与示例数据，基于 ajv + json-schema-faker 纯前端实现",
+    "isEnhancement": false,
+    "isNewFeature": false
+  },
+  {
+    "version": "7.8.0",
+    "date": "2026-08-10",
+    "content": "Excel 处理工具：读取 .xlsx/.xls/.csv 多 Sheet 浏览与切换、多文件合并（纵向追加行 / 横向拼接列）、数据清洗（去空行 / 按行去重 / 修剪空格 / 空值填充）、导出 CSV / JSON / Markdown / SQL INSERT，或另存为 .xlsx，数据预览开关（前100行 / 全部），基于 SheetJS 纯前端实现",
+    "isEnhancement": false,
+    "isNewFeature": false
+  },
+  {
+    "version": "7.7.0",
+    "date": "2026-08-10",
+    "content": "剪贴板格式转换工具：一键读取剪贴板内容并自动识别类型，剪贴板图片 ↔ Base64（DataURL）互转、HTML富文本 → Markdown 纯文本、表格（HTML table / TSV）→ Markdown / CSV / JSON / TSV 四种格式互转，彩色分组卡片样式，全部纯前端实现零额外依赖",
+    "isEnhancement": false,
+    "isNewFeature": false
+  },
+  {
+    "version": "7.6.0",
+    "date": "2026-08-10",
+    "content": "XML/YAML工具新增\"配置互转\"Tab：JSON / YAML / TOML / INI / Java Properties 5 种配置格式环形互转（统一中间层：源格式 → JS对象 → 目标格式），一键交换源↔目标格式（同时互换输入输出），选择格式时显示对应示例，INI 支持 section / 引号字符串 / 注释，Properties 支持点号键→嵌套对象 / \\n\\t 转义，手写 INI/Properties 解析器零额外依赖，仅 TOML 引入 @iarna/toml",
+    "isEnhancement": true,
+    "isNewFeature": true
+  },
+  {
+    "version": "7.5.0",
+    "date": "2026-08-10",
+    "content": "拼音工具：中文转拼音，5 种输出模式（全拼带声调/全拼无声调/首字母大写/驼峰式/全小写无间隔），可调分隔符（空格/无/下划线/短横线），多音字候选展示（开启后列出所有多音字的所有读音），批量逐行处理，实时转换，历史记录还原",
+    "isEnhancement": false,
+    "isNewFeature": false
+  },
+  {
+    "version": "7.4.0",
+    "date": "2026-08-10",
+    "content": "条形码生成工具：支持 CODE128/EAN-13/EAN-8/UPC-A/CODE39/ITF-14/Codabar/MSI/Pharmacode 9 种一维条码格式，可调条宽/条高/边距/前景色/背景色/显示文字/字号，批量生成（每行一条，CSV/TXT 导入，ZIP 打包下载，序号/文本命名），格式切换自动提示输入要求，历史记录还原",
+    "isEnhancement": false,
+    "isNewFeature": false
+  },
+  {
+    "version": "7.3.0",
+    "date": "2026-08-10",
+    "content": "IP 子网计算器：IPv4 子网计算（网络地址/广播/掩码/反掩码/首末主机/主机数/IP类别/私网判断/二进制可视化，网络位与主机位分色高亮）、子网划分（按子网数量或每子网主机数，表格列出所有子网）、IP范围合并（起止IP转最少CIDR块列表）、IP↔整数互转（含十六进制/二进制），CIDR 与点分掩码两种输入格式，历史记录还原",
+    "isEnhancement": false,
+    "isNewFeature": false
+  },
   {
     "version": "7.2.0",
     "date": "2026-08-09",

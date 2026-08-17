@@ -458,7 +458,7 @@ watch([hashInput, hashAlgorithms], () => {
 
 <style scoped>
 .tool-container {
-  height: 100vh;
+  height: 100%;
   overflow-y: auto;
   padding: 0;
 }

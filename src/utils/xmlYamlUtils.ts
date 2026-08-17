@@ -1,3 +1,5 @@
+import TOML from '@iarna/toml'
+
 /**
  * 格式化 XML
  */
@@ -148,6 +150,245 @@ export function jsonToXml(json: string): string {
 
   return '<?xml version="1.0" encoding="UTF-8"?>\n' + objToXml(obj)
 }
+
+// ============================================================
+// 配置格式互转：JSON / YAML / TOML / INI / Properties
+// 统一模式：先 parse 成 JS object，再 stringify 成目标格式
+// ============================================================
+
+export type ConfigFormat = 'json' | 'yaml' | 'toml' | 'ini' | 'properties'
+
+/** 把任意配置格式文本解析为 JS 对象 */
+export function parseConfig(text: string, format: ConfigFormat): any {
+  const trimmed = text.trim()
+  if (!trimmed) return {}
+  switch (format) {
+    case 'json': return JSON.parse(trimmed)
+    case 'yaml': return parseYaml(trimmed)
+    case 'toml': return parseToml(trimmed)
+    case 'ini': return parseIni(trimmed)
+    case 'properties': return parseProperties(trimmed)
+  }
+}
+
+/** 把 JS 对象序列化为指定配置格式文本 */
+export function stringifyConfig(obj: any, format: ConfigFormat): string {
+  switch (format) {
+    case 'json': return JSON.stringify(obj, null, 2)
+    case 'yaml': return jsonToYaml(JSON.stringify(obj))
+    case 'toml': return tomlStringify(obj)
+    case 'ini': return iniStringify(obj)
+    case 'properties': return propertiesStringify(obj)
+  }
+}
+
+// ---------- TOML ----------
+
+export function parseToml(text: string): any {
+  return TOML.parse(text)
+}
+
+export function tomlStringify(obj: any): string {
+  return TOML.stringify(obj as any)
+}
+
+// ---------- INI ----------
+/**
+ * 简易 INI 解析器（支持 section、注释、引号字符串）
+ * [section]
+ * key = value  ; comment
+ * key = "quoted value"
+ */
+export function parseIni(text: string): any {
+  const result: Record<string, any> = {}
+  let currentSection: Record<string, any> = result
+  const sectionRegex = /^\[([^\]]+)\]\s*(?:[;#].*)?$/
+  const keyValueRegex = /^([^=;#]+?)\s*=\s*(.*?)\s*$/
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    let line = rawLine.trim()
+    if (!line) continue
+    // 整行注释
+    if (/^[;#]/.test(line)) continue
+    // 行尾注释（若不在引号内则移除）
+    let inQuote = false
+    let quoteChar = ''
+    let cleanLine = ''
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i]
+      if (!inQuote && (ch === ';' || ch === '#')) break
+      if ((ch === '"' || ch === "'") && (i === 0 || line[i - 1] !== '\\')) {
+        if (!inQuote) { inQuote = true; quoteChar = ch }
+        else if (ch === quoteChar) { inQuote = false }
+      }
+      cleanLine += ch
+    }
+    line = cleanLine.trim()
+    if (!line) continue
+
+    const sectionMatch = line.match(sectionRegex)
+    if (sectionMatch) {
+      const sectionName = sectionMatch[1].trim()
+      if (!result[sectionName]) result[sectionName] = {}
+      currentSection = result[sectionName]
+      continue
+    }
+
+    const kvMatch = line.match(keyValueRegex)
+    if (kvMatch) {
+      const key = kvMatch[1].trim()
+      let value = kvMatch[2].trim()
+      currentSection[key] = parseIniValue(value)
+    }
+  }
+  return result
+}
+
+function parseIniValue(value: string): any {
+  if ((value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))) {
+    return value.slice(1, -1)
+  }
+  if (value === 'true') return true
+  if (value === 'false') return false
+  if (value === 'null' || value === '') return null
+  if (!isNaN(Number(value)) && value !== '') return Number(value)
+  return value
+}
+
+/**
+ * JS 对象 → INI 字符串
+ * 顶层标量写在 [DEFAULT] 前（无 section），嵌套对象写为 [section]
+ */
+export function iniStringify(obj: any): string {
+  if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) {
+    throw new Error('INI 只能从对象（含嵌套对象）转换，不支持数组/标量顶层值')
+  }
+  const lines: string[] = []
+  const topLevel: Record<string, any> = {}
+  const sections: Array<[string, Record<string, any>]> = []
+
+  for (const [k, v] of Object.entries(obj)) {
+    if (typeof v === 'object' && v !== null && !Array.isArray(v)) {
+      sections.push([k, v as Record<string, any>])
+    } else {
+      topLevel[k] = v
+    }
+  }
+
+  const formatValue = (v: any): string => {
+    if (v === null) return ''
+    if (typeof v === 'boolean') return v ? 'true' : 'false'
+    if (typeof v === 'string') {
+      if (v.includes(';') || v.includes('#') || /^\s|\s$/.test(v)) {
+        return `"${v.replace(/"/g, '\\"')}"`
+      }
+      return v
+    }
+    if (Array.isArray(v)) return v.map(formatValue).join(', ')
+    return String(v)
+  }
+
+  const writeSection = (o: Record<string, any>) => {
+    for (const [k, v] of Object.entries(o)) {
+      if (typeof v === 'object' && v !== null && !Array.isArray(v)) {
+        // INI 不支持二级嵌套 section，用 key.subkey 扁平写
+        for (const [sk, sv] of Object.entries(v)) {
+          lines.push(`${k}.${sk} = ${formatValue(sv)}`)
+        }
+      } else {
+        lines.push(`${k} = ${formatValue(v)}`)
+      }
+    }
+  }
+
+  writeSection(topLevel)
+  for (const [name, data] of sections) {
+    if (lines.length && lines[lines.length - 1] !== '') lines.push('')
+    lines.push(`[${name}]`)
+    writeSection(data)
+  }
+  return lines.join('\n')
+}
+
+// ---------- Properties ----------
+/**
+ * 简易 Java Properties 解析器
+ * 支持：a.b.c=value 点号键 → 嵌套对象、注释(#!)、\n \t 转义
+ */
+export function parseProperties(text: string): any {
+  const result: Record<string, any> = {}
+  for (const rawLine of text.split(/\r?\n/)) {
+    let line = rawLine.trim()
+    if (!line) continue
+    if (/^[#!]/.test(line)) continue
+    // 行尾 \ 续行（简化：不处理，按单行解析）
+    let sepIdx = -1
+    // 找第一个 = 或 : 作为分隔符，不以 \ 转义
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i]
+      if ((ch === '=' || ch === ':' ) && (i === 0 || line[i - 1] !== '\\')) {
+        sepIdx = i; break
+      }
+    }
+    if (sepIdx === -1) continue
+    const rawKey = line.slice(0, sepIdx).trim()
+    let rawValue = line.slice(sepIdx + 1).trim()
+    // 去掉值外层可选引号
+    if ((rawValue.startsWith('"') && rawValue.endsWith('"'))) rawValue = rawValue.slice(1, -1)
+    // 转义 \n \t \\
+    rawValue = rawValue.replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\\\/g, '\\')
+    const keys = rawKey.split('.')
+    let node: any = result
+    for (let i = 0; i < keys.length; i++) {
+      const k = keys[i]
+      if (i === keys.length - 1) {
+        node[k] = parseIniValue(rawValue)
+      } else {
+        if (node[k] == null || typeof node[k] !== 'object') {
+          node[k] = {}
+        }
+        node = node[k]
+      }
+    }
+  }
+  return result
+}
+
+/**
+ * JS 对象 → Properties 字符串（点号扁平）
+ * 嵌套对象用 a.b.c 展开，数组用 list.0 list.1 展开（Java Properties 惯例）
+ */
+export function propertiesStringify(obj: any): string {
+  if (typeof obj !== 'object' || obj === null) {
+    throw new Error('Properties 只能从对象转换')
+  }
+  const lines: string[] = []
+  const escValue = (v: string): string => {
+    return v.replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/\t/g, '\\t')
+  }
+  const walk = (o: any, prefix: string) => {
+    if (Array.isArray(o)) {
+      o.forEach((item, i) => walk(item, prefix ? `${prefix}.${i}` : `${i}`))
+    } else if (typeof o === 'object' && o !== null) {
+      for (const [k, v] of Object.entries(o)) {
+        walk(v, prefix ? `${prefix}.${k}` : k)
+      }
+    } else {
+      let val: string
+      if (o === null || o === undefined) val = ''
+      else if (typeof o === 'boolean') val = o ? 'true' : 'false'
+      else val = String(o)
+      lines.push(`${prefix}=${escValue(val)}`)
+    }
+  }
+  walk(obj, '')
+  return lines.join('\n')
+}
+
+// ============================================================
+// 简易 YAML 解析器（覆盖 90% 常见场景）
+// ============================================================
 
 /**
  * 简易 YAML 解析器（覆盖 90% 常见场景）

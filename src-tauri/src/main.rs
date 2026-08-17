@@ -40,16 +40,36 @@ mod cert_reader;
 mod password_vault;
 mod file_renamer;
 mod quick_launch;
+mod git_stats;
+mod http_server;
+mod zip_tools;
+mod pomodoro;
+mod window_state;
 
 use tauri::{Manager, Emitter};
 use tauri_plugin_dialog::{DialogExt, MessageDialogBuilder, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
 fn main() {
+    // WebView2 用户数据目录兜底：固定使用专用目录，避免默认 EBWebView 目录损坏后
+    // 引擎初始化失败（FailedToReceiveMessage）导致所有窗口不可见。
+    debug_log!("[main] WEBVIEW2_USER_DATA_FOLDER before: {:?}", std::env::var_os("WEBVIEW2_USER_DATA_FOLDER"));
+    if std::env::var_os("WEBVIEW2_USER_DATA_FOLDER").is_none() {
+        if let Some(local) = dirs::data_local_dir() {
+            let wv2_dir = local.join("com.dev.toolbox").join("webview2_data");
+            debug_log!("[main] data_local_dir = {}", local.display());
+            std::env::set_var("WEBVIEW2_USER_DATA_FOLDER", &wv2_dir);
+            debug_log!("[main] WEBVIEW2_USER_DATA_FOLDER set to {}", wv2_dir.display());
+        } else {
+            debug_log!("[main] dirs::data_local_dir() returned None");
+        }
+    }
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_notification::init())
+        .manage(pomodoro::PomodoroInner::new())
         .invoke_handler(tauri::generate_handler![
             clipboard::start_clipboard_monitor,
             clipboard::stop_clipboard_monitor,
@@ -65,6 +85,7 @@ fn main() {
             file_encoding::detect_file_encoding,
             file_encoding::batch_read_txt_files,
             file_encoding::batch_replace_in_files,
+            file_encoding::batch_replace_execute,
             file_encoding::batch_convert_encoding,
             file_saver::save_file_with_dialog,
             file_saver::save_text_with_dialog,
@@ -281,16 +302,56 @@ fn main() {
             quick_launch::ql_rebuild_index,
             quick_launch::ql_cancel_index,
             quick_launch::ql_open_file,
+            // Git 仓库统计命令
+            git_stats::git_check_available,
+            git_stats::git_repo_info,
+            git_stats::git_analyze,
+            // 本地静态服务器命令
+            http_server::http_server_start,
+            http_server::http_server_stop,
+            http_server::http_server_status,
+            http_server::http_server_logs,
+            http_server::http_server_clear_logs,
+            http_server::http_open_url,
+            // 压缩/解压命令
+            zip_tools::zip_create,
+            zip_tools::zip_list,
+            zip_tools::zip_extract,
+            // 番茄钟命令
+            pomodoro::pomodoro_state,
+            pomodoro::pomodoro_set_settings,
+            pomodoro::pomodoro_start,
+            pomodoro::pomodoro_pause,
+            pomodoro::pomodoro_toggle,
+            pomodoro::pomodoro_skip,
+            pomodoro::pomodoro_reset,
+            // 窗口状态命令
+            window_state::save_window_state,
+            window_state::app_ready,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
-            
-            // 关闭按钮二次确认
+
+            // 恢复窗口尺寸/位置（setup 阶段、窗口首次显示前执行，避免默认尺寸闪一下再跳变）
             let main_window = app.get_webview_window("main").unwrap();
+            window_state::restore_window(&main_window);
+
+            // 兜底：前端就绪通知（app_ready）迟迟未到时强制显示，避免 JS 异常导致窗口永久隐藏
+            {
+                let fallback = main_window.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(3));
+                    let _ = fallback.show();
+                });
+            }
+
+            // 关闭按钮二次确认
+            let exit_handle = handle.clone();
             main_window.clone().on_window_event(move |event| {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
                     let window = main_window.clone();
+                    let exit_handle = exit_handle.clone();
                     MessageDialogBuilder::new(
                         window.dialog().clone(),
                         "退出确认",
@@ -300,7 +361,11 @@ fn main() {
                     .kind(MessageDialogKind::Warning)
                     .show(move |confirmed| {
                         if confirmed {
-                            std::process::exit(0);
+                            // 退出前兜底保存窗口状态（避免 resize 后 300ms 防抖未触发就关闭丢失状态）
+                            let _ = window_state::save_window_state(window.clone());
+                            // ponytail: 用优雅退出替代 std::process::exit，
+                            // 给 WebView2 正常关闭的机会，避免数据目录损坏
+                            exit_handle.exit(0);
                         }
                     });
                 }
@@ -345,7 +410,7 @@ fn main() {
                     eprintln!("注册快捷键 {} 失败: {}", shortcut_str, e);
                 });
             }
-            
+
             Ok(())
         })
         .run(tauri::generate_context!())

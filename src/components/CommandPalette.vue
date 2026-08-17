@@ -104,6 +104,7 @@ const moveSelection = (delta: number) => {
 }
 
 const handleKeydown = (e: KeyboardEvent) => {
+  console.log('[命令面板] 按键:', e.key) // ponytail: 排查键盘事件是否触发
   if (e.key === 'ArrowDown') {
     e.preventDefault()
     moveSelection(1)

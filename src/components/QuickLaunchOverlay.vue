@@ -90,6 +90,7 @@ async function doSearch() {
 }
 
 function handleKeydown(e: KeyboardEvent) {
+  console.log('[快速启动] 按键:', e.key) // ponytail: 排查键盘事件是否触发
   if (e.key === 'ArrowDown') {
     e.preventDefault()
     selectedIndex.value = Math.min(selectedIndex.value + 1, results.value.length - 1)

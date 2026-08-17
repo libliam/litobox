@@ -4,61 +4,7 @@
     <el-tabs v-model="activeTab" class="workflow-tabs">
       <!-- 工作流Tab -->
       <el-tab-pane label="工作流" name="workflow">
-        <!-- 工作流列表 -->
-        <div class="tool-card">
-          <div class="card-header">
-            <div class="header-left">
-              <span class="card-title">工作流</span>
-              <el-tooltip placement="top" effect="dark">
-                <template #content>
-                  <div class="tooltip-content">
-                    <p>编排多个处理步骤，一键执行连续转换</p>
-                    <p>• 支持字符串处理、JSON格式化、编码转换等</p>
-                    <p>• 上一步输出自动作为下一步输入</p>
-                    <p>• 可保存常用流程，随时调用</p>
-                  </div>
-                </template>
-                <el-icon class="hint-icon"><QuestionFilled /></el-icon>
-              </el-tooltip>
-            </div>
-            <div class="card-actions">
-              <el-button type="primary" size="small" @click="handleNewWorkflow">新建工作流</el-button>
-            </div>
-          </div>
-          <div class="card-body">
-            <div v-if="workflows.length === 0" class="empty-state">
-              暂无工作流，点击上方"新建工作流"创建
-            </div>
-            <div v-else class="workflow-list">
-              <div
-                v-for="wf in workflows"
-                :key="wf.id"
-                class="workflow-item"
-                :class="{ active: selectedWorkflow?.id === wf.id }"
-              >
-                <div class="workflow-item-header">
-                  <span class="workflow-item-name">{{ wf.name }}</span>
-                  <div class="workflow-item-actions">
-                    <el-button size="small" type="primary" @click.stop="handleRunWorkflow(wf)">执行</el-button>
-                    <el-button size="small" @click.stop="handleClipboardExecute(wf)" title="从剪贴板读取并执行，结果写回剪贴板">
-                      📋快捷
-                    </el-button>
-                    <el-button size="small" @click.stop="handleEditWorkflow(wf)">编辑</el-button>
-                    <el-button size="small" type="danger" @click.stop="handleDeleteWorkflow(wf)">删除</el-button>
-                  </div>
-                </div>
-                <div class="workflow-item-desc">{{ wf.description || '暂无描述' }}</div>
-                <div class="workflow-item-steps">
-                  <span class="step-badge" v-for="(step, i) in parseSteps(wf.steps_json)" :key="i">
-                    {{ step.tool }}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 工作流编辑区 -->
+        <!-- 工作流编辑区（位于列表上方，打开即见） -->
         <div v-if="editingWorkflow" class="tool-card">
           <div class="card-header">
             <span class="card-title">编辑工作流</span>
@@ -79,12 +25,12 @@
               </div>
             </div>
 
-            <div class="steps-editor">
-              <div class="steps-header">
-                <span class="card-title" style="font-size: 13px;">步骤编排</span>
-                <el-button type="primary" size="small" @click="handleAddStep">添加步骤</el-button>
-              </div>
+            <div class="steps-header">
+              <span class="card-title" style="font-size: 13px;">步骤编排</span>
+              <el-button type="primary" size="small" @click="handleAddStep">添加步骤</el-button>
+            </div>
 
+            <div class="steps-editor">
               <div
                 v-for="(step, index) in editingSteps"
                 :key="index"
@@ -148,6 +94,60 @@
                 >
                   ×
                 </el-button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 工作流列表 -->
+        <div class="tool-card">
+          <div class="card-header">
+            <div class="header-left">
+              <span class="card-title">工作流</span>
+              <el-tooltip placement="top" effect="dark">
+                <template #content>
+                  <div class="tooltip-content">
+                    <p>编排多个处理步骤，一键执行连续转换</p>
+                    <p>• 支持字符串处理、JSON格式化、编码转换等</p>
+                    <p>• 上一步输出自动作为下一步输入</p>
+                    <p>• 可保存常用流程，随时调用</p>
+                  </div>
+                </template>
+                <el-icon class="hint-icon"><QuestionFilled /></el-icon>
+              </el-tooltip>
+            </div>
+            <div class="card-actions">
+              <el-button type="primary" size="small" @click="handleNewWorkflow">新建工作流</el-button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div v-if="workflows.length === 0" class="empty-state">
+              暂无工作流，点击上方"新建工作流"创建
+            </div>
+            <div v-else class="workflow-list">
+              <div
+                v-for="wf in workflows"
+                :key="wf.id"
+                class="workflow-item"
+                :class="{ active: selectedWorkflow?.id === wf.id }"
+              >
+                <div class="workflow-item-header">
+                  <span class="workflow-item-name">{{ wf.name }}</span>
+                  <div class="workflow-item-actions">
+                    <el-button size="small" type="primary" @click.stop="handleRunWorkflow(wf)">执行</el-button>
+                    <el-button size="small" @click.stop="handleClipboardExecute(wf)" title="从剪贴板读取并执行，结果写回剪贴板">
+                      📋快捷
+                    </el-button>
+                    <el-button size="small" @click.stop="handleEditWorkflow(wf)">编辑</el-button>
+                    <el-button size="small" type="danger" @click.stop="handleDeleteWorkflow(wf)">删除</el-button>
+                  </div>
+                </div>
+                <div class="workflow-item-desc">{{ wf.description || '暂无描述' }}</div>
+                <div class="workflow-item-steps">
+                  <span class="step-badge" v-for="(step, i) in parseSteps(wf.steps_json)" :key="i">
+                    {{ step.tool }}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -333,6 +333,7 @@ const TOOL_ACTIONS: Record<string, string[]> = {
   sql: ['转SQL IN', '转SQL VALUES'],
   base64: ['编码', '解码'],
   calculator: ['表达式计算'],
+  codeFormatter: ['格式化JS', '格式化JSON', '格式化CSS', '格式化HTML', '格式化Markdown', '格式化YAML'],
 }
 
 // 预置工作流模板
@@ -715,6 +716,8 @@ async function executeStep(tool: string, action: string, input: string): Promise
     }
     case 'calculator':
       return executeCalculatorAction(action, input)
+    case 'codeFormatter':
+      return executeCodeFormatterAction(action, input)
     case 'certViewer':
       return executeCertAction(action, input)
     case 'fileRenamer':
@@ -726,6 +729,20 @@ async function executeStep(tool: string, action: string, input: string): Promise
       const results = await qlSearch(input)
       return JSON.stringify(results.map(r => ({ name: r.name, path: r.path })), null, 2)
     }
+    case 'mermaid': {
+      // 工作流输入为 mermaid 源码，输出渲染后的 SVG 字符串
+      const { renderMermaid } = await import('@/utils/mermaidUtils')
+      try {
+        return await renderMermaid(input)
+      } catch (e: any) {
+        return '渲染失败: ' + (e?.message || e)
+      }
+    }
+    case 'openApi': {
+      // 解析 OpenAPI 文档，输出接口清单摘要 JSON
+      const { parseOpenApiText, exportOperationsJson } = await import('@/utils/openApiUtils')
+      return exportOperationsJson(parseOpenApiText(input))
+    }
     default:
       return input
   }
@@ -735,6 +752,24 @@ async function executeStep(tool: string, action: string, input: string): Promise
 function executeCertAction(_action: string, input: string): string {
   if (!input.trim()) return ''
   return input
+}
+
+// 代码格式化执行 — 复用 codeFormatterUtils（懒加载 prettier）
+const FORMATTER_LANG_MAP: Record<string, string> = {
+  '格式化JS': 'javascript',
+  '格式化JSON': 'json',
+  '格式化CSS': 'css',
+  '格式化HTML': 'html',
+  '格式化Markdown': 'markdown',
+  '格式化YAML': 'yaml',
+}
+
+async function executeCodeFormatterAction(action: string, input: string): Promise<string> {
+  if (!input.trim()) return ''
+  const { formatCode } = await import('@/utils/codeFormatterUtils')
+  const lang = FORMATTER_LANG_MAP[action] || 'javascript'
+  const r = await formatCode(input, lang, { tabWidth: 2 })
+  return r.success ? r.data! : (r.error || '格式化失败')
 }
 
 // 字符串处理 — 复用 stringUtils

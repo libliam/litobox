@@ -231,6 +231,8 @@
 <script setup lang="ts">
 import { ref, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { invoke } from '@tauri-apps/api/core'
+import { saveFileWithDialog } from '@/utils/fileSaver'
 import {
   QuestionFilled, MagicStick, Upload, DocumentCopy, Delete,
   WarningFilled, Picture, Lightning, CopyDocument, Download, Edit
@@ -420,14 +422,66 @@ const svgToPngBlob = (): Promise<Blob> => {
     }
 
     const vb = svg.getAttribute('viewBox')?.split(/[\s,]+/)
-    let vbW = 0, vbH = 0
+    let vbX = 0, vbY = 0, vbW = 0, vbH = 0
     if (vb && vb.length === 4) {
+      vbX = parseFloat(vb[0])
+      vbY = parseFloat(vb[1])
       vbW = parseFloat(vb[2])
       vbH = parseFloat(vb[3])
     }
 
-    const origW = parseFloat(svg.getAttribute('width') || String(vbW || 100))
-    const origH = parseFloat(svg.getAttribute('height') || String(vbH || 100))
+    // 内容可能超出 viewBox（如 Mermaid mindmap 根节点低于 viewBox 底部），<img> 栅格化会按
+    // viewBox 裁剪导致节点/文字被切掉，而预览内联渲染溢出可见，两者表现不一致。
+    // 仅在内容超出原 viewBox 时扩展之，保留正常 SVG 自带的边距
+    // 注：getBBox 需要元素处于渲染树中，游离文档返回 0，故先挂到屏幕外再计算
+    let contentBox: { x0: number; y0: number; x1: number; y1: number } | null = null
+    try {
+      const probe = document.createElement('div')
+      probe.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:800px;height:600px;'
+      document.body.appendChild(probe)
+      probe.appendChild(svg)
+      const bb = svg.getBBox()
+      svg.remove()
+      probe.remove()
+      if (bb.width > 0 && bb.height > 0) {
+        contentBox = { x0: bb.x, y0: bb.y, x1: bb.x + bb.width, y1: bb.y + bb.height }
+      }
+    } catch {
+      // getBBox 不可用时保持原 viewBox
+    }
+    if (contentBox) {
+      const pad = 2
+      const c = { x0: contentBox.x0 - pad, y0: contentBox.y0 - pad, x1: contentBox.x1 + pad, y1: contentBox.y1 + pad }
+      const v = {
+        x0: vbW > 0 ? vbX : c.x0,
+        y0: vbH > 0 ? vbY : c.y0,
+        x1: vbW > 0 ? vbX + vbW : c.x1,
+        y1: vbH > 0 ? vbY + vbH : c.y1,
+      }
+      // 无 viewBox 的 SVG 直接以内容包围盒作为 viewBox
+      if (vbW === 0 || c.x0 < v.x0 || c.y0 < v.y0 || c.x1 > v.x1 || c.y1 > v.y1) {
+        vbX = Math.min(c.x0, v.x0)
+        vbY = Math.min(c.y0, v.y0)
+        vbW = Math.max(c.x1, v.x1) - vbX
+        vbH = Math.max(c.y1, v.y1) - vbY
+        svg.setAttribute('viewBox', `${vbX} ${vbY} ${vbW} ${vbH}`)
+      }
+    }
+
+    // width/height 为百分比（如 Mermaid 导出的 width="100%"）时无法作为实际尺寸，
+    // 以 viewBox 尺寸为准，避免比例被算成 100 × 422
+    const isNum = (s: string | null) => s != null && /^\d+(\.\d+)?(px)?$/.test(s.trim())
+    const wAttr = isNum(svg.getAttribute('width')) ? parseFloat(svg.getAttribute('width')!) : 0
+    const hAttr = isNum(svg.getAttribute('height')) ? parseFloat(svg.getAttribute('height')!) : 0
+    const origW = vbW > 0 ? vbW : (wAttr || 100)
+    const origH = vbH > 0 ? vbH : (hAttr || 100)
+
+    // 规整根 svg 尺寸为 viewBox 尺寸：width="100%"（且无 height）的 SVG 作为 <img> 加载时
+    // 固有尺寸会退化为默认 150 高、宽度按比例算出（243×150），导致内容被裁剪、文字错位
+    if (vbW > 0 && vbH > 0) {
+      svg.setAttribute('width', String(vbW))
+      svg.setAttribute('height', String(vbH))
+    }
 
     let w = convertWidth.value
     let h = convertHeight.value
@@ -486,13 +540,8 @@ const doConvert = async () => {
 const downloadPng = async () => {
   try {
     const blob = await svgToPngBlob()
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `svg_${Date.now()}.png`
-    a.click()
-    URL.revokeObjectURL(url)
-    ElMessage.success('已下载')
+    // 弹原生保存对话框（saveFileWithDialog 内部处理成功/取消/降级提示）
+    await saveFileWithDialog(blob, `svg_${Date.now()}.png`, 'png')
   } catch (e: any) {
     ElMessage.error(e.message || '下载失败')
   }
@@ -522,15 +571,17 @@ const copyText = async (text: string) => {
   }
 }
 
-const downloadText = (text: string, filename: string) => {
-  const blob = new Blob([text], { type: 'image/svg+xml' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  a.click()
-  URL.revokeObjectURL(url)
-  ElMessage.success('已下载')
+const downloadText = async (text: string, filename: string) => {
+  try {
+    const savedPath = await invoke<string>('save_text_with_dialog', { content: text, filename })
+    if (savedPath === 'cancelled') {
+      ElMessage.info('已取消保存')
+      return
+    }
+    ElMessage.success(`文件已保存至: ${savedPath}`)
+  } catch (e: any) {
+    ElMessage.error(e.message || '保存失败')
+  }
 }
 
 onMounted(() => {
@@ -676,7 +727,6 @@ onMounted(() => {
 .svg-preview :deep(svg) {
   max-width: 100%;
   max-height: 500px;
-  width: auto !important;
   height: auto !important;
 }
 

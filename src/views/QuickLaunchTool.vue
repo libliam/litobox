@@ -295,7 +295,7 @@ function statusLabel(s: string): string {
 <style scoped>
 .tool-container {
   padding: 20px;
-  height: 100vh;
+  height: 100%;
   overflow-y: auto;
   background: var(--bg-primary);
 }
