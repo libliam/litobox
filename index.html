@@ -5,9 +5,76 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>栗的百宝箱</title>
+    <!-- 启动 loading：Vue 挂载后 #app 内容被替换，此样式随元素一起移除。
+         只用内联 CSS（CSP style-src 允许 'unsafe-inline'），不引入内联 JS -->
+    <style>
+      #app-loading {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        background: #f5f7fa;
+        font-family: system-ui, -apple-system, sans-serif;
+      }
+      .loading-logo {
+        width: 56px;
+        height: 56px;
+        border-radius: 14px;
+        background: linear-gradient(135deg, #00d4ff, #0099cc);
+        color: #fff;
+        font-size: 26px;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        animation: loading-pulse 1.2s ease-in-out infinite;
+      }
+      .loading-text {
+        color: #909399;
+        font-size: 13px;
+        letter-spacing: 3px;
+      }
+      .loading-bar {
+        width: 140px;
+        height: 3px;
+        border-radius: 2px;
+        background: #e4e7ed;
+        overflow: hidden;
+      }
+      .loading-bar-inner {
+        height: 100%;
+        width: 40%;
+        border-radius: 2px;
+        background: linear-gradient(90deg, #00d4ff, #0099cc);
+        animation: loading-slide 1.1s ease-in-out infinite;
+      }
+      @keyframes loading-pulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.06); }
+      }
+      @keyframes loading-slide {
+        0% { transform: translateX(-100%); }
+        100% { transform: translateX(350%); }
+      }
+      @media (prefers-color-scheme: dark) {
+        #app-loading { background: #141414; }
+        .loading-text { color: #6b6b6b; }
+        .loading-bar { background: #2a2a2a; }
+      }
+    </style>
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app">
+      <div id="app-loading">
+        <div class="loading-logo">栗</div>
+        <div class="loading-text">栗的百宝箱</div>
+        <div class="loading-bar"><div class="loading-bar-inner"></div></div>
+      </div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

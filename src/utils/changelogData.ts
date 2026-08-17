@@ -20,9 +20,9 @@ export const changelogData: ChangelogData = {
   {
     "version": "8.0.1",
     "date": "2026-08-16",
-    "content": "窗口体验优化：默认窗口尺寸从 1300×850 调小为 1100×720，适配 13/15 寸小屏笔记本；修复窗口尺寸记忆失效问题（统一使用 innerSize/innerPosition 替代 outerSize，避免\"保存外部尺寸→恢复内部尺寸\"导致的尺寸漂移）；新增最大化状态记忆；窗口拖动/缩放事件加 300ms 防抖，避免频繁写 localStorage",
+    "content": "窗口体验优化：默认窗口尺寸从 1300×850 调小为 1100×720，适配 13/15 寸小屏笔记本；修复窗口尺寸记忆失效问题（补全 Tauri 2 窗口写操作权限 core:window:allow-set-size/set-position/maximize，此前恢复被权限拦截静默失败）；窗口尺寸/位置/最大化状态改由 Rust 后端持久化（window_state.json），启动时在 setup 阶段窗口首次显示前恢复，消除尺寸跳变，退出确认时兜底保存；窗口拖动/缩放事件加 300ms 防抖保存；工具页组件按需加载（defineAsyncComponent），首屏主包从 4.8MB 降至 103KB，缩短启动白屏",
     "isEnhancement": true,
-    "isNewFeature": true
+    "isNewFeature": false
   },
   {
     "version": "8.0.0",

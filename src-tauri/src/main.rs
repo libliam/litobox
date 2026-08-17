@@ -44,6 +44,7 @@ mod git_stats;
 mod http_server;
 mod zip_tools;
 mod pomodoro;
+mod window_state;
 
 use tauri::{Manager, Emitter};
 use tauri_plugin_dialog::{DialogExt, MessageDialogBuilder, MessageDialogButtons, MessageDialogKind};
@@ -324,12 +325,27 @@ fn main() {
             pomodoro::pomodoro_toggle,
             pomodoro::pomodoro_skip,
             pomodoro::pomodoro_reset,
+            // 窗口状态命令
+            window_state::save_window_state,
+            window_state::app_ready,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
 
-            // 关闭按钮二次确认
+            // 恢复窗口尺寸/位置（setup 阶段、窗口首次显示前执行，避免默认尺寸闪一下再跳变）
             let main_window = app.get_webview_window("main").unwrap();
+            window_state::restore_window(&main_window);
+
+            // 兜底：前端就绪通知（app_ready）迟迟未到时强制显示，避免 JS 异常导致窗口永久隐藏
+            {
+                let fallback = main_window.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(3));
+                    let _ = fallback.show();
+                });
+            }
+
+            // 关闭按钮二次确认
             let exit_handle = handle.clone();
             main_window.clone().on_window_event(move |event| {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -345,6 +361,8 @@ fn main() {
                     .kind(MessageDialogKind::Warning)
                     .show(move |confirmed| {
                         if confirmed {
+                            // 退出前兜底保存窗口状态（避免 resize 后 300ms 防抖未触发就关闭丢失状态）
+                            let _ = window_state::save_window_state(window.clone());
                             // ponytail: 用优雅退出替代 std::process::exit，
                             // 给 WebView2 正常关闭的机会，避免数据目录损坏
                             exit_handle.exit(0);

@@ -25,93 +25,97 @@
 </template>
 
 <script setup lang="ts">
-import { watch, onMounted, onUnmounted, computed } from 'vue'
+import { watch, onMounted, onUnmounted, computed, defineAsyncComponent } from 'vue'
 import { listen } from '@tauri-apps/api/event'
-import { getCurrentWindow, availableMonitors, PhysicalSize, PhysicalPosition } from '@tauri-apps/api/window'
+import { invoke } from '@tauri-apps/api/core'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { useToolboxStore } from '@/store'
 import { storeToRefs } from 'pinia'
 import SidebarNav from '@/components/SidebarNav.vue'
 import TabBar from '@/components/TabBar.vue'
 import HomeView from '@/views/HomeView.vue'
-import JsonTool from '@/views/JsonTool.vue'
-import StringTool from '@/views/StringTool.vue'
-import PinyinTool from '@/views/PinyinTool.vue'
-import EncodeTool from '@/views/EncodeTool.vue'
-import TimeTool from '@/views/TimeTool.vue'
-import URLTool from '@/views/URLTool.vue'
-import RegexTool from '@/views/RegexTool.vue'
-import BaseConverter from '@/views/BaseConverter.vue'
-import IpSubnetTool from '@/views/IpSubnetTool.vue'
-import UUIDTool from '@/views/UUIDTool.vue'
-import DevTools from '@/views/DevTools.vue'
-import FileProcessing from '@/views/FileProcessing.vue'
-import SqlTool from '@/views/SqlTool.vue'
-import JSTool from '@/views/JSTool.vue'
-import MockDataTool from '@/views/MockDataTool.vue'
-import OcrTool from '@/views/OcrTool.vue'
-import DiffTool from '@/views/DiffTool.vue'
-import ClipboardTool from '@/views/ClipboardTool.vue'
-import ClipboardConvertTool from '@/views/ClipboardConvertTool.vue'
-import CsvTool from '@/views/CsvTool.vue'
-import ExcelTool from '@/views/ExcelTool.vue'
-import SchemaTool from '@/views/SchemaTool.vue'
-import OpenApiTool from '@/views/OpenApiTool.vue'
-import TemplateTool from '@/views/TemplateTool.vue'
-import GitStatsTool from '@/views/GitStatsTool.vue'
-import StaticServerTool from '@/views/StaticServerTool.vue'
-import ImageCompareTool from '@/views/ImageCompareTool.vue'
-import ExifTool from '@/views/ExifTool.vue'
-import CodeFormatterTool from '@/views/CodeFormatterTool.vue'
-import PdfTool from '@/views/PdfTool.vue'
-import HashTool from '@/views/HashTool.vue'
-import XmlYamlTool from '@/views/XmlYamlTool.vue'
-import DedupTool from '@/views/DedupTool.vue'
-import CssTool from '@/views/CssTool.vue'
-import JwtTool from '@/views/JwtTool.vue'
-import WordCountTool from '@/views/WordCountTool.vue'
-import CronTool from '@/views/CronTool.vue'
-import MarkdownTool from '@/views/MarkdownTool.vue'
-import ColorTool from '@/views/ColorTool.vue'
-import PasswordTool from '@/views/PasswordTool.vue'
-import QrTool from '@/views/QrTool.vue'
-import BarcodeTool from '@/views/BarcodeTool.vue'
-import SnippetTool from '@/views/SnippetTool.vue'
-import HttpTool from '@/views/HttpTool.vue'
-import HistoryView from '@/views/HistoryView.vue'
-import WorkflowView from '@/views/WorkflowView.vue'
-import NoteEditor from '@/views/NoteEditor.vue'
-import CalculatorTool from '@/views/CalculatorTool.vue'
-import SystemInfoView from '@/views/SystemInfoView.vue'
-import NetworkInfoView from '@/views/NetworkInfoView.vue'
-import ProcessListView from '@/views/ProcessListView.vue'
-import HardwareInfoView from '@/views/HardwareInfoView.vue'
-import SoftwareEnvView from '@/views/SoftwareEnvView.vue'
-import SqliteViewerView from '@/views/SqliteViewerView.vue'
-import DiskSpaceAnalyzer from '@/views/DiskSpaceAnalyzer.vue'
-import FileSearcher from '@/views/FileSearcher.vue'
-import IconGenerator from '@/views/IconGenerator.vue'
-import ImageToolEnhanced from '@/views/ImageToolEnhanced.vue'
-import AudioTool from '@/views/AudioTool.vue'
-import VideoTool from '@/views/VideoTool.vue'
-import MediaInfoTool from '@/views/MediaInfoTool.vue'
-import ZipTool from '@/views/ZipTool.vue'
-import MermaidTool from '@/views/MermaidTool.vue'
-import PomodoroTool from '@/views/PomodoroTool.vue'
-import ServiceListView from '@/views/ServiceListView.vue'
-import HotkeyView from '@/views/HotkeyView.vue'
-import HostsView from '@/views/HostsView.vue'
-import NetworkConnections from '@/views/NetworkConnections.vue'
-import ScheduledTasksView from '@/views/ScheduledTasksView.vue'
-import StartupItemsView from '@/views/StartupItemsView.vue'
-import EnvVarsView from '@/views/EnvVarsView.vue'
-import CertViewer from '@/views/CertViewer.vue'
-import BoostView from '@/views/BoostView.vue'
-import PasswordVault from '@/views/PasswordVault.vue'
-import FileRenamer from '@/views/FileRenamer.vue'
-import QuickLaunchTool from '@/views/QuickLaunchTool.vue'
-import SvgTool from '@/views/SvgTool.vue'
-import BatchReplaceTool from '@/views/BatchReplaceTool.vue'
-import ChangelogView from '@/views/ChangelogView.vue'
+// 首页同步加载（默认 Tab），其余工具页按需加载：
+// defineAsyncComponent + 动态 import 让 vite 为每个页面拆出独立 chunk，
+// 首屏只加载首页 + 公共依赖，其他工具页代码在使用时才请求，显著缩短启动白屏。
+const JsonTool = defineAsyncComponent(() => import('@/views/JsonTool.vue'))
+const StringTool = defineAsyncComponent(() => import('@/views/StringTool.vue'))
+const PinyinTool = defineAsyncComponent(() => import('@/views/PinyinTool.vue'))
+const EncodeTool = defineAsyncComponent(() => import('@/views/EncodeTool.vue'))
+const TimeTool = defineAsyncComponent(() => import('@/views/TimeTool.vue'))
+const URLTool = defineAsyncComponent(() => import('@/views/URLTool.vue'))
+const RegexTool = defineAsyncComponent(() => import('@/views/RegexTool.vue'))
+const BaseConverter = defineAsyncComponent(() => import('@/views/BaseConverter.vue'))
+const IpSubnetTool = defineAsyncComponent(() => import('@/views/IpSubnetTool.vue'))
+const UUIDTool = defineAsyncComponent(() => import('@/views/UUIDTool.vue'))
+const DevTools = defineAsyncComponent(() => import('@/views/DevTools.vue'))
+const FileProcessing = defineAsyncComponent(() => import('@/views/FileProcessing.vue'))
+const SqlTool = defineAsyncComponent(() => import('@/views/SqlTool.vue'))
+const JSTool = defineAsyncComponent(() => import('@/views/JSTool.vue'))
+const MockDataTool = defineAsyncComponent(() => import('@/views/MockDataTool.vue'))
+const OcrTool = defineAsyncComponent(() => import('@/views/OcrTool.vue'))
+const DiffTool = defineAsyncComponent(() => import('@/views/DiffTool.vue'))
+const ClipboardTool = defineAsyncComponent(() => import('@/views/ClipboardTool.vue'))
+const ClipboardConvertTool = defineAsyncComponent(() => import('@/views/ClipboardConvertTool.vue'))
+const CsvTool = defineAsyncComponent(() => import('@/views/CsvTool.vue'))
+const ExcelTool = defineAsyncComponent(() => import('@/views/ExcelTool.vue'))
+const SchemaTool = defineAsyncComponent(() => import('@/views/SchemaTool.vue'))
+const OpenApiTool = defineAsyncComponent(() => import('@/views/OpenApiTool.vue'))
+const TemplateTool = defineAsyncComponent(() => import('@/views/TemplateTool.vue'))
+const GitStatsTool = defineAsyncComponent(() => import('@/views/GitStatsTool.vue'))
+const StaticServerTool = defineAsyncComponent(() => import('@/views/StaticServerTool.vue'))
+const ImageCompareTool = defineAsyncComponent(() => import('@/views/ImageCompareTool.vue'))
+const ExifTool = defineAsyncComponent(() => import('@/views/ExifTool.vue'))
+const CodeFormatterTool = defineAsyncComponent(() => import('@/views/CodeFormatterTool.vue'))
+const PdfTool = defineAsyncComponent(() => import('@/views/PdfTool.vue'))
+const HashTool = defineAsyncComponent(() => import('@/views/HashTool.vue'))
+const XmlYamlTool = defineAsyncComponent(() => import('@/views/XmlYamlTool.vue'))
+const DedupTool = defineAsyncComponent(() => import('@/views/DedupTool.vue'))
+const CssTool = defineAsyncComponent(() => import('@/views/CssTool.vue'))
+const JwtTool = defineAsyncComponent(() => import('@/views/JwtTool.vue'))
+const WordCountTool = defineAsyncComponent(() => import('@/views/WordCountTool.vue'))
+const CronTool = defineAsyncComponent(() => import('@/views/CronTool.vue'))
+const MarkdownTool = defineAsyncComponent(() => import('@/views/MarkdownTool.vue'))
+const ColorTool = defineAsyncComponent(() => import('@/views/ColorTool.vue'))
+const PasswordTool = defineAsyncComponent(() => import('@/views/PasswordTool.vue'))
+const QrTool = defineAsyncComponent(() => import('@/views/QrTool.vue'))
+const BarcodeTool = defineAsyncComponent(() => import('@/views/BarcodeTool.vue'))
+const SnippetTool = defineAsyncComponent(() => import('@/views/SnippetTool.vue'))
+const HttpTool = defineAsyncComponent(() => import('@/views/HttpTool.vue'))
+const HistoryView = defineAsyncComponent(() => import('@/views/HistoryView.vue'))
+const WorkflowView = defineAsyncComponent(() => import('@/views/WorkflowView.vue'))
+const NoteEditor = defineAsyncComponent(() => import('@/views/NoteEditor.vue'))
+const CalculatorTool = defineAsyncComponent(() => import('@/views/CalculatorTool.vue'))
+const SystemInfoView = defineAsyncComponent(() => import('@/views/SystemInfoView.vue'))
+const NetworkInfoView = defineAsyncComponent(() => import('@/views/NetworkInfoView.vue'))
+const ProcessListView = defineAsyncComponent(() => import('@/views/ProcessListView.vue'))
+const HardwareInfoView = defineAsyncComponent(() => import('@/views/HardwareInfoView.vue'))
+const SoftwareEnvView = defineAsyncComponent(() => import('@/views/SoftwareEnvView.vue'))
+const SqliteViewerView = defineAsyncComponent(() => import('@/views/SqliteViewerView.vue'))
+const DiskSpaceAnalyzer = defineAsyncComponent(() => import('@/views/DiskSpaceAnalyzer.vue'))
+const FileSearcher = defineAsyncComponent(() => import('@/views/FileSearcher.vue'))
+const IconGenerator = defineAsyncComponent(() => import('@/views/IconGenerator.vue'))
+const ImageToolEnhanced = defineAsyncComponent(() => import('@/views/ImageToolEnhanced.vue'))
+const AudioTool = defineAsyncComponent(() => import('@/views/AudioTool.vue'))
+const VideoTool = defineAsyncComponent(() => import('@/views/VideoTool.vue'))
+const MediaInfoTool = defineAsyncComponent(() => import('@/views/MediaInfoTool.vue'))
+const ZipTool = defineAsyncComponent(() => import('@/views/ZipTool.vue'))
+const MermaidTool = defineAsyncComponent(() => import('@/views/MermaidTool.vue'))
+const PomodoroTool = defineAsyncComponent(() => import('@/views/PomodoroTool.vue'))
+const ServiceListView = defineAsyncComponent(() => import('@/views/ServiceListView.vue'))
+const HotkeyView = defineAsyncComponent(() => import('@/views/HotkeyView.vue'))
+const HostsView = defineAsyncComponent(() => import('@/views/HostsView.vue'))
+const NetworkConnections = defineAsyncComponent(() => import('@/views/NetworkConnections.vue'))
+const ScheduledTasksView = defineAsyncComponent(() => import('@/views/ScheduledTasksView.vue'))
+const StartupItemsView = defineAsyncComponent(() => import('@/views/StartupItemsView.vue'))
+const EnvVarsView = defineAsyncComponent(() => import('@/views/EnvVarsView.vue'))
+const CertViewer = defineAsyncComponent(() => import('@/views/CertViewer.vue'))
+const BoostView = defineAsyncComponent(() => import('@/views/BoostView.vue'))
+const PasswordVault = defineAsyncComponent(() => import('@/views/PasswordVault.vue'))
+const FileRenamer = defineAsyncComponent(() => import('@/views/FileRenamer.vue'))
+const QuickLaunchTool = defineAsyncComponent(() => import('@/views/QuickLaunchTool.vue'))
+const SvgTool = defineAsyncComponent(() => import('@/views/SvgTool.vue'))
+const BatchReplaceTool = defineAsyncComponent(() => import('@/views/BatchReplaceTool.vue'))
+const ChangelogView = defineAsyncComponent(() => import('@/views/ChangelogView.vue'))
 import CommandPalette from '@/components/CommandPalette.vue'
 import QuickLaunchOverlay from '@/components/QuickLaunchOverlay.vue'
 import { ConfirmDialogWrapper } from '@/composables/useConfirmDialog'
@@ -248,65 +252,11 @@ const applyTheme = (theme: string) => {
 }
 
 // 保存窗口大小和位置
-// 注意：统一使用 innerSize/innerPosition，与 setSize/setPosition 保持一致，
-// 避免 outerSize（含标题栏边框）与 setSize（client区）混用导致尺寸漂移
+// 由 Rust 侧（window_state.rs）读取 innerSize/innerPosition 并持久化到 JSON 文件，
+// 启动时在 Rust setup 阶段立即恢复（窗口首次显示前），避免前端加载完再 setSize 的尺寸跳变。
 const saveWindowState = async () => {
   try {
-    const win = getCurrentWindow()
-    // 窗口最大化/最小化时不保存，避免记录垃圾尺寸
-    const isMaximized = await win.isMaximized()
-    const isMinimized = await win.isMinimized()
-    if (isMaximized || isMinimized) {
-      // 只保存最大化状态，不更新尺寸
-      const prev = localStorage.getItem('window_size')
-      const prevState = prev ? JSON.parse(prev) : {}
-      localStorage.setItem('window_size', JSON.stringify({
-        ...prevState,
-        maximized: isMaximized,
-      }))
-      return
-    }
-    const size = await win.innerSize()
-    const position = await win.innerPosition()
-    localStorage.setItem('window_size', JSON.stringify({
-      width: size.width,
-      height: size.height,
-      x: position.x,
-      y: position.y,
-      maximized: false,
-    }))
-  } catch {}
-}
-
-// 恢复窗口大小和位置（校验异常状态：最小化/屏幕外时存的垃圾值会被忽略）
-const restoreWindowState = async () => {
-  try {
-    const saved = localStorage.getItem('window_size')
-    if (!saved) return
-    const state = JSON.parse(saved)
-    const win = getCurrentWindow()
-
-    // 先恢复最大化状态
-    if (state.maximized) {
-      await win.maximize()
-      return
-    }
-
-    if (!state.width || !state.height || state.width < 400 || state.height < 300) return
-    // 位置必须与至少一个显示器有实际交集，否则忽略（防止窗口落在屏幕外找不到）
-    let positionValid = true
-    if (state.x !== undefined && state.y !== undefined) {
-      const monitors = await availableMonitors()
-      positionValid = monitors.some((m) => {
-        const overlapX = Math.min(state.x + state.width, m.position.x + m.size.width) - Math.max(state.x, m.position.x)
-        const overlapY = Math.min(state.y + state.height, m.position.y + m.size.height) - Math.max(state.y, m.position.y)
-        return overlapX >= 100 && overlapY >= 100
-      })
-    }
-    await win.setSize(new PhysicalSize(state.width, state.height))
-    if (positionValid && state.x !== undefined && state.y !== undefined) {
-      await win.setPosition(new PhysicalPosition(state.x, state.y))
-    }
+    await invoke('save_window_state')
   } catch {}
 }
 
@@ -319,10 +269,9 @@ onMounted(async () => {
     }
   })
 
-  // 恢复窗口大小
-  await restoreWindowState()
+  // 窗口尺寸/位置已由 Rust setup 阶段恢复，此处只监听变化并保存
 
-  // 监听窗口大小和位置变化（300ms 防抖，避免拖动时高频写 localStorage）
+  // 监听窗口大小和位置变化（300ms 防抖，避免拖动时高频保存）
   const win = getCurrentWindow()
   const debouncedSave = () => {
     if (windowStateTimer) window.clearTimeout(windowStateTimer)
@@ -366,9 +315,7 @@ onMounted(async () => {
     }
   }
   window.addEventListener('keydown', globalKeydownHandler)
-
-  // 页面关闭前保存窗口状态
-  window.addEventListener('beforeunload', saveWindowState)
+  // 窗口状态保存由 onResized/onMoved 防抖触发；退出确认时 Rust 侧兜底保存，无需 beforeunload
 })
 
 onUnmounted(() => {
@@ -387,9 +334,6 @@ onUnmounted(() => {
   if (windowMoveHandler) {
     windowMoveHandler()
   }
-  window.removeEventListener('beforeunload', saveWindowState)
-  // 组件销毁前再次保存
-  saveWindowState()
 })
 </script>
 
