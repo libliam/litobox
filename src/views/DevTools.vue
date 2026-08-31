@@ -7,7 +7,7 @@
       <el-tab-pane label="URL工具" name="url" />
       <el-tab-pane label="正则工具" name="regex" />
       <el-tab-pane label="进制转换" name="base" />
-      <el-tab-pane label="UUID生成" name="uuid" />
+      <el-tab-pane label="ID生成器" name="uuid" />
     </el-tabs>
 
     <EncodeTool v-if="activeTab === 'encode'" />

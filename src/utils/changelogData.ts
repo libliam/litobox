@@ -15,12 +15,19 @@ export interface ChangelogData {
 }
 
 export const changelogData: ChangelogData = {
-  versionRange: "从 v1.0 到 v8.0.1 更新内容",
+  versionRange: "从 v1.0 到 v8.0.2 更新内容",
   entries: [
+  {
+    "version": "8.0.2",
+    "date": "2026-08-31",
+    "content": "UUID生成升级为 ID生成器：新增雪花算法ID（标准 64 位，机器ID 0-1023 可配）、MongoDB ObjectId（24 位十六进制，时间戳+随机+自增计数）、数字自增序列（自定义前缀/起始值/步长/补零位数，会话内递增）；统一生成入口与批量生成，工作流可调用（UUID v4 / 雪花算法ID / ObjectId，执行输入为数字时按数量生成）",
+    "isEnhancement": true,
+    "isNewFeature": true
+  },
   {
     "version": "8.0.1",
     "date": "2026-08-16",
-    "content": "窗口体验优化：默认窗口尺寸从 1300×850 调小为 1100×720，适配 13/15 寸小屏笔记本；修复窗口尺寸记忆失效问题（补全 Tauri 2 窗口写操作权限 core:window:allow-set-size/set-position/maximize，此前恢复被权限拦截静默失败）；窗口尺寸/位置/最大化状态改由 Rust 后端持久化（window_state.json），启动时在 setup 阶段窗口首次显示前恢复，消除尺寸跳变，退出确认时兜底保存；窗口拖动/缩放事件加 300ms 防抖保存；工具页组件按需加载（defineAsyncComponent），首屏主包从 4.8MB 降至 103KB，缩短启动白屏",
+    "content": "窗口体验优化：默认窗口尺寸从 1300×850 调小为 1100×720，适配 13/15 寸小屏笔记本；修复窗口尺寸记忆失效问题（补全 Tauri 2 窗口写操作权限 core:window:allow-set-size/set-position/maximize，此前恢复被权限拦截静默失败）；窗口尺寸/位置/最大化状态改由 Rust 后端持久化（window_state.json），启动时在 setup 阶段窗口首次显示前恢复、退出确认时兜底保存；拖动/缩放事件加 300ms 防抖保存；启动提速：90 个工具页组件按需加载（defineAsyncComponent，首屏主包从 4.8MB 降至 103KB）、内联启动 loading 动画、窗口隐藏至界面就绪再显示（visible:false + app_ready），彻底消除启动白屏与尺寸跳变",
     "isEnhancement": true,
     "isNewFeature": false
   },

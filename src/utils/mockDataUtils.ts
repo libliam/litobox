@@ -124,12 +124,12 @@ export function generateIdCard(options: {
     const day = String(randomInt(1, 28)).padStart(2, '0')
     const birthday = `${year}${month}${day}`
 
-    // 顺序码（第17位决定性别）
+    // 顺序码（第17位决定性别：奇数=男，偶数=女）
     const sequence = String(randomInt(1, 999)).padStart(3, '0')
     const genderDigit = gender === 'male'
-      ? String(randomPick([0, 2, 4, 6, 8]))
+      ? String(randomPick([1, 3, 5, 7, 9]))
       : gender === 'female'
-        ? String(randomPick([1, 3, 5, 7, 9]))
+        ? String(randomPick([0, 2, 4, 6, 8]))
         : String(randomInt(0, 9))
 
     const id17 = province + city + district + birthday + sequence.slice(0, 2) + genderDigit
@@ -828,4 +828,327 @@ export function generateJSON(options: {
   }
 
   return results
+}
+
+// ========== 英文姓名 ==========
+const FIRST_NAMES_MALE = ['James', 'John', 'Robert', 'Michael', 'William', 'David', 'Richard', 'Joseph', 'Thomas', 'Charles', 'Daniel', 'Matthew', 'Anthony', 'Mark', 'Christopher']
+const FIRST_NAMES_FEMALE = ['Mary', 'Patricia', 'Jennifer', 'Linda', 'Elizabeth', 'Barbara', 'Susan', 'Jessica', 'Sarah', 'Karen', 'Lisa', 'Nancy', 'Betty', 'Sandra', 'Margaret']
+const LAST_NAMES = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Rodriguez', 'Martinez', 'Hernandez', 'Lopez', 'Gonzalez', 'Wilson', 'Anderson', 'Taylor', 'Moore', 'Jackson', 'Martin', 'Lee', 'Perez', 'Thompson', 'White']
+
+/**
+ * 生成英文姓名（First + Last）
+ */
+export function generateEnglishName(options: {
+  count: number
+  gender?: 'male' | 'female' | 'random'
+}): string[] {
+  const { count, gender = 'random' } = options
+  const results: string[] = []
+
+  for (let i = 0; i < count; i++) {
+    const g = gender === 'random' ? randomPick(['male', 'female'] as const) : gender
+    const first = g === 'male' ? randomPick(FIRST_NAMES_MALE) : randomPick(FIRST_NAMES_FEMALE)
+    results.push(`${first} ${randomPick(LAST_NAMES)}`)
+  }
+
+  return results
+}
+
+// ========== 经纬度坐标 ==========
+/**
+ * 生成经纬度坐标（"纬度, 经度"）
+ */
+export function generateCoordinate(options: {
+  count: number
+  range?: 'china' | 'global'
+  decimals?: number
+}): string[] {
+  const { count, range = 'china', decimals = 6 } = options
+  const results: string[] = []
+
+  const latRange = range === 'china' ? [3, 54] : [-90, 90]
+  const lngRange = range === 'china' ? [73, 135] : [-180, 180]
+
+  for (let i = 0; i < count; i++) {
+    const lat = (latRange[0] + Math.random() * (latRange[1] - latRange[0])).toFixed(decimals)
+    const lng = (lngRange[0] + Math.random() * (lngRange[1] - lngRange[0])).toFixed(decimals)
+    results.push(`${lat}, ${lng}`)
+  }
+
+  return results
+}
+
+// ========== 公司名称 ==========
+const COMPANY_REGIONS = ['北京', '上海', '广州', '深圳', '杭州', '成都', '武汉', '南京', '苏州', '西安', '重庆', '天津']
+const COMPANY_CHARS = ['瑞', '源', '恒', '达', '宏', '远', '盛', '嘉', '联', '创', '科', '讯', '博', '捷', '信', '通', '云', '星', '鹏', '华', '中', '天', '金']
+const COMPANY_INDUSTRIES = ['科技', '网络', '信息技术', '电子商务', '电子', '传媒', '商贸', '实业', '建设工程', '文化', '医药', '食品', '物流', '环保', '智能制造']
+const COMPANY_TYPES = ['有限公司', '股份有限公司', '集团有限公司', '合伙企业', '工作室']
+
+/**
+ * 生成中文公司名称（地域 + 字号 + 行业 + 组织形式）
+ */
+export function generateCompanyName(options: {
+  count: number
+}): string[] {
+  const { count } = options
+  const results: string[] = []
+
+  for (let i = 0; i < count; i++) {
+    const region = randomPick(COMPANY_REGIONS)
+    const brandLen = Math.random() > 0.5 ? 2 : 3
+    const brand = Array.from({ length: brandLen }, () => randomPick(COMPANY_CHARS)).join('')
+    const industry = randomPick(COMPANY_INDUSTRIES)
+    const type = randomPick(COMPANY_TYPES)
+    results.push(`${region}${brand}${industry}${type}`)
+  }
+
+  return results
+}
+
+// ========== 个人档案 ==========
+/**
+ * 生成一套完整个人信息（JSON），内部字段一致：
+ * 性别 → 姓名/身份证；出生日期/年龄 ← 身份证解析
+ */
+export function generatePersonalProfile(options: {
+  count: number
+}): string[] {
+  const { count } = options
+  const results: string[] = []
+
+  const genderText = { male: '男', female: '女' } as const
+
+  for (let i = 0; i < count; i++) {
+    const gender = randomPick(['male', 'female'] as const)
+    const name = generateName({ count: 1, gender })[0]
+    const idCard = generateIdCard({ count: 1, gender })[0]
+    const birthDate = `${idCard.slice(6, 10)}-${idCard.slice(10, 12)}-${idCard.slice(12, 14)}`
+    const age = new Date().getFullYear() - parseInt(idCard.slice(6, 10), 10)
+
+    const profile = {
+      name,
+      gender: genderText[gender],
+      idCard,
+      birthDate,
+      age,
+      phone: generatePhone({ count: 1 })[0],
+      email: generateEmail({ count: 1 })[0],
+      address: generateAddress({ count: 1 })[0],
+      bankCard: generateBankCard({ count: 1 })[0],
+    }
+
+    results.push(JSON.stringify(profile, null, 2))
+  }
+
+  return results
+}
+
+// ========== 用户名 ==========
+const USERNAME_ADJ = ['cool', 'happy', 'lucky', 'super', 'big', 'tiny', 'fast', 'smart', 'crazy', 'brave', 'gentle', 'sweet', 'wild', 'clever', 'swift', 'silent', 'bright', 'golden', 'silver', 'mega']
+const USERNAME_NOUN = ['panda', 'tiger', 'eagle', 'wolf', 'fox', 'lion', 'bear', 'cat', 'dog', 'bird', 'fish', 'dragon', 'phoenix', 'unicorn', 'koala', 'penguin', 'rabbit', 'turtle', 'shark', 'whale']
+const USERNAME_SEP: Record<string, string> = { snake: '_', dot: '.', dash: '-', none: '' }
+
+/**
+ * 生成用户名（形容词 + 分隔符 + 名词 + 随机数字后缀）
+ */
+export function generateUsername(options: {
+  count: number
+  style?: 'random' | 'snake' | 'dot' | 'dash' | 'none'
+}): string[] {
+  const { count, style = 'random' } = options
+  const results: string[] = []
+
+  const styleKeys = Object.keys(USERNAME_SEP) as Array<keyof typeof USERNAME_SEP>
+
+  for (let i = 0; i < count; i++) {
+    const sep = style === 'random' ? USERNAME_SEP[randomPick(styleKeys)] : USERNAME_SEP[style]
+    const number = Math.random() > 0.7 ? '' : String(randomInt(10, 9999))
+    results.push(`${randomPick(USERNAME_ADJ)}${sep}${randomPick(USERNAME_NOUN)}${number}`)
+  }
+
+  return results
+}
+
+// ========== 快递单号 ==========
+/**
+ * 生成快递单号（按快递公司常见格式）
+ */
+export function generateCourierNumber(options: {
+  count: number
+  carrier?: 'sf' | 'yt' | 'zt' | 'yd' | 'sto' | 'ems' | 'jd' | 'random'
+}): string[] {
+  const { count, carrier = 'random' } = options
+  const results: string[] = []
+
+  // 前缀字母 + 数字位数
+  const carriers: Record<string, { prefix: string; digits: number }> = {
+    sf: { prefix: 'SF', digits: 13 },
+    yt: { prefix: 'YT', digits: 10 },
+    zt: { prefix: 'ZT', digits: 12 },
+    yd: { prefix: 'YD', digits: 12 },
+    sto: { prefix: 'STO', digits: 12 },
+    jd: { prefix: 'JD', digits: 12 },
+  }
+
+  for (let i = 0; i < count; i++) {
+    const c = carrier === 'random' ? randomPick(Object.keys(carriers)) : carrier
+
+    if (c === 'ems') {
+      // EMS：2 字母 + 9 位数字 + CN
+      const code = `E${randomPick('ABCDEFGHJKLMNPQRSTUVWXYZ'.split(''))}`
+      results.push(`${code}${String(randomInt(0, 999999999)).padStart(9, '0')}CN`)
+    } else {
+      const { prefix, digits } = carriers[c]
+      const num = String(randomInt(0, Math.pow(10, digits) - 1)).padStart(digits, '0')
+      results.push(prefix + num)
+    }
+  }
+
+  return results
+}
+
+// ========== 金额 ==========
+const CURRENCY_SYMBOL: Record<string, string> = { cny: '¥', usd: '$', eur: '€', none: '' }
+
+const UPPER_DIGITS = ['零', '壹', '贰', '叁', '肆', '伍', '陆', '柒', '捌', '玖']
+const UPPER_INNER_UNITS = ['', '拾', '佰', '仟']
+const UPPER_GROUP_UNITS = ['', '万', '亿', '万亿']
+
+/**
+ * 4 位一组转大写（如 1005 → 壹仟零伍），连续零合并、末尾零省略
+ */
+function groupToUpper(g: number): string {
+  const str = String(g)
+  let result = ''
+
+  for (let i = 0; i < str.length; i++) {
+    const digit = parseInt(str[i], 10)
+    const pos = str.length - 1 - i
+
+    if (digit !== 0) {
+      result += UPPER_DIGITS[digit] + UPPER_INNER_UNITS[pos]
+    } else if (i < str.length - 1 && /[1-9]/.test(str.slice(i + 1)) && !result.endsWith('零')) {
+      result += '零'
+    }
+  }
+
+  return result
+}
+
+/**
+ * 整数部分转中文大写（按 4 位分组：元/万/亿/万亿）
+ */
+function integerToUpper(num: number): string {
+  if (num === 0) return '零'
+
+  const groups: number[] = []
+  let n = num
+  while (n > 0) {
+    groups.push(n % 10000)
+    n = Math.floor(n / 10000)
+  }
+
+  let result = ''
+  for (let i = groups.length - 1; i >= 0; i--) {
+    const g = groups[i]
+    if (g === 0) continue
+
+    if (result) {
+      // 组间补零：本组不足千、或更高组末位为零、或中间隔了全零组
+      let needZero = g < 1000
+      for (let j = i + 1; j < groups.length; j++) {
+        if (groups[j] === 0) {
+          needZero = true
+          continue
+        }
+        if (groups[j] % 10 === 0) needZero = true
+        break
+      }
+      if (needZero) result += '零'
+    }
+
+    result += groupToUpper(g) + (i > 0 ? UPPER_GROUP_UNITS[i] : '')
+  }
+
+  return result
+}
+
+/**
+ * 金额转人民币大写（最高支持万亿级，两位小数）
+ */
+export function amountToUpper(num: number): string {
+  if (!isFinite(num)) return ''
+  const negative = num < 0
+  const fixed = Math.abs(num).toFixed(2)
+  const [intStr, decStr] = fixed.split('.')
+
+  const intPart = parseInt(intStr, 10)
+  const jiao = parseInt(decStr[0] || '0', 10)
+  const fen = parseInt(decStr[1] || '0', 10)
+
+  let result = (intPart === 0 ? '零元' : integerToUpper(intPart) + '元')
+
+  if (jiao === 0 && fen === 0) {
+    result += '整'
+  } else if (jiao === 0) {
+    result += '零' + UPPER_DIGITS[fen] + '分'
+  } else if (fen === 0) {
+    result += UPPER_DIGITS[jiao] + '角整'
+  } else {
+    result += UPPER_DIGITS[jiao] + '角' + UPPER_DIGITS[fen] + '分'
+  }
+
+  return (negative ? '负' : '') + result
+}
+
+/**
+ * 金额原始值格式化（upper 时输出人民币大写，否则符号 + 千分位）
+ */
+export function formatAmountValue(value: number, options: {
+  decimals?: 0 | 1 | 2
+  currency?: 'cny' | 'usd' | 'eur' | 'none'
+  upper?: boolean
+} = {}): string {
+  const { decimals = 2, currency = 'cny', upper = false } = options
+
+  if (upper) return amountToUpper(value)
+
+  const symbol = CURRENCY_SYMBOL[currency]
+  const fixed = value.toFixed(decimals)
+  const [intPart, decPart] = fixed.split('.')
+  return symbol + Number(intPart).toLocaleString('en-US') + (decPart ? '.' + decPart : '')
+}
+
+/**
+ * 生成金额原始数值（仅随机值，便于切换展示格式时复用）
+ */
+export function generateAmountValues(options: {
+  count: number
+  min?: number
+  max?: number
+}): number[] {
+  const { count, min = 1, max = 10000 } = options
+  const values: number[] = []
+
+  for (let i = 0; i < count; i++) {
+    values.push(min + Math.random() * (max - min))
+  }
+
+  return values
+}
+
+/**
+ * 生成金额（符号 + 千分位，小数位可配；upper 时直接输出人民币大写，忽略货币符号）
+ */
+export function generateAmount(options: {
+  count: number
+  min?: number
+  max?: number
+  decimals?: 0 | 1 | 2
+  currency?: 'cny' | 'usd' | 'eur' | 'none'
+  upper?: boolean
+}): string[] {
+  const { count, min = 1, max = 10000, decimals = 2, currency = 'cny', upper = false } = options
+  return generateAmountValues({ count, min, max })
+    .map(value => formatAmountValue(value, { decimals, currency, upper }))
 }

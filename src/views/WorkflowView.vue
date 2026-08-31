@@ -329,6 +329,7 @@ const TOOL_ACTIONS: Record<string, string[]> = {
   ],
   json: ['格式化', '压缩', '校验'],
   encode: ['Base64编码', 'Base64解码', 'URL编码', 'URL解码'],
+  uuid: ['UUID v4', 'UUID v1', 'UUID v5', 'UUID v7', '雪花算法ID', 'ObjectId', '自增序列', 'NanoID', 'ULID', 'KSUID', 'CUID2', 'XID'],
   regex: ['去除HTML标签', '提取URL', '提取邮箱', '去除空白字符'],
   sql: ['转SQL IN', '转SQL VALUES'],
   base64: ['编码', '解码'],
@@ -706,6 +707,28 @@ async function executeStep(tool: string, action: string, input: string): Promise
       return executeEncodeAction(action, input)
     case 'base64':
       return executeBase64Action(action, input)
+    case 'uuid': {
+      // 生成型工具：执行输入为纯数字时按该数量生成，否则生成 1 个
+      const { generateIds } = await import('@/utils/uuidUtils')
+      const typeMap: Record<string, string> = {
+        'UUID v4': 'uuid',
+        'UUID v1': 'uuidv1',
+        'UUID v5': 'uuidv5',
+        'UUID v7': 'uuidv7',
+        '雪花算法ID': 'snowflake',
+        ObjectId: 'objectid',
+        '自增序列': 'sequence',
+        NanoID: 'nanoid',
+        ULID: 'ulid',
+        KSUID: 'ksuid',
+        CUID2: 'cuid2',
+        XID: 'xid',
+      }
+      const type = typeMap[action]
+      if (!type) return input
+      const n = Math.min(100, Math.max(1, parseInt(input.trim(), 10) || 1))
+      return (await generateIds({ type: type as Parameters<typeof generateIds>[0]['type'], count: n })).join('\n')
+    }
     case 'regex':
       return executeRegexAction(action, input)
     case 'sql':
