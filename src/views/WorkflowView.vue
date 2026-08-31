@@ -766,6 +766,15 @@ async function executeStep(tool: string, action: string, input: string): Promise
       const { parseOpenApiText, exportOperationsJson } = await import('@/utils/openApiUtils')
       return exportOperationsJson(parseOpenApiText(input))
     }
+    case 'curl': {
+      // 构建型工具：工作流输入作为 URL，生成基础 GET 命令
+      const { buildCurlCommand } = await import('@/utils/curlUtils')
+      return buildCurlCommand({
+        method: 'GET', url: input.trim(), headers: [], authType: 'none',
+        basicUser: '', basicPass: '', bearerToken: '', bodyType: 'none',
+        jsonBody: '', formFields: [], rawBody: '', cookie: '', timeout: '',
+      })
+    }
     default:
       return input
   }

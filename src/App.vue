@@ -81,6 +81,7 @@ const QrTool = defineAsyncComponent(() => import('@/views/QrTool.vue'))
 const BarcodeTool = defineAsyncComponent(() => import('@/views/BarcodeTool.vue'))
 const SnippetTool = defineAsyncComponent(() => import('@/views/SnippetTool.vue'))
 const HttpTool = defineAsyncComponent(() => import('@/views/HttpTool.vue'))
+const CurlTool = defineAsyncComponent(() => import('@/views/CurlTool.vue'))
 const HistoryView = defineAsyncComponent(() => import('@/views/HistoryView.vue'))
 const WorkflowView = defineAsyncComponent(() => import('@/views/WorkflowView.vue'))
 const NoteEditor = defineAsyncComponent(() => import('@/views/NoteEditor.vue'))
@@ -172,6 +173,7 @@ const toolComponentMap: Record<string, any> = {
   barcode: BarcodeTool,
   snippet: SnippetTool,
   http: HttpTool,
+  curl: CurlTool,
   history: HistoryView,
   workflow: WorkflowView,
   note: NoteEditor,
