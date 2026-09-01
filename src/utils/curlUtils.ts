@@ -13,6 +13,21 @@ export interface CurlParams {
   rawBody: string
   cookie: string
   timeout: string
+  // 常用开关型参数
+  followRedirects?: boolean   // -L 跟随重定向
+  insecure?: boolean          // -k 跳过 SSL 证书校验
+  includeHeaders?: boolean    // -i 输出包含响应头
+  headOnly?: boolean          // -I 仅取响应头
+  silent?: boolean            // -s 静默模式（不显示进度）
+  showError?: boolean         // -S 静默模式下仍显示错误
+  verbose?: boolean           // -v 详细输出
+  failOnError?: boolean       // -f HTTP 错误码时返回失败而非输出错误页
+  compressed?: boolean        // --compressed 请求压缩响应
+  // 带值参数
+  outputFile?: string         // -o 输出到文件
+  connectTimeout?: string     // --connect-timeout 连接超时（秒）
+  proxy?: string              // -x 代理地址
+  userAgent?: string          // -A User-Agent
 }
 
 /** 单引号包裹并转义内部单引号（bash 规则: ' → '\''） */
@@ -59,5 +74,21 @@ export function buildCurlCommand(p: CurlParams): string {
   // 超时
   const t = parseInt(p.timeout, 10)
   if (!Number.isNaN(t) && t > 0) lines.push(`  --max-time ${t}`)
+  // 开关型参数
+  if (p.followRedirects) lines.push('  -L')
+  if (p.insecure) lines.push('  -k')
+  if (p.includeHeaders) lines.push('  -i')
+  if (p.headOnly) lines.push('  -I')
+  if (p.silent) lines.push('  -s')
+  if (p.showError) lines.push('  -S')
+  if (p.verbose) lines.push('  -v')
+  if (p.failOnError) lines.push('  -f')
+  if (p.compressed) lines.push('  --compressed')
+  // 带值参数
+  if (p.outputFile?.trim()) lines.push(`  -o ${sq(p.outputFile.trim())}`)
+  const ct = parseInt(p.connectTimeout ?? '', 10)
+  if (!Number.isNaN(ct) && ct > 0) lines.push(`  --connect-timeout ${ct}`)
+  if (p.proxy?.trim()) lines.push(`  -x ${sq(p.proxy.trim())}`)
+  if (p.userAgent?.trim()) lines.push(`  -A ${sq(p.userAgent.trim())}`)
   return lines.join(' \\\n')
 }

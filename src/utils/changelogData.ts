@@ -15,8 +15,15 @@ export interface ChangelogData {
 }
 
 export const changelogData: ChangelogData = {
-  versionRange: "从 v1.0 到 v8.1.0 更新内容",
+  versionRange: "从 v1.0 到 v8.2.0 更新内容",
   entries: [
+  {
+    "version": "8.2.0",
+    "date": "2026-09-01",
+    "content": "Curl 构建器：根据参数实时生成 curl 命令（Linux bash 风格，多行 `\\` 续行），支持 GET/POST/PUT/DELETE/PATCH/HEAD/OPTIONS 方法、URL、请求头列表、Basic Auth / Bearer Token 认证、JSON（自动压缩单行+自动补 Content-Type）/ Form（--data-urlencode）/ 原始文本三种请求体、Cookie、超时（--max-time）；请求头值/Body 单引号智能转义（`'` → `'\\''`），生成后一键复制并记录操作历史（完整参数可还原），工作流可调用（输入作为 URL 生成基础 GET 命令）；交互优化——请求头/请求体卡片常驻，认证、其他选项卡片默认折叠（点击标题栏展开/收起）；GET↔POST 切换联动（切 POST 默认展开 JSON 请求体，切回 GET 自动收起请求体，数据保留）；请求头名称改为可输入可选下拉，记录用户最近使用项（内置 Cookie/Content-Type/Authorization 等常用项，自定义项持久化到 localStorage），默认预置一行 `Cookie: access_token=$token`；批量复制去掉注释纯换行分隔；批量变量表头每列新增\"复制占位符\"按钮一键复制 `{{变量名}}`；批量模式新增\"加载示例\"按钮（2 变量 userId/token + 2 条数据）演示占位符用法；新增\"生成历史\"卡片（本页保留最近 20 条，完全相同不记录，批量只记一条 base 配置，点击条目还原）；扩展常用 curl 参数——\"其他选项\"卡片新增开关型参数勾选网格（-L 跟随重定向/-k 跳过 SSL/-i 含响应头/-I 仅取响应头/-s 静默/-S 显示错误/-v 详细/-f 失败即退出/--compressed 请求压缩）和带值参数输入（-o 输出到文件/--connect-timeout 连接超时/-x 代理/-A User-Agent），实时拼接到生成命令尾部",
+    "isEnhancement": true,
+    "isNewFeature": true
+  },
   {
     "version": "8.1.0",
     "date": "2026-08-31",
