@@ -34,6 +34,7 @@ const props = defineProps<{
   modelValue: string
   language?: string
   readOnly?: boolean
+  initialWrap?: boolean  // 初始自动换行状态（多 tab 切换时保留各自状态）
 }>()
 
 const emit = defineEmits<{
@@ -41,6 +42,8 @@ const emit = defineEmits<{
   'change': [value: string]
   // ponytail: 底部状态栏需要的状态信息
   'status': [info: EditorStatus]
+  'goto-line': []  // Ctrl+G 请求跳转行
+  'save': []  // Ctrl+S 请求保存
 }>()
 
 export interface EditorStatus {
@@ -89,7 +92,7 @@ let resizeObserver: ResizeObserver | null = null
 
 // 自动换行热切换
 const wrapCompartment = new Compartment()
-const wordWrap = ref(false)
+const wordWrap = ref(!!props.initialWrap)
 
 // 语言扩展映射
 const langExtensions: Record<string, () => any> = {
@@ -163,6 +166,9 @@ const createEditor = () => {
       history(),
       highlightSelectionMatches(),
       keymap.of([
+        // 自定义快捷键优先于 searchKeymap（拦截 Ctrl+G 的"查找下一个"）
+        { key: 'Mod-g', run: () => { emit('goto-line'); return true } },
+        { key: 'Mod-s', run: () => { emit('save'); return true } },
         ...defaultKeymap,
         ...historyKeymap,
         ...searchKeymap,

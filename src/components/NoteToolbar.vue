@@ -1,10 +1,32 @@
 <template>
   <div class="note-toolbar">
-    <div class="toolbar-file-name">
+    <div class="toolbar-file-name" :title="fileName">
       <el-icon><Document /></el-icon>
       <span>{{ fileName }}</span>
       <span v-if="isModified" class="modified-dot">●</span>
     </div>
+
+    <el-tooltip content="打开本地文件" placement="bottom">
+      <el-button
+        size="small"
+        class="toolbar-action"
+        @click="$emit('open-local')"
+      >
+        <el-icon><FolderOpened /></el-icon>
+      </el-button>
+    </el-tooltip>
+
+    <el-tooltip :content="isFile ? '保存到原文件 (Ctrl+S)' : '保存 (Ctrl+S)'" placement="bottom">
+      <el-button
+        v-if="isFile"
+        size="small"
+        type="primary"
+        class="toolbar-action"
+        @click="$emit('save')"
+      >
+        <el-icon><Finished /></el-icon>
+      </el-button>
+    </el-tooltip>
 
     <el-tooltip :content="toolbarExpanded ? '收起工具栏' : '展开工具栏'" placement="bottom">
       <el-button
@@ -94,7 +116,7 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { Search, Document, Download, Fold, Expand, Connection, Open, Aim } from '@element-plus/icons-vue'
+import { Search, Document, Download, Fold, Expand, Connection, Open, Aim, FolderOpened, Finished } from '@element-plus/icons-vue'
 import { useToolboxStore } from '@/store'
 
 const store = useToolboxStore()
@@ -104,6 +126,7 @@ const props = defineProps<{
   isModified?: boolean
   fileName?: string
   wordWrap?: boolean
+  isFile?: boolean
 }>()
 
 defineEmits<{
@@ -116,9 +139,11 @@ defineEmits<{
   'to-upper': []
   'to-lower': []
   'format': []
+  'save': []
   'save-as': []
   'toggle-wrap': []
   'goto-line': []
+  'open-local': []
 }>()
 
 const toolbarExpanded = ref(false)
@@ -157,7 +182,15 @@ const onThemeChange = async (name: string) => {
   font-size: 13px;
   font-weight: 500;
   color: var(--text-primary);
-  min-width: 100px;
+  min-width: 0;
+  max-width: 260px;
+  flex-shrink: 1;
+}
+
+.toolbar-file-name span:not(.modified-dot) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .modified-dot {
