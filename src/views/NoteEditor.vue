@@ -35,6 +35,7 @@
           :class="{ active: doc.key === activeKey }"
           :title="doc.path"
           @click="switchDoc(doc)"
+          @contextmenu.prevent="openTabCtx($event, doc)"
           @mousedown.middle.prevent="closeDoc(doc)"
         >
           <el-icon v-if="doc.kind === 'note'" class="tab-icon"><Document /></el-icon>
@@ -46,6 +47,17 @@
           </span>
         </div>
       </div>
+
+      <!-- Tab 右键菜单（样式见 theme.css .tab-ctx-menu） -->
+      <ul
+        v-if="tabCtx.visible"
+        class="tab-ctx-menu"
+        :style="{ left: tabCtx.x + 'px', top: tabCtx.y + 'px' }"
+      >
+        <li @click="ctxClose">关闭</li>
+        <li @click="ctxCloseOthers">关闭其他</li>
+        <li @click="ctxCloseAll">关闭全部</li>
+      </ul>
 
       <div v-if="!activeDoc" class="editor-empty">
         <el-icon :size="48" color="var(--text-muted)"><Document /></el-icon>
@@ -426,13 +438,9 @@ const switchDoc = async (doc: EditorDoc): Promise<boolean> => {
   return true
 }
 
-// 关闭 tab
-const closeDoc = async (doc: EditorDoc) => {
-  if (activeKey.value !== doc.key) {
-    docs.value = docs.value.filter(d => d !== doc)
-    return
-  }
-
+// 关闭 tab；返回 false 表示用户取消（有未保存修改时）
+// 非激活 tab 同样要走未保存检查——文件类 tab 不自动保存，直接 filter 会丢内容
+const closeDoc = async (doc: EditorDoc): Promise<boolean> => {
   if (doc.content !== doc.original) {
     let shouldClose = true
     if (doc.kind === 'note') {
@@ -451,13 +459,14 @@ const closeDoc = async (doc: EditorDoc) => {
       if (action === 'confirm') {
         shouldClose = await saveDoc(doc)
       } else if (action === 'close') {
-        return  // 取消关闭
+        return false  // 取消关闭
       }
     }
-    if (!shouldClose) return
+    if (!shouldClose) return false
   }
 
   const idx = docs.value.indexOf(doc)
+  if (idx < 0) return true
   docs.value = docs.value.filter(d => d !== doc)
 
   // 激活相邻 tab
@@ -466,12 +475,59 @@ const closeDoc = async (doc: EditorDoc) => {
     activeKey.value = next ? next.key : null
     Object.assign(status, { line: 1, column: 1, selectedCount: 0, selectedLines: 0 })
   }
+  return true
 }
 
 const handleTabWheel = (e: WheelEvent) => {
   const el = e.currentTarget as HTMLElement
   el.scrollLeft += e.deltaY
 }
+
+// ===================== Tab 右键菜单：关闭 / 关闭其他 / 关闭全部 =====================
+
+const tabCtx = reactive({ visible: false, x: 0, y: 0, key: '' })
+
+const openTabCtx = (e: MouseEvent, doc: EditorDoc) => {
+  tabCtx.visible = true
+  tabCtx.x = e.clientX
+  tabCtx.y = e.clientY
+  tabCtx.key = doc.key
+}
+
+const closeTabCtx = () => {
+  if (tabCtx.visible) tabCtx.visible = false
+}
+
+// 逐个关闭，任一个被用户取消就中止后续（保留数据安全）
+const closeDocs = async (targets: EditorDoc[]) => {
+  for (const doc of targets) {
+    if (!docs.value.includes(doc)) continue
+    if (!await closeDoc(doc)) return
+  }
+}
+
+const ctxClose = () => {
+  const doc = docs.value.find(d => d.key === tabCtx.key)
+  closeTabCtx()
+  if (doc) closeDocs([doc])
+}
+
+const ctxCloseOthers = async () => {
+  const keep = docs.value.find(d => d.key === tabCtx.key)
+  closeTabCtx()
+  if (!keep) return
+  // 先切到要保留的 tab，避免关闭激活 tab 时编辑器反复重建
+  if (!await switchDoc(keep)) return
+  await closeDocs(docs.value.filter(d => d !== keep))
+}
+
+const ctxCloseAll = () => {
+  closeTabCtx()
+  closeDocs([...docs.value])
+}
+
+onMounted(() => document.addEventListener('click', closeTabCtx))
+onUnmounted(() => document.removeEventListener('click', closeTabCtx))
 
 // ===================== 编辑器操作 =====================
 

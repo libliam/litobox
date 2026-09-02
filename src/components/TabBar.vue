@@ -223,29 +223,5 @@ onUnmounted(() => {
   opacity: 1 !important;
 }
 
-.tab-ctx-menu {
-  position: fixed;
-  z-index: 9999;
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 4px 0;
-  min-width: 120px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-  list-style: none;
-  margin: 0;
-}
-
-.tab-ctx-menu li {
-  padding: 8px 16px;
-  cursor: pointer;
-  font-size: 12px;
-  color: var(--text-primary);
-  transition: background 0.15s;
-}
-
-.tab-ctx-menu li:hover {
-  background: var(--hover-bg);
-  color: var(--accent-cyan);
-}
+/* .tab-ctx-menu 样式已上移到 theme.css 全局标准（多个 Tab 栏共用） */
 </style>

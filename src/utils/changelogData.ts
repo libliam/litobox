@@ -15,8 +15,22 @@ export interface ChangelogData {
 }
 
 export const changelogData: ChangelogData = {
-  versionRange: "从 v1.0 到 v8.2.0 更新内容",
+  versionRange: "从 v1.0 到 v8.2.2 更新内容",
   entries: [
+  {
+    "version": "8.2.2",
+    "date": "2026-09-02",
+    "content": "修复打包后文本编辑器只显示行号、正文消失（Tauri 生产构建向 style-src 注入 nonce 导致 'unsafe-inline' 失效，CodeMirror 运行时注入的样式全部被 CSP 拦截；配置 dangerousDisableAssetCspModification 仅放行 style-src，script-src 保护不变，同时修好 Element Plus 弹层等运行时注入样式）；文本编辑器多文件 Tab 新增右键菜单——关闭/关闭其他/关闭全部（与顶部工具 Tab 栏交互统一，逐个关闭时未保存文件仍弹确认、取消即中止）；修复关闭非激活 Tab 时未保存的本地文件修改被静默丢弃的问题；Tab 右键菜单样式上移为 theme.css 全局标准",
+    "isEnhancement": true,
+    "isNewFeature": true
+  },
+  {
+    "version": "8.2.1",
+    "date": "2026-09-02",
+    "content": "文本编辑器重构：修复行号与内容脱节/滚动条丢失（flex 高度链 + 异步初始化时机）；底部新增 VS Code 风格状态栏（保存状态/语言/换行符/行列/选中字符/总行数与大小实时刷新）；新增 9 套 CodeMirror 编辑器主题（One Dark/Dracula/Monokai/VS Code Dark+/GitHub Dark/Sublime 等深色 6 套 + 浅色 3 套，独立于应用主题持久化）；新增 YAML/Shell/Bash 语言高亮与 22 种扩展名自动检测；工具栏默认收起 + 文件名旁常驻\"打开本地文件/换行\"图标按钮；自动换行热切换（Compartment 免重建）；跳转到行（Ctrl+G 弹窗，替代\"查找下一个\"）；Ctrl+S 保存/另存为分离；**多文件 Tab**（笔记库 + 外部本地文件可同时多开，图标区分来源，脏标记 ●，关闭/切换时笔记自动保存、本地文件弹保存确认）；打开本地文件自动检测编码（GBK/UTF-8/UTF-16），非 UTF-8 提示保存将转 UTF-8；外部文件手动保存（按钮/Ctrl+S）防误覆盖；KeepAlive 切走时 onDeactivated 兜底落盘",
+    "isEnhancement": true,
+    "isNewFeature": true
+  },
   {
     "version": "8.2.0",
     "date": "2026-09-01",

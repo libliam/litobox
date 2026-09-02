@@ -1,6 +1,6 @@
 {
   "productName": "LitoBox",
-  "version": "8.2.1",
+  "version": "8.2.2",
   "identifier": "com.dev.toolbox",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -23,6 +23,7 @@
       }
     ],
     "security": {
+      "dangerousDisableAssetCspModification": ["style-src"],
       "csp": "default-src 'self' http://localhost:1420; style-src 'self' 'unsafe-inline' http://localhost:1420; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval' http://localhost:1420; worker-src 'self' blob: http://localhost:1420; img-src 'self' data: blob: http://localhost:1420; media-src 'self' data: blob: http://localhost:1420; connect-src 'self' http://localhost:1420 ws://localhost:1420"
     }
   },
