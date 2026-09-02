@@ -352,11 +352,14 @@ onUnmounted(() => {
   flex-direction: column;
   overflow: hidden;
   height: 100vh;
+  min-width: 0; /* ponytail: flex 子项默认 min-width:auto 会阻止被压缩，导致内部百分比布局失效 */
 }
 
 .app-main {
   flex: 1;
   overflow: hidden;
+  min-height: 0; /* ponytail: flex 子项默认 min-height:auto，阻止子元素被压缩 */
+  min-width: 0;
 }
 
 .app-footer {

@@ -4,6 +4,7 @@ import * as db from '@/utils/dbClient'
 
 export interface ToolboxConfig {
   theme: 'auto' | 'dark' | 'light'
+  editorTheme: string
   jsonIndent: 2 | 4
   hotkey: string
   lastTool: string
@@ -131,6 +132,7 @@ const MAX_RECENT = 8
 export const useToolboxStore = defineStore('toolbox', () => {
   const config = ref<ToolboxConfig>({
     theme: 'auto',
+    editorTheme: 'oneDark',
     jsonIndent: 2,
     hotkey: 'Ctrl+Alt+T',
     lastTool: 'home',

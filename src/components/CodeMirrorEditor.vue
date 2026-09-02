@@ -1,15 +1,22 @@
 <template>
-  <div ref="editorRef" class="codemirror-wrapper"></div>
+  <div ref="wrapperRef" class="codemirror-wrapper">
+    <div ref="editorRef" class="codemirror-internal"></div>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, shallowRef } from 'vue'
-import { EditorState } from '@codemirror/state'
+import { ref, onMounted, onUnmounted, watch, shallowRef, nextTick } from 'vue'
+import { EditorState, Compartment } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { search, searchKeymap, highlightSelectionMatches, openSearchPanel } from '@codemirror/search'
-import { bracketMatching, foldGutter, foldKeymap, syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
+import { bracketMatching, syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
 import { oneDark } from '@codemirror/theme-one-dark'
+import { dracula } from '@uiw/codemirror-theme-dracula'
+import { monokai } from '@uiw/codemirror-theme-monokai'
+import { vscodeDark, vscodeLight } from '@uiw/codemirror-theme-vscode'
+import { githubDark, githubLight } from '@uiw/codemirror-theme-github'
+import { sublime } from '@uiw/codemirror-theme-sublime'
 import { javascript } from '@codemirror/lang-javascript'
 import { json } from '@codemirror/lang-json'
 import { html } from '@codemirror/lang-html'
@@ -19,6 +26,8 @@ import { xml } from '@codemirror/lang-xml'
 import { sql } from '@codemirror/lang-sql'
 import { python } from '@codemirror/lang-python'
 import { rust } from '@codemirror/lang-rust'
+import { yaml } from '@codemirror/lang-yaml'
+import { shell } from '@codincod/codemirror-lang-shell'
 import { useToolboxStore } from '@/store'
 
 const props = defineProps<{
@@ -30,11 +39,57 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:modelValue': [value: string]
   'change': [value: string]
+  // ponytail: 底部状态栏需要的状态信息
+  'status': [info: EditorStatus]
 }>()
 
+export interface EditorStatus {
+  line: number
+  column: number
+  selectedCount: number  // 选中字符数（0 表示未选中）
+  selectedLines: number  // 选中行数（含部分行）
+  totalLines: number
+  totalChars: number
+  lineEnding: 'CRLF' | 'LF' | 'CR'
+}
+
+// 根据文档推断换行符类型
+const detectLineEnding = (doc: string): EditorStatus['lineEnding'] => {
+  if (doc.includes('\r\n')) return 'CRLF'
+  if (doc.includes('\r')) return 'CR'
+  return 'LF'
+}
+
+const emitStatus = (state: any) => {
+  const doc = state.doc
+  const sel = state.selection.main
+  const pos = sel.head
+  const line = doc.lineAt(pos)
+  const selectedCount = sel.empty ? 0 : sel.to - sel.from
+  let selectedLines = 0
+  if (!sel.empty) {
+    selectedLines = doc.lineAt(sel.to).number - doc.lineAt(sel.from).number + 1
+  }
+  emit('status', {
+    line: line.number,
+    column: pos - line.from + 1,
+    selectedCount,
+    selectedLines,
+    totalLines: doc.lines,
+    totalChars: doc.length,
+    lineEnding: detectLineEnding(doc.toString()),
+  })
+}
+
 const store = useToolboxStore()
+const wrapperRef = ref<HTMLElement>()
 const editorRef = ref<HTMLElement>()
 const view = shallowRef<EditorView>()
+let resizeObserver: ResizeObserver | null = null
+
+// 自动换行热切换
+const wrapCompartment = new Compartment()
+const wordWrap = ref(false)
 
 // 语言扩展映射
 const langExtensions: Record<string, () => any> = {
@@ -48,15 +103,29 @@ const langExtensions: Record<string, () => any> = {
   sql: () => sql(),
   python: () => python(),
   rust: () => rust(),
+  yaml: () => yaml(),
+  shell: () => shell(),
+  bash: () => shell(),
 }
 
-// 根据主题获取扩展（auto 模式下跟随系统偏好）
+// 编辑器主题名 → Extension 映射（深色 / 浅色都在表里）
+const editorThemes: Record<string, () => any> = {
+  oneDark: () => oneDark,
+  dracula: () => dracula,
+  monokai: () => monokai,
+  vscodeDark: () => vscodeDark,
+  vscodeLight: () => vscodeLight,
+  githubDark: () => githubDark,
+  githubLight: () => githubLight,
+  sublime: () => sublime,
+  none: () => [],
+}
+
+// 根据编辑器主题获取扩展
 const getThemeExtension = () => {
-  const theme = store.config.theme
-  if (theme === 'light') return []
-  if (theme === 'dark') return [oneDark]
-  // auto: 跟随系统
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? [oneDark] : []
+  const name = store.config.editorTheme || 'oneDark'
+  const fn = editorThemes[name] || editorThemes.oneDark
+  return fn()
 }
 
 // 获取语言扩展
@@ -65,18 +134,31 @@ const getLangExtension = (lang: string) => {
   return ext ? [ext()] : []
 }
 
+// ponytail: 统一字体和行高，确保 .cm-gutters 与 .cm-scroller 像素级对齐
+// 之前依赖父容器 height:100% 但 flex 链上没有明确高度，异步组件初始化时
+// 容器 auto 高度 → gutter 按内容独立算高度 → 行号和文字彻底脱节
+const baseFontStyle = {
+  fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
+  fontSize: '14px',
+  lineHeight: '1.6',
+}
+
 // 创建编辑器
 const createEditor = () => {
-  if (!editorRef.value) return
+  if (!editorRef.value || !wrapperRef.value) return
+
+  view.value?.destroy()
+  // 清理上次遗留的 DOM（destroy 不自动移除子节点）
+  editorRef.value.innerHTML = ''
 
   const state = EditorState.create({
     doc: props.modelValue,
     extensions: [
+      EditorView.editable.of(!props.readOnly),
       search(),
       lineNumbers(),
       highlightActiveLine(),
       bracketMatching(),
-      foldGutter(),
       syntaxHighlighting(defaultHighlightStyle),
       history(),
       highlightSelectionMatches(),
@@ -84,24 +166,53 @@ const createEditor = () => {
         ...defaultKeymap,
         ...historyKeymap,
         ...searchKeymap,
-        ...foldKeymap,
       ]),
       ...getThemeExtension(),
       ...getLangExtension(props.language || 'plaintext'),
+      wrapCompartment.of(wordWrap.value ? EditorView.lineWrapping : []),
       EditorView.updateListener.of((update) => {
         if (update.docChanged) {
           const newValue = update.state.doc.toString()
           emit('update:modelValue', newValue)
           emit('change', newValue)
         }
+        // 文档变化、光标移动、选中变化都要更新状态栏
+        if (update.docChanged || update.selectionSet) {
+          emitStatus(update.state)
+        }
       }),
       EditorView.theme({
         '&': {
           height: '100%',
-          fontSize: '14px',
+          display: 'flex',
+          flexDirection: 'column',
+          ...baseFontStyle,
         },
         '.cm-scroller': {
+          flex: '1 1 auto',
           overflow: 'auto',
+          ...baseFontStyle,
+        },
+        '.cm-content': {
+          padding: '8px 12px 8px 6px',
+          ...baseFontStyle,
+        },
+        '.cm-gutters': {
+          ...baseFontStyle,
+          borderRight: 'none',
+        },
+        '.cm-lineNumbers': {
+          ...baseFontStyle,
+        },
+        '.cm-gutters .cm-gutterElement': {
+          padding: '0 6px 0 4px',
+          lineHeight: baseFontStyle.lineHeight,
+          fontSize: baseFontStyle.fontSize,
+          fontFamily: baseFontStyle.fontFamily,
+        },
+        '.cm-lineNumbers .cm-gutterElement': {
+          textAlign: 'right',
+          paddingRight: '6px',
         },
       }),
     ],
@@ -111,6 +222,7 @@ const createEditor = () => {
     state,
     parent: editorRef.value,
   })
+  emitStatus(view.value.state) // 初始状态
 }
 
 // 更新内容（外部修改时）
@@ -127,16 +239,24 @@ const updateLanguage = (_lang: string) => {
   if (!view.value) return
   const currentLang = props.language || 'plaintext'
   if (_lang !== currentLang) {
-    view.value.destroy()
     createEditor()
   }
+}
+
+// ResizeObserver 重建 — 修复异步组件在 layout 前初始化导致的尺寸错乱
+const setupResizeObserver = () => {
+  if (!wrapperRef.value) return
+  resizeObserver?.disconnect()
+  resizeObserver = new ResizeObserver(() => {
+    createEditor()
+  })
+  resizeObserver.observe(wrapperRef.value)
 }
 
 // 查找
 const openFind = () => {
   if (view.value) {
     openSearchPanel(view.value)
-    // 聚焦查找输入框
     const inputs = view.value.dom.querySelectorAll<HTMLInputElement>('.cm-panel input.cm-textfield')
     if (inputs.length > 0) {
       inputs[0].focus()
@@ -149,14 +269,11 @@ const openFind = () => {
 const openReplace = () => {
   if (!view.value) return
   openSearchPanel(view.value)
-  // 展开替换区域并聚焦替换输入框
   const panel = view.value.dom.querySelector('.cm-panel')
   if (panel) {
-    // 显示隐藏的替换区域
     panel.querySelectorAll<HTMLElement>('.cm-replace-section').forEach((el) => {
       el.style.display = ''
     })
-    // 聚焦替换输入框
     const inputs = panel.querySelectorAll<HTMLInputElement>('input.cm-textfield')
     if (inputs.length >= 2) {
       inputs[1].focus()
@@ -228,9 +345,7 @@ const formatCode = () => {
       view.value.dispatch({
         changes: { from: 0, to: view.value.state.doc.length, insert: formatted },
       })
-    } catch {
-      // JSON 格式错误，不处理
-    }
+    } catch { /* noop */ }
   } else if (lang === 'javascript' || lang === 'typescript') {
     const lines = content.split('\n')
     let indent = 0
@@ -252,6 +367,28 @@ const formatCode = () => {
   }
 }
 
+// 切换自动换行
+const toggleWordWrap = () => {
+  wordWrap.value = !wordWrap.value
+  view.value?.dispatch({
+    effects: wrapCompartment.reconfigure(wordWrap.value ? EditorView.lineWrapping : [])
+  })
+}
+
+// 跳转到指定行号
+const gotoLine = (lineNum: number): number => {
+  if (!view.value) return 0
+  const doc = view.value.state.doc
+  const clamped = Math.max(1, Math.min(lineNum, doc.lines))
+  const pos = doc.line(clamped).from
+  view.value.dispatch({
+    selection: { anchor: pos },
+    scrollIntoView: true,
+  })
+  view.value.focus()
+  return clamped
+}
+
 // 暴露方法给父组件
 defineExpose({
   openFind,
@@ -263,52 +400,51 @@ defineExpose({
   toLowerCase,
   formatCode,
   updateLanguage,
+  toggleWordWrap,
+  isWordWrap: () => wordWrap.value,
+  gotoLine,
+  getLineCount: () => view.value?.state.doc.lines ?? 0,
+  getCurrentLine: () => {
+    if (!view.value) return 1
+    return view.value.state.doc.lineAt(view.value.state.selection.main.head).number
+  },
 })
 
-let darkModeMediaQuery: MediaQueryList | null = null
-let isUnmounting = false
-const handleSystemThemeChange = () => {
-  if (store.config.theme === 'auto' && view.value && !isUnmounting) {
-    view.value.destroy()
-    createEditor()
-  }
-}
-
-onMounted(() => {
+onMounted(async () => {
+  // 等父容器 layout 完成再初始化，避免 auto 高度
+  await nextTick()
+  await new Promise(res => requestAnimationFrame(res))
   createEditor()
-
-  // auto 模式下监听系统主题变化
-  darkModeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-  darkModeMediaQuery.addEventListener('change', handleSystemThemeChange)
+  setupResizeObserver()
 })
 
 onUnmounted(() => {
-  isUnmounting = true
+  resizeObserver?.disconnect()
   view.value?.destroy()
-  if (darkModeMediaQuery) {
-    darkModeMediaQuery.removeEventListener('change', handleSystemThemeChange)
-  }
 })
 
 watch(() => props.modelValue, (newVal) => {
   updateContent(newVal)
 })
 
-watch(() => props.language, (newLang) => {
-  if (newLang) updateLanguage(newLang)
+watch(() => props.language, () => {
+  createEditor()
 })
 
-watch(() => store.config.theme, () => {
-  if (view.value) {
-    view.value.destroy()
-    createEditor()
-  }
+watch(() => store.config.editorTheme, () => {
+  createEditor()
 })
 </script>
 
 <style scoped>
 .codemirror-wrapper {
+  position: relative;
+  width: 100%;
   height: 100%;
-  min-height: 400px;
+}
+
+.codemirror-internal {
+  position: absolute;
+  inset: 0;
 }
 </style>
