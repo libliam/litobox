@@ -45,14 +45,13 @@ interface ParsedEntry extends ChangelogEntry {
   foldable: boolean
 }
 
-const MAX_TITLE_LEN = 32
 const MAX_LINE_CHARS = 120
 const COLLAPSE_LINES = 4
 const COLLAPSE_TOTAL = 220
 
 /**
  * 拆分内容：
- * 1. 取首个「功能名」标题：内容开头到首个 （/：【 前的片段，长度 2~MAX_TITLE_LEN 视为标题。
+ * 1. 取首个「功能名」标题：内容开头到首个 （/：【 前的片段，长度 2~32 视为标题。
  *    无冒号的修复/优化条目（如「修复 X（原因）」）也能正确取到短标题，避免整段加粗。
  * 2. 剩余正文按 ；/。 拆成独立条目，实现长文换行
  */
