@@ -54,6 +54,7 @@ const JSTool = defineAsyncComponent(() => import('@/views/JSTool.vue'))
 const MockDataTool = defineAsyncComponent(() => import('@/views/MockDataTool.vue'))
 const OcrTool = defineAsyncComponent(() => import('@/views/OcrTool.vue'))
 const DiffTool = defineAsyncComponent(() => import('@/views/DiffTool.vue'))
+const JsonDiffTool = defineAsyncComponent(() => import('@/views/JsonDiffTool.vue'))
 const ClipboardTool = defineAsyncComponent(() => import('@/views/ClipboardTool.vue'))
 const ClipboardConvertTool = defineAsyncComponent(() => import('@/views/ClipboardConvertTool.vue'))
 const CsvTool = defineAsyncComponent(() => import('@/views/CsvTool.vue'))
@@ -70,6 +71,8 @@ const PdfTool = defineAsyncComponent(() => import('@/views/PdfTool.vue'))
 const HashTool = defineAsyncComponent(() => import('@/views/HashTool.vue'))
 const XmlYamlTool = defineAsyncComponent(() => import('@/views/XmlYamlTool.vue'))
 const DedupTool = defineAsyncComponent(() => import('@/views/DedupTool.vue'))
+const NameCaseTool = defineAsyncComponent(() => import('@/views/NameCaseTool.vue'))
+const TcConvertTool = defineAsyncComponent(() => import('@/views/TcConvertTool.vue'))
 const CssTool = defineAsyncComponent(() => import('@/views/CssTool.vue'))
 const JwtTool = defineAsyncComponent(() => import('@/views/JwtTool.vue'))
 const WordCountTool = defineAsyncComponent(() => import('@/views/WordCountTool.vue'))
@@ -145,6 +148,7 @@ const toolComponentMap: Record<string, any> = {
   mockData: MockDataTool,
   ocr: OcrTool,
   diff: DiffTool,
+  jsonDiff: JsonDiffTool,
   clipboard: ClipboardTool,
   clipboardConvert: ClipboardConvertTool,
   image: ImageToolEnhanced,
@@ -162,6 +166,8 @@ const toolComponentMap: Record<string, any> = {
   hash: HashTool,
   xmlYaml: XmlYamlTool,
   dedup: DedupTool,
+  nameCase: NameCaseTool,
+  tcConvert: TcConvertTool,
   css: CssTool,
   jwt: JwtTool,
   wordCount: WordCountTool,

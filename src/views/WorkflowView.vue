@@ -331,6 +331,8 @@ const TOOL_ACTIONS: Record<string, string[]> = {
   encode: ['Base64编码', 'Base64解码', 'URL编码', 'URL解码'],
   uuid: ['UUID v4', 'UUID v1', 'UUID v5', 'UUID v7', '雪花算法ID', 'ObjectId', '自增序列', 'NanoID', 'ULID', 'KSUID', 'CUID2', 'XID'],
   regex: ['去除HTML标签', '提取URL', '提取邮箱', '去除空白字符'],
+  nameCase: ['转camelCase', '转PascalCase', '转snake_case', '转SCREAMING_SNAKE', '转kebab-case', '转dot.case', '转Title Case'],
+  tcConvert: ['转简体', '转繁体', '自动检测'],
   sql: ['转SQL IN', '转SQL VALUES'],
   base64: ['编码', '解码'],
   calculator: ['表达式计算'],
@@ -731,6 +733,27 @@ async function executeStep(tool: string, action: string, input: string): Promise
     }
     case 'regex':
       return executeRegexAction(action, input)
+    case 'nameCase': {
+      // 命名风格转换：按动作名映射风格，多行逐行转换
+      const { NAME_STYLE_META, convertName } = await import('@/utils/nameCaseUtils')
+      const label = action.replace(/^转/, '')
+      const meta = NAME_STYLE_META.find(s => s.label === label)
+      const style = meta?.key ?? 'camel'
+      const lines: string[] = []
+      for (const line of input.split(/\r?\n/)) {
+        const name = line.trim()
+        if (!name) continue
+        lines.push(convertName(name)[style])
+      }
+      return lines.join('\n')
+    }
+    case 'tcConvert': {
+      // 中文繁简转换：动作名 → 方向
+      const { convertTc } = await import('@/utils/tcConvertUtils')
+      const dirMap: Record<string, 's2t' | 't2s' | 'auto'> = { 转繁体: 's2t', 转简体: 't2s', 自动检测: 'auto' }
+      const result = await convertTc(input, dirMap[action] ?? 'auto')
+      return result.text
+    }
     case 'sql':
       return executeSqlAction(action, input)
     case 'mediaInfo': {

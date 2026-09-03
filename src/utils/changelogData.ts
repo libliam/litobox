@@ -15,8 +15,29 @@ export interface ChangelogData {
 }
 
 export const changelogData: ChangelogData = {
-  versionRange: "从 v1.0 到 v8.2.2 更新内容",
+  versionRange: "从 v1.0 到 v8.5.0 更新内容",
   entries: [
+  {
+    "version": "8.5.0",
+    "date": "2026-09-03",
+    "content": "JSON 结构化对比工具：忽略对象键顺序、数组按索引逐项比较两个 JSON 的结构差异（对象 vs 数组、数字 vs 字符串等类型不匹配归为\"修改\"，null 参与判等）；仅列出 新增(+)/删除(-)/修改(~) 节点并给出完整路径（a.b[0].c 自然排序），完全相同子树零噪音；左右并排输入、500ms 防抖自动对比，任一侧 JSON 非法标红提示不执行；差异表格类型徽标着色、路径/两侧值点击即复制，值超长自动截断展示；支持交换左右/一键示例/清空；完全一致时绿色提示，输出统计 +x/-y/~z 与一键\"复制差异文本\"；历史记录完整还原（左右两侧 JSON 均可回填）",
+    "isEnhancement": false,
+    "isNewFeature": true
+  },
+  {
+    "version": "8.4.0",
+    "date": "2026-09-03",
+    "content": "中文繁简转换工具：OpenCC 词组级标准简繁互转（头发→頭髮、发生→發生 等多义字/词组不误转，简体、繁体、简繁混合文本整段批量转换）；三种转换方向（自动检测/简体→繁体/繁体→简体），自动检测按文本繁简字数占比智能判定；首次转换懒加载词典不卡顿，输出区实时统计\"自动识别方向 + 替换字数\"；历史记录完整还原（输入+方向），工作流可调用（转简体/转繁体/自动检测 三个动作）",
+    "isEnhancement": false,
+    "isNewFeature": false
+  },
+  {
+    "version": "8.3.0",
+    "date": "2026-09-03",
+    "content": "变量命名转换工具：任意命名风格/短语自动拆词 → camelCase/PascalCase/snake_case/SCREAMING_SNAKE（常量）/kebab-case/dot.case/Title Case 七种风格统一转换，缩写词智能识别（HTTPServer→HTTP+Server、XMLHttpRequest→XML+Http+Request、userID→user+ID），支持中英文混合与数字边界；风格可勾选按需展示列；单行短语与多行批量（每行一个标识符）双形态，粘贴/输入后 500ms 防抖自动转换；结果表格单元格点击复制单个值、列头图标一键复制整列；历史记录完整还原（输入+勾选风格），工作流可调用（7 个动作对应 7 种风格逐行转换）",
+    "isEnhancement": true,
+    "isNewFeature": false
+  },
   {
     "version": "8.2.2",
     "date": "2026-09-02",
