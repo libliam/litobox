@@ -3,6 +3,11 @@
     <div class="tool-card sticky-card">
       <div class="card-header">
         <span class="card-title">操作</span>
+        <div class="card-actions">
+          <el-tooltip content="开启后输入多行数据将逐行转换，输出与输入逐行对应" placement="top">
+            <el-checkbox v-model="batchMode" size="small">多行批量</el-checkbox>
+          </el-tooltip>
+        </div>
       </div>
       <div class="card-body">
         <div class="action-grid">
@@ -40,6 +45,12 @@
             <div class="group-buttons">
               <el-button size="small" @click="handleTimestampToDatetime">时间戳 → 时间</el-button>
               <el-button size="small" @click="handleDatetimeToTimestamp">时间 → 时间戳</el-button>
+            </div>
+          </div>
+          <div class="action-group" style="--group-color: #8b5cf6">
+            <div class="group-label">人民币大写</div>
+            <div class="group-buttons">
+              <el-button size="small" @click="handleAmountToUpper">数字 → 大写</el-button>
             </div>
           </div>
         </div>
@@ -107,6 +118,7 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import * as encodeUtils from '@/utils/encodeUtils'
+import { amountToUpper } from '@/utils/mockDataUtils'
 import { useToolboxStore, type HistoryRestoreState } from '@/store'
 import VariablePicker from '@/components/VariablePicker.vue'
 
@@ -117,13 +129,23 @@ const errorMessage = ref('')
 const isError = ref(false)
 const timestampMode = ref<'ms' | 's'>('ms')
 const showTimestampOptions = ref(false)
+const batchMode = ref(false)
+
+// 多行批量：按行拆分并过滤空行
+const splitLines = () =>
+  inputValue.value
+    .split('\n')
+    .map(l => l.trim())
+    .filter(l => l.length > 0)
 
 const handleEncode = (encodeFn: (text: string) => string) => {
   if (!inputValue.value.trim()) {
     ElMessage.warning('请输入内容')
     return
   }
-  const result = encodeFn(inputValue.value)
+  const result = batchMode.value
+    ? splitLines().map(line => encodeFn(line)).join('\n')
+    : encodeFn(inputValue.value)
   outputValue.value = result
   errorMessage.value = ''
   isError.value = result.includes('失败')
@@ -134,13 +156,40 @@ const handleEncode = (encodeFn: (text: string) => string) => {
     outputPreview: outputValue.value.slice(0, 50),
     inputFull: inputValue.value,
     outputFull: outputValue.value,
-    options: {}
+    options: { batch: batchMode.value }
   })
   ElMessage.success('处理完成')
 }
 
 const handleTimestampToDatetime = () => {
   showTimestampOptions.value = true
+  if (batchMode.value) {
+    const lines = splitLines()
+    if (!lines.length) {
+      ElMessage.warning('请输入内容')
+      return
+    }
+    outputValue.value = lines
+      .map(line => {
+        const t = Number(line)
+        if (isNaN(t)) return `无效: ${line}`
+        return encodeUtils.timestampToDatetime(t, timestampMode.value === 'ms')
+      })
+      .join('\n')
+    errorMessage.value = ''
+    isError.value = false
+    store.addHistory({
+      tool: 'encode',
+      action: 'timestamp_to_datetime',
+      inputPreview: inputValue.value.slice(0, 50),
+      outputPreview: outputValue.value.slice(0, 50),
+      inputFull: inputValue.value,
+      outputFull: outputValue.value,
+      options: { batch: true }
+    })
+    ElMessage.success('转换完成')
+    return
+  }
   const timestamp = Number(inputValue.value)
   if (isNaN(timestamp)) {
     errorMessage.value = '请输入有效的时间戳'
@@ -155,6 +204,32 @@ const handleTimestampToDatetime = () => {
 
 const handleDatetimeToTimestamp = () => {
   showTimestampOptions.value = true
+  if (batchMode.value) {
+    const lines = splitLines()
+    if (!lines.length) {
+      ElMessage.warning('请输入内容')
+      return
+    }
+    outputValue.value = lines
+      .map(line => {
+        const r = encodeUtils.datetimeToTimestamp(line, timestampMode.value === 'ms')
+        return typeof r === 'string' ? `无效: ${line}` : String(r)
+      })
+      .join('\n')
+    errorMessage.value = ''
+    isError.value = false
+    store.addHistory({
+      tool: 'encode',
+      action: 'datetime_to_timestamp',
+      inputPreview: inputValue.value.slice(0, 50),
+      outputPreview: outputValue.value.slice(0, 50),
+      inputFull: inputValue.value,
+      outputFull: outputValue.value,
+      options: { batch: true }
+    })
+    ElMessage.success('转换完成')
+    return
+  }
   const result = encodeUtils.datetimeToTimestamp(inputValue.value, timestampMode.value === 'ms')
   if (typeof result === 'string') {
     errorMessage.value = result
@@ -165,6 +240,60 @@ const handleDatetimeToTimestamp = () => {
     isError.value = false
     ElMessage.success('转换完成')
   }
+}
+
+const handleAmountToUpper = () => {
+  const raw = inputValue.value.trim()
+  if (!raw) {
+    ElMessage.warning('请输入金额')
+    return
+  }
+  if (batchMode.value) {
+    const lines = splitLines()
+    if (!lines.length) {
+      ElMessage.warning('请输入金额')
+      return
+    }
+    outputValue.value = lines
+      .map(line => {
+        const num = Number(line)
+        if (isNaN(num)) return `无效: ${line}`
+        return amountToUpper(num)
+      })
+      .join('\n')
+    errorMessage.value = ''
+    isError.value = false
+    store.addHistory({
+      tool: 'encode',
+      action: 'amount_to_upper',
+      inputPreview: inputValue.value.slice(0, 50),
+      outputPreview: outputValue.value.slice(0, 50),
+      inputFull: inputValue.value,
+      outputFull: outputValue.value,
+      options: { batch: true }
+    })
+    ElMessage.success('转换完成')
+    return
+  }
+  const num = Number(raw)
+  if (isNaN(num)) {
+    errorMessage.value = '请输入有效的数字金额'
+    isError.value = true
+    return
+  }
+  outputValue.value = amountToUpper(num)
+  errorMessage.value = ''
+  isError.value = false
+  store.addHistory({
+    tool: 'encode',
+    action: 'amount_to_upper',
+    inputPreview: raw.slice(0, 50),
+    outputPreview: outputValue.value.slice(0, 50),
+    inputFull: raw,
+    outputFull: outputValue.value,
+    options: {}
+  })
+  ElMessage.success('转换完成')
 }
 
 const handleClear = () => {

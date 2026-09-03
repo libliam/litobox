@@ -329,7 +329,10 @@ const TOOL_ACTIONS: Record<string, string[]> = {
   ],
   json: ['格式化', '压缩', '校验'],
   encode: ['Base64编码', 'Base64解码', 'URL编码', 'URL解码'],
+  uuid: ['UUID v4', 'UUID v1', 'UUID v5', 'UUID v7', '雪花算法ID', 'ObjectId', '自增序列', 'NanoID', 'ULID', 'KSUID', 'CUID2', 'XID'],
   regex: ['去除HTML标签', '提取URL', '提取邮箱', '去除空白字符'],
+  nameCase: ['转camelCase', '转PascalCase', '转snake_case', '转SCREAMING_SNAKE', '转kebab-case', '转dot.case', '转Title Case'],
+  tcConvert: ['转简体', '转繁体', '自动检测'],
   sql: ['转SQL IN', '转SQL VALUES'],
   base64: ['编码', '解码'],
   calculator: ['表达式计算'],
@@ -706,8 +709,51 @@ async function executeStep(tool: string, action: string, input: string): Promise
       return executeEncodeAction(action, input)
     case 'base64':
       return executeBase64Action(action, input)
+    case 'uuid': {
+      // 生成型工具：执行输入为纯数字时按该数量生成，否则生成 1 个
+      const { generateIds } = await import('@/utils/uuidUtils')
+      const typeMap: Record<string, string> = {
+        'UUID v4': 'uuid',
+        'UUID v1': 'uuidv1',
+        'UUID v5': 'uuidv5',
+        'UUID v7': 'uuidv7',
+        '雪花算法ID': 'snowflake',
+        ObjectId: 'objectid',
+        '自增序列': 'sequence',
+        NanoID: 'nanoid',
+        ULID: 'ulid',
+        KSUID: 'ksuid',
+        CUID2: 'cuid2',
+        XID: 'xid',
+      }
+      const type = typeMap[action]
+      if (!type) return input
+      const n = Math.min(100, Math.max(1, parseInt(input.trim(), 10) || 1))
+      return (await generateIds({ type: type as Parameters<typeof generateIds>[0]['type'], count: n })).join('\n')
+    }
     case 'regex':
       return executeRegexAction(action, input)
+    case 'nameCase': {
+      // 命名风格转换：按动作名映射风格，多行逐行转换
+      const { NAME_STYLE_META, convertName } = await import('@/utils/nameCaseUtils')
+      const label = action.replace(/^转/, '')
+      const meta = NAME_STYLE_META.find(s => s.label === label)
+      const style = meta?.key ?? 'camel'
+      const lines: string[] = []
+      for (const line of input.split(/\r?\n/)) {
+        const name = line.trim()
+        if (!name) continue
+        lines.push(convertName(name)[style])
+      }
+      return lines.join('\n')
+    }
+    case 'tcConvert': {
+      // 中文繁简转换：动作名 → 方向
+      const { convertTc } = await import('@/utils/tcConvertUtils')
+      const dirMap: Record<string, 's2t' | 't2s' | 'auto'> = { 转繁体: 's2t', 转简体: 't2s', 自动检测: 'auto' }
+      const result = await convertTc(input, dirMap[action] ?? 'auto')
+      return result.text
+    }
     case 'sql':
       return executeSqlAction(action, input)
     case 'mediaInfo': {
@@ -742,6 +788,15 @@ async function executeStep(tool: string, action: string, input: string): Promise
       // 解析 OpenAPI 文档，输出接口清单摘要 JSON
       const { parseOpenApiText, exportOperationsJson } = await import('@/utils/openApiUtils')
       return exportOperationsJson(parseOpenApiText(input))
+    }
+    case 'curl': {
+      // 构建型工具：工作流输入作为 URL，生成基础 GET 命令
+      const { buildCurlCommand } = await import('@/utils/curlUtils')
+      return buildCurlCommand({
+        method: 'GET', url: input.trim(), headers: [], authType: 'none',
+        basicUser: '', basicPass: '', bearerToken: '', bodyType: 'none',
+        jsonBody: '', formFields: [], rawBody: '', cookie: '', timeout: '',
+      })
     }
     default:
       return input

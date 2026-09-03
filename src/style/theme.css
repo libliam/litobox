@@ -259,6 +259,33 @@ html.light .tool-tabs :deep(.el-tabs__header) {
   background-color: var(--border-color);
 }
 
+/* ===== Tab 右键菜单（全局标准，工具 TabBar / 文本编辑器文件 Tab 共用） ===== */
+.tab-ctx-menu {
+  position: fixed;
+  z-index: 9999;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 4px 0;
+  min-width: 120px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  list-style: none;
+  margin: 0;
+}
+
+.tab-ctx-menu li {
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-primary);
+  transition: background 0.15s;
+}
+
+.tab-ctx-menu li:hover {
+  background: var(--hover-bg);
+  color: var(--accent-cyan);
+}
+
 /* ===== 表格样式（全局标准，深色默认 + 浅色覆盖） ===== */
 /* ponytail: 之前用 :deep(.el-table) 在普通 CSS 文件中不生效，导致每页都要重复写 scoped 覆盖。现改为普通选择器全局生效 */
 .el-table {

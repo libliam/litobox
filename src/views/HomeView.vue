@@ -417,5 +417,9 @@ html.light .search-input {
   color: var(--text-muted);
   text-align: center;
   line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 </style>

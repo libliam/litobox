@@ -54,6 +54,7 @@ const JSTool = defineAsyncComponent(() => import('@/views/JSTool.vue'))
 const MockDataTool = defineAsyncComponent(() => import('@/views/MockDataTool.vue'))
 const OcrTool = defineAsyncComponent(() => import('@/views/OcrTool.vue'))
 const DiffTool = defineAsyncComponent(() => import('@/views/DiffTool.vue'))
+const JsonDiffTool = defineAsyncComponent(() => import('@/views/JsonDiffTool.vue'))
 const ClipboardTool = defineAsyncComponent(() => import('@/views/ClipboardTool.vue'))
 const ClipboardConvertTool = defineAsyncComponent(() => import('@/views/ClipboardConvertTool.vue'))
 const CsvTool = defineAsyncComponent(() => import('@/views/CsvTool.vue'))
@@ -70,6 +71,8 @@ const PdfTool = defineAsyncComponent(() => import('@/views/PdfTool.vue'))
 const HashTool = defineAsyncComponent(() => import('@/views/HashTool.vue'))
 const XmlYamlTool = defineAsyncComponent(() => import('@/views/XmlYamlTool.vue'))
 const DedupTool = defineAsyncComponent(() => import('@/views/DedupTool.vue'))
+const NameCaseTool = defineAsyncComponent(() => import('@/views/NameCaseTool.vue'))
+const TcConvertTool = defineAsyncComponent(() => import('@/views/TcConvertTool.vue'))
 const CssTool = defineAsyncComponent(() => import('@/views/CssTool.vue'))
 const JwtTool = defineAsyncComponent(() => import('@/views/JwtTool.vue'))
 const WordCountTool = defineAsyncComponent(() => import('@/views/WordCountTool.vue'))
@@ -81,6 +84,7 @@ const QrTool = defineAsyncComponent(() => import('@/views/QrTool.vue'))
 const BarcodeTool = defineAsyncComponent(() => import('@/views/BarcodeTool.vue'))
 const SnippetTool = defineAsyncComponent(() => import('@/views/SnippetTool.vue'))
 const HttpTool = defineAsyncComponent(() => import('@/views/HttpTool.vue'))
+const CurlTool = defineAsyncComponent(() => import('@/views/CurlTool.vue'))
 const HistoryView = defineAsyncComponent(() => import('@/views/HistoryView.vue'))
 const WorkflowView = defineAsyncComponent(() => import('@/views/WorkflowView.vue'))
 const NoteEditor = defineAsyncComponent(() => import('@/views/NoteEditor.vue'))
@@ -144,6 +148,7 @@ const toolComponentMap: Record<string, any> = {
   mockData: MockDataTool,
   ocr: OcrTool,
   diff: DiffTool,
+  jsonDiff: JsonDiffTool,
   clipboard: ClipboardTool,
   clipboardConvert: ClipboardConvertTool,
   image: ImageToolEnhanced,
@@ -161,6 +166,8 @@ const toolComponentMap: Record<string, any> = {
   hash: HashTool,
   xmlYaml: XmlYamlTool,
   dedup: DedupTool,
+  nameCase: NameCaseTool,
+  tcConvert: TcConvertTool,
   css: CssTool,
   jwt: JwtTool,
   wordCount: WordCountTool,
@@ -172,6 +179,7 @@ const toolComponentMap: Record<string, any> = {
   barcode: BarcodeTool,
   snippet: SnippetTool,
   http: HttpTool,
+  curl: CurlTool,
   history: HistoryView,
   workflow: WorkflowView,
   note: NoteEditor,
@@ -350,11 +358,14 @@ onUnmounted(() => {
   flex-direction: column;
   overflow: hidden;
   height: 100vh;
+  min-width: 0; /* ponytail: flex 子项默认 min-width:auto 会阻止被压缩，导致内部百分比布局失效 */
 }
 
 .app-main {
   flex: 1;
   overflow: hidden;
+  min-height: 0; /* ponytail: flex 子项默认 min-height:auto，阻止子元素被压缩 */
+  min-width: 0;
 }
 
 .app-footer {

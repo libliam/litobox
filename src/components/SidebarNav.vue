@@ -245,7 +245,7 @@ const SHORTCUT_TOOLS = [
   { id: 'regex', label: '正则测试' },
   { id: 'http', label: 'HTTP 请求' },
   { id: 'time', label: '时间工具' },
-  { id: 'uuid', label: 'UUID生成' },
+  { id: 'uuid', label: 'ID生成器' },
   { id: 'ocr', label: 'OCR识别' },
   { id: 'clipboard', label: '剪贴板' },
   { id: 'diff', label: '文本对比' },
