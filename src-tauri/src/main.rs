@@ -44,6 +44,7 @@ mod git_stats;
 mod http_server;
 mod zip_tools;
 mod pomodoro;
+mod log_viewer;
 mod window_state;
 
 use tauri::{Manager, Emitter};
@@ -174,6 +175,9 @@ fn main() {
             startup_items::disable_startup_item,
             startup_items::delete_startup_item,
             startup_items::add_startup_item,
+            log_viewer::log_viewer_open,
+            log_viewer::log_viewer_close,
+            log_viewer::log_viewer_reload,
             env_vars::get_env_vars,
             env_vars::set_env_var,
             env_vars::delete_env_var,

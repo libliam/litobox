@@ -111,6 +111,7 @@ const HostsView = defineAsyncComponent(() => import('@/views/HostsView.vue'))
 const NetworkConnections = defineAsyncComponent(() => import('@/views/NetworkConnections.vue'))
 const ScheduledTasksView = defineAsyncComponent(() => import('@/views/ScheduledTasksView.vue'))
 const StartupItemsView = defineAsyncComponent(() => import('@/views/StartupItemsView.vue'))
+const LogViewerView = defineAsyncComponent(() => import('@/views/LogViewerView.vue'))
 const EnvVarsView = defineAsyncComponent(() => import('@/views/EnvVarsView.vue'))
 const CertViewer = defineAsyncComponent(() => import('@/views/CertViewer.vue'))
 const BoostView = defineAsyncComponent(() => import('@/views/BoostView.vue'))
@@ -202,6 +203,7 @@ const toolComponentMap: Record<string, any> = {
   networkConnections: NetworkConnections,
   scheduledTasks: ScheduledTasksView,
   startupItems: StartupItemsView,
+  logViewer: LogViewerView,
   envVars: EnvVarsView,
   certViewer: CertViewer,
   boost: BoostView,
