@@ -39,6 +39,24 @@
             style="width: 100%"
           >
             <el-table-column
+              v-if="hasAnyExamples(sheet)"
+              type="expand"
+              width="40"
+            >
+              <template #default="{ row }">
+                <div v-if="row.examples?.length" class="expand-content">
+                  <div class="expand-title">示例 <span class="expand-tip">（点击复制）</span></div>
+                  <div
+                    v-for="(ex, i) in row.examples"
+                    :key="i"
+                    class="example-item"
+                    @click="copyCell(ex)"
+                  >{{ ex }}</div>
+                </div>
+                <div v-else class="expand-empty">无示例</div>
+              </template>
+            </el-table-column>
+            <el-table-column
               v-for="col in sheet.columns"
               :key="col.key"
               :prop="col.key"
@@ -68,7 +86,7 @@
 import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
-import { cheatSheets, type CheatSheetData } from '@/utils/cheatSheets'
+import { cheatSheets, type CheatSheetData, type CheatSheetRow } from '@/utils/cheatSheets'
 
 const activeTab = ref(cheatSheets[0]?.id || '')
 
@@ -81,6 +99,10 @@ const filteredRows = (sheet: CheatSheetData) => {
   return sheet.rows.filter(row =>
     sheet.columns.some(col => String(row[col.key] || '').toLowerCase().includes(kw))
   )
+}
+
+const hasAnyExamples = (sheet: CheatSheetData): boolean => {
+  return sheet.rows.some((row: CheatSheetRow) => !!row.examples?.length)
 }
 
 const copyCell = async (text: string) => {
@@ -164,5 +186,47 @@ const copyCell = async (text: string) => {
   font-size: 12px;
   color: var(--text-muted);
   text-align: right;
+}
+
+.expand-content {
+  padding: 8px 16px 12px 56px;
+  background: var(--bg-input);
+  border-top: 1px solid var(--border-color);
+}
+
+.expand-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.expand-tip {
+  font-weight: normal;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.example-item {
+  font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--accent-cyan);
+  padding: 2px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s;
+  word-break: break-all;
+}
+
+.example-item:hover {
+  background: rgba(0, 212, 255, 0.1);
+}
+
+.expand-empty {
+  padding: 8px 16px 12px 56px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
 }
 </style>
