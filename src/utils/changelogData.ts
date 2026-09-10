@@ -15,8 +15,15 @@ export interface ChangelogData {
 }
 
 export const changelogData: ChangelogData = {
-  versionRange: "从 v1.0 到 v8.5.0 更新内容",
+  versionRange: "从 v1.0 到 v8.6.0 更新内容",
   entries: [
+  {
+    "version": "8.6.0",
+    "date": "2026-09-09",
+    "content": "日志实时查看器工具：选择/拖入日志文件实时监控文件变化并追加显示（类 tail -f）；多关键词过滤（空格/逗号分隔，支持\"与/或\"模式，过滤词自动高亮）；多关键词高亮（8 色循环分配）；自动换行开关（关闭横向滚动）、自动滚动、区分大小写、到底部按钮；虚拟滚动支持 5 万行流畅浏览（仅渲染可视区 + 高亮只处理可视行）；输入 400ms 防抖 + loading 图标避免卡顿；四种主题（跟随系统/深色/浅色/护眼绿豆沙）；UTF-8/GBK 编码自动识别，文件截断/轮转自动重载并提示；Rust 后端轮询文件大小变化（300ms，零新增依赖），通过事件推送新增内容",
+    "isEnhancement": false,
+    "isNewFeature": true
+  },
   {
     "version": "8.5.0",
     "date": "2026-09-03",

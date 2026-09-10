@@ -112,6 +112,8 @@ const NetworkConnections = defineAsyncComponent(() => import('@/views/NetworkCon
 const ScheduledTasksView = defineAsyncComponent(() => import('@/views/ScheduledTasksView.vue'))
 const StartupItemsView = defineAsyncComponent(() => import('@/views/StartupItemsView.vue'))
 const LogViewerView = defineAsyncComponent(() => import('@/views/LogViewerView.vue'))
+const ChmodTool = defineAsyncComponent(() => import('@/views/ChmodTool.vue'))
+const CheatSheetTool = defineAsyncComponent(() => import('@/views/CheatSheetTool.vue'))
 const EnvVarsView = defineAsyncComponent(() => import('@/views/EnvVarsView.vue'))
 const CertViewer = defineAsyncComponent(() => import('@/views/CertViewer.vue'))
 const BoostView = defineAsyncComponent(() => import('@/views/BoostView.vue'))
@@ -204,6 +206,8 @@ const toolComponentMap: Record<string, any> = {
   scheduledTasks: ScheduledTasksView,
   startupItems: StartupItemsView,
   logViewer: LogViewerView,
+  chmod: ChmodTool,
+  cheatSheet: CheatSheetTool,
   envVars: EnvVarsView,
   certViewer: CertViewer,
   boost: BoostView,
