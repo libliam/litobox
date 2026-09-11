@@ -1,4 +1,4 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+﻿#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 // ponytail: debug 模式输出日志到 stderr，release 模式编译时移除（零开销）
 // 必须放在 mod 声明之前，这样子模块才能使用该宏
@@ -145,6 +145,11 @@ fn main() {
             db::db_note_get_last_opened,
             db::db_note_set_last_opened,
             db::open_notes_folder,
+            // 思维导图命令
+            db::db_mindmap_list,
+            db::db_mindmap_save,
+            db::db_mindmap_delete,
+            db::db_mindmap_get,
             // Note manager 命令
             note_manager::note_read,
             note_manager::note_write,
@@ -420,3 +425,4 @@ fn main() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+

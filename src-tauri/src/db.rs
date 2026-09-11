@@ -313,6 +313,19 @@ fn init_tables(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_notes_parent ON notes(parent_id);
     "#).ok();
 
+    // 思维导图表
+    conn.execute_batch(r#"
+        CREATE TABLE IF NOT EXISTS mindmaps (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL DEFAULT '未命名脑图',
+            data_json TEXT NOT NULL DEFAULT '{}',
+            direction TEXT NOT NULL DEFAULT 'side',
+            theme TEXT NOT NULL DEFAULT 'default',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+    "#).ok();
+
     Ok(())
 }
 
@@ -2117,4 +2130,99 @@ pub fn do_ql_rebuild_fts(conn: &mut Connection) -> Result<(), String> {
             .map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+// ========== 思维导图 CRUD ==========
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct MindmapRecord {
+    pub id: String,
+    pub title: String,
+    pub data_json: String,
+    pub direction: String,
+    pub theme: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn db_mindmap_list() -> Result<Vec<MindmapRecord>, String> {
+    with_conn(|conn| {
+        let mut stmt = conn
+            .prepare("SELECT id, title, data_json, direction, theme, created_at, updated_at FROM mindmaps ORDER BY updated_at DESC")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(MindmapRecord {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    data_json: row.get(2)?,
+                    direction: row.get(3)?,
+                    theme: row.get(4)?,
+                    created_at: row.get(5)?,
+                    updated_at: row.get(6)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        let mut list = Vec::new();
+        for r in rows {
+            list.push(r.map_err(|e| e.to_string())?);
+        }
+        Ok(list)
+    })
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn db_mindmap_save(
+    id: String,
+    title: String,
+    data_json: String,
+    direction: String,
+    theme: String,
+) -> Result<(), String> {
+    with_conn(|conn| {
+        conn.execute(
+            "INSERT INTO mindmaps (id, title, data_json, direction, theme, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, datetime('now'))
+             ON CONFLICT(id) DO UPDATE SET title=excluded.title, data_json=excluded.data_json, direction=excluded.direction, theme=excluded.theme, updated_at=datetime('now')",
+            params![id, title, data_json, direction, theme],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    })
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn db_mindmap_delete(id: String) -> Result<(), String> {
+    with_conn(|conn| {
+        conn.execute("DELETE FROM mindmaps WHERE id = ?1", params![id])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    })
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn db_mindmap_get(id: String) -> Result<Option<MindmapRecord>, String> {
+    with_conn(|conn| {
+        let mut stmt = conn
+            .prepare("SELECT id, title, data_json, direction, theme, created_at, updated_at FROM mindmaps WHERE id = ?1")
+            .map_err(|e| e.to_string())?;
+        let mut rows = stmt
+            .query_map(params![id], |row| {
+                Ok(MindmapRecord {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    data_json: row.get(2)?,
+                    direction: row.get(3)?,
+                    theme: row.get(4)?,
+                    created_at: row.get(5)?,
+                    updated_at: row.get(6)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        if let Some(r) = rows.next() {
+            Ok(Some(r.map_err(|e| e.to_string())?))
+        } else {
+            Ok(None)
+        }
+    })
 }

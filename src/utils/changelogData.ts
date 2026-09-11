@@ -15,8 +15,36 @@ export interface ChangelogData {
 }
 
 export const changelogData: ChangelogData = {
-  versionRange: "从 v1.0 到 v8.6.0 更新内容",
+  versionRange: "从 v1.0 到 v8.9.1 更新内容",
   entries: [
+  {
+    "version": "8.9.1",
+    "date": "2026-09-11",
+    "content": "脑图画布增强：左键框选多节点（mouseSelectionButton:0）、空白处右键菜单（居中/适配画布/全选）、视图状态持久化（每个脑图记住上次的平移位置与缩放比例，打开自动恢复）、SVG 导出修复（escapeXhtml 解码导致的 XML 解析错误）；SVG 工具优化：预览区高度随窗口自适应（flex 布局填满剩余空间）、SVG 预览支持滚轮缩放 + 按钮（放大/缩小/重置/适应窗口）、转 PNG 修复 canvas tainted（内联外部图片为 base64、移除 script、data URL 替代 Blob URL）",
+    "isEnhancement": true,
+    "isNewFeature": false
+  },
+  {
+    "version": "8.9.0",
+    "date": "2026-09-11",
+    "content": "脑图画布（自由编辑版）：基于 mind-elixir 的思维导图编辑器，4 种布局方向（两侧/左/右/下）、8 套深浅主题、双击节点编辑、Tab 新增子节点/Enter 新增兄弟节点/Delete 删除、撤销重做、右键中文菜单（插入子/父/同级、删除、专注、上移下移、摘要、关联线）、空白处右键菜单（居中/适配/全选）、导入空白/JSON/Markdown、导出 PNG/SVG/JSON/Markdown，数据存 SQLite 自动保存",
+    "isEnhancement": false,
+    "isNewFeature": true
+  },
+  {
+    "version": "8.8.0",
+    "date": "2026-09-11",
+    "content": "WebSocket 客户端：连接/断开 ws/wss、子协议、自动重连、消息收发与日志（时间/方向/大小着色）、请求头配置、心跳保活、消息历史导出；Markdown 幻灯片：用 `---` 分割页面，左右键/空格翻页，全屏预览，导出单文件离线 HTML（内嵌样式）；思维导图（Markdown 版）：Markdown 文本自动生成思维导图（markmap），画布拖拽缩放、8 种主题配色、字体大小/字重分层、导出 PNG/SVG",
+    "isEnhancement": false,
+    "isNewFeature": false
+  },
+  {
+    "version": "8.7.0",
+    "date": "2026-09-10",
+    "content": "速查表扩展（12 个 Tab / 650+ 条记录）：新增 Linux 常用命令（含 vim/ssh/tmux 补充）、Git 版本控制、SQL 通用语法、PostgreSQL/MySQL 差异对照表、Docker 容器、Redis 数据结构/高可用、Conda 环境/包管理、PowerShell Windows 命令、NPM/Yarn/Pnpm 三系对照、正则表达式速查（元字符/断言/现成模板 + 陷阱提醒）；所有命令示例点击展开即可复制；速查表数据独立文件组织，新增 Tab 仅需新建数据文件 + index.ts 注册",
+    "isEnhancement": false,
+    "isNewFeature": true
+  },
   {
     "version": "8.6.0",
     "date": "2026-09-09",

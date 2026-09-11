@@ -84,6 +84,7 @@ const QrTool = defineAsyncComponent(() => import('@/views/QrTool.vue'))
 const BarcodeTool = defineAsyncComponent(() => import('@/views/BarcodeTool.vue'))
 const SnippetTool = defineAsyncComponent(() => import('@/views/SnippetTool.vue'))
 const HttpTool = defineAsyncComponent(() => import('@/views/HttpTool.vue'))
+const WSClientTool = defineAsyncComponent(() => import('@/views/WSClientTool.vue'))
 const CurlTool = defineAsyncComponent(() => import('@/views/CurlTool.vue'))
 const HistoryView = defineAsyncComponent(() => import('@/views/HistoryView.vue'))
 const WorkflowView = defineAsyncComponent(() => import('@/views/WorkflowView.vue'))
@@ -104,6 +105,9 @@ const VideoTool = defineAsyncComponent(() => import('@/views/VideoTool.vue'))
 const MediaInfoTool = defineAsyncComponent(() => import('@/views/MediaInfoTool.vue'))
 const ZipTool = defineAsyncComponent(() => import('@/views/ZipTool.vue'))
 const MermaidTool = defineAsyncComponent(() => import('@/views/MermaidTool.vue'))
+const SlideTool = defineAsyncComponent(() => import('@/views/SlideTool.vue'))
+const MindmapTool = defineAsyncComponent(() => import('@/views/MindmapTool.vue'))
+const MindmapEditorTool = defineAsyncComponent(() => import('@/views/MindmapEditorTool.vue'))
 const PomodoroTool = defineAsyncComponent(() => import('@/views/PomodoroTool.vue'))
 const ServiceListView = defineAsyncComponent(() => import('@/views/ServiceListView.vue'))
 const HotkeyView = defineAsyncComponent(() => import('@/views/HotkeyView.vue'))
@@ -144,6 +148,9 @@ const toolComponentMap: Record<string, any> = {
   fileprocessing: FileProcessing,
   zipTool: ZipTool,
   mermaid: MermaidTool,
+  slide: SlideTool,
+  mindmap: MindmapTool,
+  mindmapEditor: MindmapEditorTool,
   pomodoro: PomodoroTool,
   sql: SqlTool,
   batchReplace: BatchReplaceTool,
@@ -182,6 +189,7 @@ const toolComponentMap: Record<string, any> = {
   barcode: BarcodeTool,
   snippet: SnippetTool,
   http: HttpTool,
+  wsClient: WSClientTool,
   curl: CurlTool,
   history: HistoryView,
   workflow: WorkflowView,

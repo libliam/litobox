@@ -1,5 +1,5 @@
 <template>
-  <div class="tool-container">
+  <div class="tool-container svg-tool">
     <!-- 输入区 -->
     <div class="tool-card">
       <div class="card-header">
@@ -75,12 +75,27 @@
     </div>
 
     <!-- Tab 1: 实时预览 -->
-    <div v-if="activeTab === 'preview'" class="tool-card">
+    <div v-if="activeTab === 'preview'" class="tool-card preview-card">
       <div class="card-header">
         <div class="header-left">
           <span class="card-title">SVG 预览</span>
         </div>
         <div class="header-right">
+          <el-button-group size="small">
+            <el-button :disabled="!svgValid" @click="zoomOut">
+              <el-icon><ZoomOut /></el-icon>
+            </el-button>
+            <el-button :disabled="!svgValid" @click="zoomReset">
+              {{ Math.round(scale * 100) }}%
+            </el-button>
+            <el-button :disabled="!svgValid" @click="zoomIn">
+              <el-icon><ZoomIn /></el-icon>
+            </el-button>
+            <el-button :disabled="!svgValid" @click="zoomFit" title="适应窗口">
+              <el-icon><FullScreen /></el-icon>
+            </el-button>
+          </el-button-group>
+          <el-divider direction="vertical" />
           <el-select v-model="bgColor" size="small" style="width: 120px">
             <el-option label="透明" value="transparent" />
             <el-option label="白色" value="#ffffff" />
@@ -89,9 +104,16 @@
           </el-select>
         </div>
       </div>
-      <div class="card-body">
-        <div class="preview-area" :style="{ background: bgColor }">
-          <div v-if="svgValid" class="svg-preview" v-html="input"></div>
+      <div class="card-body preview-body">
+        <div
+          class="preview-area"
+          :style="{ background: bgColor }"
+          @wheel.prevent="onWheel"
+          ref="previewAreaRef"
+        >
+          <div v-if="svgValid" class="svg-preview" :style="{ zoom: scale }">
+            <div v-html="input" class="svg-inner"></div>
+          </div>
           <div v-else class="empty-hint">
             <el-icon :size="48"><Picture /></el-icon>
             <p>输入有效的 SVG 代码以预览</p>
@@ -100,6 +122,7 @@
         <div v-if="svgMeta" class="meta-info">
           <span>📐 {{ svgMeta.width }} × {{ svgMeta.height }}</span>
           <span>📏 原始: {{ svgMeta.viewBox }}</span>
+          <span>🔍 {{ Math.round(scale * 100) }}%</span>
         </div>
       </div>
     </div>
@@ -235,7 +258,8 @@ import { invoke } from '@tauri-apps/api/core'
 import { saveFileWithDialog } from '@/utils/fileSaver'
 import {
   QuestionFilled, MagicStick, Upload, DocumentCopy, Delete,
-  WarningFilled, Picture, Lightning, CopyDocument, Download, Edit
+  WarningFilled, Picture, Lightning, CopyDocument, Download, Edit,
+  ZoomIn, ZoomOut, FullScreen
 } from '@element-plus/icons-vue'
 
 const input = ref('')
@@ -247,6 +271,29 @@ const bgColor = ref('transparent')
 // 预览相关
 const svgValid = ref(false)
 const svgMeta = ref<{ width: number; height: number; viewBox: string } | null>(null)
+const scale = ref(1)
+const previewAreaRef = ref<HTMLElement | null>(null)
+
+const zoomIn = () => { scale.value = Math.min(scale.value * 1.2, 10) }
+const zoomOut = () => { scale.value = Math.max(scale.value / 1.2, 0.1) }
+const zoomReset = () => { scale.value = 1 }
+const onWheel = (e: WheelEvent) => {
+  if (e.deltaY < 0) zoomIn()
+  else zoomOut()
+}
+const zoomFit = () => {
+  // ponytail: 适应窗口 = 让 SVG 缩放到刚好放进预览区，取宽高比的较小值
+  if (!previewAreaRef.value) return
+  const svg = previewAreaRef.value.querySelector('svg')
+  if (!svg) return
+  const svgW = svg.getBoundingClientRect().width / scale.value
+  const svgH = svg.getBoundingClientRect().height / scale.value
+  const areaW = previewAreaRef.value.clientWidth - 48
+  const areaH = previewAreaRef.value.clientHeight - 48
+  if (svgW > 0 && svgH > 0) {
+    scale.value = Math.min(areaW / svgW, areaH / svgH, 1)
+  }
+}
 
 // 优化相关
 interface OptimizeResult {
@@ -327,6 +374,7 @@ const validate = () => {
   svgMeta.value = null
   convertPreview.value = ''
   optimizeResult.value = null
+  scale.value = 1
 
   if (!input.value.trim()) return
 
@@ -410,119 +458,153 @@ const doOptimize = () => {
   ElMessage.success(savedPct > 0 ? `压缩了 ${savedPct}%` : '已优化（此文件可能已压缩过）')
 }
 
-// 转换为 PNG
-const svgToPngBlob = (): Promise<Blob> => {
-  return new Promise((resolve, reject) => {
-    const parser = new DOMParser()
-    const doc = parser.parseFromString(input.value, 'image/svg+xml')
-    const svg = doc.querySelector('svg')
-    if (!svg) {
-      reject(new Error('无效的 SVG'))
-      return
-    }
-
-    const vb = svg.getAttribute('viewBox')?.split(/[\s,]+/)
-    let vbX = 0, vbY = 0, vbW = 0, vbH = 0
-    if (vb && vb.length === 4) {
-      vbX = parseFloat(vb[0])
-      vbY = parseFloat(vb[1])
-      vbW = parseFloat(vb[2])
-      vbH = parseFloat(vb[3])
-    }
-
-    // 内容可能超出 viewBox（如 Mermaid mindmap 根节点低于 viewBox 底部），<img> 栅格化会按
-    // viewBox 裁剪导致节点/文字被切掉，而预览内联渲染溢出可见，两者表现不一致。
-    // 仅在内容超出原 viewBox 时扩展之，保留正常 SVG 自带的边距
-    // 注：getBBox 需要元素处于渲染树中，游离文档返回 0，故先挂到屏幕外再计算
-    let contentBox: { x0: number; y0: number; x1: number; y1: number } | null = null
+// 内联 SVG 中的外部图片为 base64，避免 canvas 被污染（tainted）
+const inlineSvgImages = async (svg: Element) => {
+  const images = svg.querySelectorAll('image')
+  for (const imgEl of Array.from(images)) {
+    const href = imgEl.getAttribute('href') || imgEl.getAttribute('xlink:href') || ''
+    if (!href || href.startsWith('data:')) continue
     try {
-      const probe = document.createElement('div')
-      probe.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:800px;height:600px;'
-      document.body.appendChild(probe)
-      probe.appendChild(svg)
-      const bb = svg.getBBox()
-      svg.remove()
-      probe.remove()
-      if (bb.width > 0 && bb.height > 0) {
-        contentBox = { x0: bb.x, y0: bb.y, x1: bb.x + bb.width, y1: bb.y + bb.height }
-      }
+      const resp = await fetch(href)
+      const blob = await resp.blob()
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result as string)
+        reader.onerror = reject
+        reader.readAsDataURL(blob)
+      })
+      imgEl.setAttribute('href', dataUrl)
+      imgEl.removeAttribute('xlink:href')
     } catch {
-      // getBBox 不可用时保持原 viewBox
+      // 无法加载的图片保留原样，可能导致导出失败
     }
-    if (contentBox) {
-      const pad = 2
-      const c = { x0: contentBox.x0 - pad, y0: contentBox.y0 - pad, x1: contentBox.x1 + pad, y1: contentBox.y1 + pad }
-      const v = {
-        x0: vbW > 0 ? vbX : c.x0,
-        y0: vbH > 0 ? vbY : c.y0,
-        x1: vbW > 0 ? vbX + vbW : c.x1,
-        y1: vbH > 0 ? vbY + vbH : c.y1,
-      }
-      // 无 viewBox 的 SVG 直接以内容包围盒作为 viewBox
-      if (vbW === 0 || c.x0 < v.x0 || c.y0 < v.y0 || c.x1 > v.x1 || c.y1 > v.y1) {
-        vbX = Math.min(c.x0, v.x0)
-        vbY = Math.min(c.y0, v.y0)
-        vbW = Math.max(c.x1, v.x1) - vbX
-        vbH = Math.max(c.y1, v.y1) - vbY
-        svg.setAttribute('viewBox', `${vbX} ${vbY} ${vbW} ${vbH}`)
-      }
+  }
+}
+
+// 转换为 PNG
+const svgToPngBlob = async (): Promise<Blob> => {
+  const parser = new DOMParser()
+  const doc = parser.parseFromString(input.value, 'image/svg+xml')
+  const svg = doc.querySelector('svg')
+  if (!svg) throw new Error('无效的 SVG')
+
+  // 确保命名空间正确
+  svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+  svg.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink')
+  // 移除 script 标签，避免安全问题
+  svg.querySelectorAll('script').forEach((s) => s.remove())
+
+  // 内联外部图片，防止 canvas tainted
+  await inlineSvgImages(svg)
+
+  const vb = svg.getAttribute('viewBox')?.split(/[\s,]+/)
+  let vbX = 0, vbY = 0, vbW = 0, vbH = 0
+  if (vb && vb.length === 4) {
+    vbX = parseFloat(vb[0])
+    vbY = parseFloat(vb[1])
+    vbW = parseFloat(vb[2])
+    vbH = parseFloat(vb[3])
+  }
+
+  // 内容可能超出 viewBox（如 Mermaid mindmap 根节点低于 viewBox 底部），<img> 栅格化会按
+  // viewBox 裁剪导致节点/文字被切掉，而预览内联渲染溢出可见，两者表现不一致。
+  // 仅在内容超出原 viewBox 时扩展之，保留正常 SVG 自带的边距
+  // 注：getBBox 需要元素处于渲染树中，游离文档返回 0，故先挂到屏幕外再计算
+  let contentBox: { x0: number; y0: number; x1: number; y1: number } | null = null
+  try {
+    const probe = document.createElement('div')
+    probe.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:800px;height:600px;'
+    document.body.appendChild(probe)
+    probe.appendChild(svg)
+    const bb = svg.getBBox()
+    svg.remove()
+    probe.remove()
+    if (bb.width > 0 && bb.height > 0) {
+      contentBox = { x0: bb.x, y0: bb.y, x1: bb.x + bb.width, y1: bb.y + bb.height }
     }
-
-    // width/height 为百分比（如 Mermaid 导出的 width="100%"）时无法作为实际尺寸，
-    // 以 viewBox 尺寸为准，避免比例被算成 100 × 422
-    const isNum = (s: string | null) => s != null && /^\d+(\.\d+)?(px)?$/.test(s.trim())
-    const wAttr = isNum(svg.getAttribute('width')) ? parseFloat(svg.getAttribute('width')!) : 0
-    const hAttr = isNum(svg.getAttribute('height')) ? parseFloat(svg.getAttribute('height')!) : 0
-    const origW = vbW > 0 ? vbW : (wAttr || 100)
-    const origH = vbH > 0 ? vbH : (hAttr || 100)
-
-    // 规整根 svg 尺寸为 viewBox 尺寸：width="100%"（且无 height）的 SVG 作为 <img> 加载时
-    // 固有尺寸会退化为默认 150 高、宽度按比例算出（243×150），导致内容被裁剪、文字错位
-    if (vbW > 0 && vbH > 0) {
-      svg.setAttribute('width', String(vbW))
-      svg.setAttribute('height', String(vbH))
+  } catch {
+    // getBBox 不可用时保持原 viewBox
+  }
+  if (contentBox) {
+    const pad = 2
+    const c = { x0: contentBox.x0 - pad, y0: contentBox.y0 - pad, x1: contentBox.x1 + pad, y1: contentBox.y1 + pad }
+    const v = {
+      x0: vbW > 0 ? vbX : c.x0,
+      y0: vbH > 0 ? vbY : c.y0,
+      x1: vbW > 0 ? vbX + vbW : c.x1,
+      y1: vbH > 0 ? vbY + vbH : c.y1,
     }
-
-    let w = convertWidth.value
-    let h = convertHeight.value
-    if (keepRatio.value && origW > 0 && origH > 0) {
-      const ratio = origH / origW
-      h = Math.round(w * ratio)
-      convertHeight.value = h
+    // 无 viewBox 的 SVG 直接以内容包围盒作为 viewBox
+    if (vbW === 0 || c.x0 < v.x0 || c.y0 < v.y0 || c.x1 > v.x1 || c.y1 > v.y1) {
+      vbX = Math.min(c.x0, v.x0)
+      vbY = Math.min(c.y0, v.y0)
+      vbW = Math.max(c.x1, v.x1) - vbX
+      vbH = Math.max(c.y1, v.y1) - vbY
+      svg.setAttribute('viewBox', `${vbX} ${vbY} ${vbW} ${vbH}`)
     }
+  }
 
-    const svgStr = new XMLSerializer().serializeToString(svg)
-    const svgBlob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' })
-    const url = URL.createObjectURL(svgBlob)
+  // width/height 为百分比（如 Mermaid 导出的 width="100%"）时无法作为实际尺寸，
+  // 以 viewBox 尺寸为准，避免比例被算成 100 × 422
+  const isNum = (s: string | null) => s != null && /^\d+(\.\d+)?(px)?$/.test(s.trim())
+  const wAttr = isNum(svg.getAttribute('width')) ? parseFloat(svg.getAttribute('width')!) : 0
+  const hAttr = isNum(svg.getAttribute('height')) ? parseFloat(svg.getAttribute('height')!) : 0
+  const origW = vbW > 0 ? vbW : (wAttr || 100)
+  const origH = vbH > 0 ? vbH : (hAttr || 100)
 
+  // 规整根 svg 尺寸为 viewBox 尺寸：width="100%"（且无 height）的 SVG 作为 <img> 加载时
+  // 固有尺寸会退化为默认 150 高、宽度按比例算出（243×150），导致内容被裁剪、文字错位
+  if (vbW > 0 && vbH > 0) {
+    svg.setAttribute('width', String(vbW))
+    svg.setAttribute('height', String(vbH))
+  }
+
+  let w = convertWidth.value
+  let h = convertHeight.value
+  if (keepRatio.value && origW > 0 && origH > 0) {
+    const ratio = origH / origW
+    h = Math.round(w * ratio)
+    convertHeight.value = h
+  }
+
+  // ponytail: 用 data URL 而非 Blob URL，某些浏览器对 Blob URL 的 SVG 有更严格的安全限制
+  const svgStr = new XMLSerializer().serializeToString(svg)
+  const dataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgStr)
+
+  return await new Promise<Blob>((resolve, reject) => {
     const img = new Image()
     img.onload = () => {
-      const canvas = document.createElement('canvas')
-      canvas.width = w
-      canvas.height = h
-      const ctx = canvas.getContext('2d')!
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width = w
+        canvas.height = h
+        const ctx = canvas.getContext('2d')!
 
-      // 背景色
-      if (convertBg.value === '#ffffff00' || convertBg.value === 'transparent') {
-        ctx.clearRect(0, 0, w, h)
-      } else {
-        ctx.fillStyle = convertBg.value
-        ctx.fillRect(0, 0, w, h)
+        // 背景色
+        if (convertBg.value === '#ffffff00' || convertBg.value === 'transparent') {
+          ctx.clearRect(0, 0, w, h)
+        } else {
+          ctx.fillStyle = convertBg.value
+          ctx.fillRect(0, 0, w, h)
+        }
+
+        ctx.drawImage(img, 0, 0, w, h)
+
+        canvas.toBlob((blob) => {
+          if (blob) {
+            resolve(blob)
+          } else {
+            reject(new Error('PNG 生成失败，SVG 可能包含不支持的元素（如 foreignObject、外部字体等）'))
+          }
+        }, 'image/png')
+      } catch (e: any) {
+        reject(new Error(e.message || 'canvas 渲染失败'))
       }
-
-      ctx.drawImage(img, 0, 0, w, h)
-      URL.revokeObjectURL(url)
-
-      canvas.toBlob((blob) => {
-        if (blob) resolve(blob)
-        else reject(new Error('PNG 生成失败'))
-      }, 'image/png')
     }
     img.onerror = () => {
-      URL.revokeObjectURL(url)
-      reject(new Error('图片加载失败'))
+      reject(new Error('SVG 图片加载失败'))
     }
-    img.src = url
+    img.src = dataUrl
   })
 }
 
@@ -591,6 +673,40 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* 整体布局：flex 列，填满窗口高度，输入区固定、预览区自适应 */
+.svg-tool {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 16px;
+}
+
+.svg-tool > .tool-card {
+  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+
+.svg-tool > .sticky-card {
+  position: relative;
+  top: auto;
+}
+
+.svg-tool > .preview-card {
+  flex: 1;
+  min-height: 0;
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.svg-tool > .preview-card > .card-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 16px;
+}
+
 .svg-tabs {
   width: 100%;
   padding: 4px 20px 0;
@@ -607,7 +723,8 @@ onMounted(() => {
 
 .svg-input {
   width: 100%;
-  min-height: 240px;
+  min-height: 120px;
+  max-height: 300px;
   padding: 12px;
   background: var(--bg-input);
   color: var(--text-primary);
@@ -675,10 +792,12 @@ onMounted(() => {
 }
 
 .preview-area {
+  flex: 1;
+  min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 300px;
+  overflow: auto;
   padding: 24px;
   border: 1px solid var(--border-color);
   border-radius: 6px;
@@ -717,17 +836,13 @@ onMounted(() => {
 }
 
 .svg-preview {
-  max-width: 100%;
-  max-height: 500px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  /* ponytail: 用 zoom 缩放，会影响布局尺寸，overflow:auto 才能正确出滚动条 */
 }
 
 .svg-preview :deep(svg) {
-  max-width: 100%;
-  max-height: 500px;
-  height: auto !important;
+  display: block;
+  max-width: none;
+  max-height: none;
 }
 
 .empty-hint {
