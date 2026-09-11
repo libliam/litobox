@@ -151,6 +151,32 @@ export async function deleteSnippet(id: string): Promise<void> {
   return invoke('cmd_db_delete_snippet', { id });
 }
 
+// Markdown 保存记录相关
+export interface MarkdownRecord {
+  id: string;
+  title: string;
+  content: string;
+  pinned: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function listMarkdownRecords(): Promise<MarkdownRecord[]> {
+  return invoke('cmd_db_list_markdown_records');
+}
+
+export async function saveMarkdownRecord(record: MarkdownRecord): Promise<void> {
+  return invoke('cmd_db_save_markdown_record', { record });
+}
+
+export async function deleteMarkdownRecord(id: string): Promise<void> {
+  return invoke('cmd_db_delete_markdown_record', { id });
+}
+
+export async function setMarkdownPin(id: string, pinned: boolean): Promise<void> {
+  return invoke('cmd_db_set_markdown_pin', { id, pinned });
+}
+
 // 最近工具相关
 export async function listRecentTools(limit: number = 8): Promise<string[]> {
   return invoke('cmd_db_list_recent_tools', { limit });

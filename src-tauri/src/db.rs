@@ -326,6 +326,18 @@ fn init_tables(conn: &Connection) -> Result<()> {
         );
     "#).ok();
 
+    // Markdown 保存记录表（pinned=1 的置顶记录不参与 20 条上限清理）
+    conn.execute_batch(r#"
+        CREATE TABLE IF NOT EXISTS markdown_records (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            content TEXT NOT NULL,
+            pinned INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+    "#).ok();
+
     Ok(())
 }
 
@@ -401,6 +413,83 @@ pub fn db_delete_snippet(id: String) -> Result<(), String> {
     with_conn(|conn| {
         conn.execute("DELETE FROM snippets WHERE id = ?1", params![id])
             .map_err(|e| e.to_string())?;
+        Ok(())
+    })
+}
+
+// ========== Markdown 保存记录 CRUD ==========
+
+/// 非置顶记录的最大保留数量（置顶记录不受限制）
+const MARKDOWN_RECORD_LIMIT: i64 = 20;
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct MarkdownRecord {
+    pub id: String,
+    pub title: String,
+    pub content: String,
+    pub pinned: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+pub fn db_list_markdown_records() -> Result<Vec<MarkdownRecord>, String> {
+    with_conn(|conn| {
+        let mut stmt = conn
+            .prepare("SELECT id, title, content, pinned, created_at, updated_at FROM markdown_records ORDER BY pinned DESC, updated_at DESC")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(MarkdownRecord {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    content: row.get(2)?,
+                    pinned: row.get(3)?,
+                    created_at: row.get(4)?,
+                    updated_at: row.get(5)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    })
+}
+
+pub fn db_save_markdown_record(record: MarkdownRecord) -> Result<(), String> {
+    with_conn(|conn| {
+        conn.execute(
+            "INSERT INTO markdown_records (id, title, content, pinned, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(id) DO UPDATE SET
+                 title = ?2, content = ?3, pinned = ?4, updated_at = ?6",
+            params![
+                record.id, record.title, record.content,
+                record.pinned, record.created_at, record.updated_at
+            ],
+        ).map_err(|e| e.to_string())?;
+        // 仅保留最近 MARKDOWN_RECORD_LIMIT 条非置顶记录，置顶记录永久保留
+        conn.execute(
+            "DELETE FROM markdown_records WHERE pinned = 0 AND id NOT IN (
+                 SELECT id FROM markdown_records WHERE pinned = 0 ORDER BY updated_at DESC LIMIT ?1
+             )",
+            params![MARKDOWN_RECORD_LIMIT],
+        ).map_err(|e| e.to_string())?;
+        Ok(())
+    })
+}
+
+pub fn db_delete_markdown_record(id: String) -> Result<(), String> {
+    with_conn(|conn| {
+        conn.execute("DELETE FROM markdown_records WHERE id = ?1", params![id])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    })
+}
+
+pub fn db_set_markdown_pin(id: String, pinned: bool) -> Result<(), String> {
+    with_conn(|conn| {
+        conn.execute(
+            "UPDATE markdown_records SET pinned = ?2 WHERE id = ?1",
+            params![id, pinned],
+        ).map_err(|e| e.to_string())?;
         Ok(())
     })
 }
@@ -1217,6 +1306,28 @@ pub fn cmd_db_save_snippet(snippet: Snippet) -> Result<(), String> {
 #[tauri::command]
 pub fn cmd_db_delete_snippet(id: String) -> Result<(), String> {
     db_delete_snippet(id)
+}
+
+// ========== Markdown 保存记录 Tauri 命令 ==========
+
+#[tauri::command]
+pub fn cmd_db_list_markdown_records() -> Result<Vec<MarkdownRecord>, String> {
+    db_list_markdown_records()
+}
+
+#[tauri::command]
+pub fn cmd_db_save_markdown_record(record: MarkdownRecord) -> Result<(), String> {
+    db_save_markdown_record(record)
+}
+
+#[tauri::command]
+pub fn cmd_db_delete_markdown_record(id: String) -> Result<(), String> {
+    db_delete_markdown_record(id)
+}
+
+#[tauri::command]
+pub fn cmd_db_set_markdown_pin(id: String, pinned: bool) -> Result<(), String> {
+    db_set_markdown_pin(id, pinned)
 }
 
 // ========== 最近工具 Tauri 命令 ==========

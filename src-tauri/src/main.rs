@@ -116,6 +116,11 @@ fn main() {
             db::cmd_db_list_snippets,
             db::cmd_db_save_snippet,
             db::cmd_db_delete_snippet,
+            // Markdown 保存记录命令
+            db::cmd_db_list_markdown_records,
+            db::cmd_db_save_markdown_record,
+            db::cmd_db_delete_markdown_record,
+            db::cmd_db_set_markdown_pin,
             db::cmd_db_list_recent_tools,
             db::cmd_db_add_recent_tool,
             db::cmd_db_list_ocr_history,
