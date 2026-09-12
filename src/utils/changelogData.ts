@@ -15,8 +15,15 @@ export interface ChangelogData {
 }
 
 export const changelogData: ChangelogData = {
-  versionRange: "从 v1.0 到 v8.9.1 更新内容",
+  versionRange: "从 v1.0 到 v8.9.2 更新内容",
   entries: [
+  {
+    "version": "8.9.2",
+    "date": "2026-09-12",
+    "content": "时间工具「当前时间」新增 16 种常用时间格式网格（中文年月日/中文日期时间/星期/横杠日期/横杠日期时间/补零日期/补零日期时间/斜杠日期/斜杠日期时间/时间/紧凑日期 yyyymmdd/紧凑日期时间 yyyymmddHHmmss/ISO 8601/UTC/毫秒与秒级时间戳），随当前时间每秒刷新，逐行一键复制；多处工具预览区改为弹性撑满剩余高度、消除底部大片空白（文件处理、编码转换、文本对比、批量读取、Markdown、PDF、Hex、SVG 等）；批量读取预览支持最小高度 + 多文件自动平分剩余空间（低于最小高度则内部滚动）；各工具二级 Tab 切换改用 v-show 保留已输入内容，不再因切换清空（DevTools、磁盘空间分析、文件处理、编码转换等）；Markdown 编辑器输入区行数减半、新增 Ctrl+S 快捷保存",
+    "isEnhancement": false,
+    "isNewFeature": true
+  },
   {
     "version": "8.9.1",
     "date": "2026-09-11",
