@@ -15,8 +15,15 @@ export interface ChangelogData {
 }
 
 export const changelogData: ChangelogData = {
-  versionRange: "从 v1.0 到 v8.9.2 更新内容",
+  versionRange: "从 v1.0 到 v8.10.0 更新内容",
   entries: [
+  {
+    "version": "8.10.0",
+    "date": "2026-09-12",
+    "content": "三个新工具：**TOTP 二次验证器**（otpauth 二维码扫码 / 剪贴板 / 手动导入，密钥本地明文存 SQLite 独立表，多账号实时验证码 + 1 秒倒计时进度条，支持 SHA1/SHA256/SHA512 与 6/8 位，编辑/删除/点击复制）；**目录对比**（递归对比左右文件夹的新增/删除/修改/相同，忽略规则支持 * 与 ? 通配（如 node_modules、*.log、dist/），可选 sha256 内容比对，扫描进度/取消 + 轮询兜底，差异明细按状态筛选 + 关键词搜索 + 分页，纯只读查看）；**代码实体生成**（JSON/JSON5 或 SQL DDL 输入，自动推断实体并递归拆分嵌套对象，一键生成 TypeScript/Java/Go/Rust/Python/C# 六语言实体类，命名风格自动转换，六语言自由勾选，支持复制/保存）",
+    "isEnhancement": false,
+    "isNewFeature": true
+  },
   {
     "version": "8.9.2",
     "date": "2026-09-12",

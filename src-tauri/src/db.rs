@@ -3,6 +3,15 @@ use serde::{Deserialize, Serialize};
 use std::sync::{Mutex, OnceLock};
 use std::path::PathBuf;
 
+// ponytail: debug 模式输出日志到 stderr，release 模式编译时移除（零开销），沿用项目惯例
+macro_rules! debug_log {
+    ($($arg:tt)*) => {
+        if cfg!(debug_assertions) {
+            eprintln!($($arg)*)
+        }
+    };
+}
+
 static DB_CONN: OnceLock<Result<Mutex<Connection>, String>> = OnceLock::new();
 
 fn get_conn() -> Result<&'static Mutex<Connection>, String> {
@@ -257,6 +266,18 @@ fn init_tables(conn: &Connection) -> Result<()> {
           file_count   INTEGER NOT NULL DEFAULT 0,
           status       TEXT NOT NULL DEFAULT 'pending'
         );
+        -- TOTP 二次验证密钥（本地明文存储，无网络）
+        CREATE TABLE IF NOT EXISTS totp_secrets (
+            id TEXT PRIMARY KEY,
+            issuer TEXT NOT NULL DEFAULT '',
+            account TEXT NOT NULL DEFAULT '',
+            secret TEXT NOT NULL,
+            algorithm TEXT NOT NULL DEFAULT 'SHA1',
+            digits INTEGER NOT NULL DEFAULT 6,
+            period INTEGER NOT NULL DEFAULT 30,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
     "#)?;
 
     // 迁移：旧版 snippets 表有 category 列但无 lang/note 列
@@ -412,6 +433,73 @@ pub fn db_save_snippet(snippet: Snippet) -> Result<(), String> {
 pub fn db_delete_snippet(id: String) -> Result<(), String> {
     with_conn(|conn| {
         conn.execute("DELETE FROM snippets WHERE id = ?1", params![id])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    })
+}
+
+// ========== TOTP 二次验证密钥 CRUD（明文本地存储） ==========
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct TotpSecret {
+    pub id: String,
+    pub issuer: String,
+    pub account: String,
+    pub secret: String,
+    pub algorithm: String,
+    pub digits: i64,
+    pub period: i64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+pub fn db_list_totp_secrets() -> Result<Vec<TotpSecret>, String> {
+    with_conn(|conn| {
+        let mut stmt = conn
+            .prepare("SELECT id, issuer, account, secret, algorithm, digits, period, created_at, updated_at FROM totp_secrets ORDER BY created_at ASC")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(TotpSecret {
+                    id: row.get(0)?,
+                    issuer: row.get(1)?,
+                    account: row.get(2)?,
+                    secret: row.get(3)?,
+                    algorithm: row.get(4)?,
+                    digits: row.get(5)?,
+                    period: row.get(6)?,
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    })
+}
+
+pub fn db_save_totp_secret(item: TotpSecret) -> Result<(), String> {
+    debug_log!("db: 保存 TOTP 密钥 id={}", item.id);
+    with_conn(|conn| {
+        conn.execute(
+            "INSERT INTO totp_secrets (id, issuer, account, secret, algorithm, digits, period, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             ON CONFLICT(id) DO UPDATE SET
+                 issuer = ?2, account = ?3, secret = ?4, algorithm = ?5,
+                 digits = ?6, period = ?7, updated_at = ?9",
+            params![
+                item.id, item.issuer, item.account, item.secret,
+                item.algorithm, item.digits, item.period,
+                item.created_at, item.updated_at
+            ],
+        ).map_err(|e| e.to_string())?;
+        Ok(())
+    })
+}
+
+pub fn db_delete_totp_secret(id: String) -> Result<(), String> {
+    debug_log!("db: 删除 TOTP 密钥 id={}", id);
+    with_conn(|conn| {
+        conn.execute("DELETE FROM totp_secrets WHERE id = ?1", params![id])
             .map_err(|e| e.to_string())?;
         Ok(())
     })
@@ -1306,6 +1394,23 @@ pub fn cmd_db_save_snippet(snippet: Snippet) -> Result<(), String> {
 #[tauri::command]
 pub fn cmd_db_delete_snippet(id: String) -> Result<(), String> {
     db_delete_snippet(id)
+}
+
+// ========== TOTP 二次验证密钥 Tauri 命令 ==========
+
+#[tauri::command]
+pub fn cmd_db_list_totp_secrets() -> Result<Vec<TotpSecret>, String> {
+    db_list_totp_secrets()
+}
+
+#[tauri::command]
+pub fn cmd_db_save_totp_secret(item: TotpSecret) -> Result<(), String> {
+    db_save_totp_secret(item)
+}
+
+#[tauri::command]
+pub fn cmd_db_delete_totp_secret(id: String) -> Result<(), String> {
+    db_delete_totp_secret(id)
 }
 
 // ========== Markdown 保存记录 Tauri 命令 ==========

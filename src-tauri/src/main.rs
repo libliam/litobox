@@ -1,4 +1,4 @@
-﻿#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 // ponytail: debug 模式输出日志到 stderr，release 模式编译时移除（零开销）
 // 必须放在 mod 声明之前，这样子模块才能使用该宏
@@ -21,6 +21,7 @@ mod note_manager;
 mod system_info;
 mod sqlite_viewer;
 mod disk_analyzer;
+mod dir_diff;
 mod file_searcher;
 mod icon_generator;
 mod image_tools;
@@ -116,6 +117,10 @@ fn main() {
             db::cmd_db_list_snippets,
             db::cmd_db_save_snippet,
             db::cmd_db_delete_snippet,
+            // TOTP 二次验证密钥命令
+            db::cmd_db_list_totp_secrets,
+            db::cmd_db_save_totp_secret,
+            db::cmd_db_delete_totp_secret,
             // Markdown 保存记录命令
             db::cmd_db_list_markdown_records,
             db::cmd_db_save_markdown_record,
@@ -236,6 +241,13 @@ fn main() {
             disk_analyzer::disk_delete_files,
             disk_analyzer::disk_clear_scan,
             disk_analyzer::disk_locate_in_explorer,
+            // 目录对比命令
+            dir_diff::dir_diff_start,
+            dir_diff::dir_diff_cancel,
+            dir_diff::dir_diff_status,
+            dir_diff::dir_diff_get_summary,
+            dir_diff::dir_diff_get_entries,
+            dir_diff::dir_diff_clear,
             // 全文搜索命令
             file_searcher::file_search_start,
             file_searcher::file_search_cancel,

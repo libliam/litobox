@@ -47,6 +47,7 @@
                       <el-option label="SQL转换" value="sql" />
                       <el-option label="Base64编解码" value="base64" />
                       <el-option label="计算器" value="calculator" />
+                      <el-option label="代码实体生成" value="entityGen" />
                     </el-select>
                     <el-select v-model="step.action" placeholder="选择操作" size="small" style="width: 140px">
                       <el-option
@@ -337,6 +338,7 @@ const TOOL_ACTIONS: Record<string, string[]> = {
   base64: ['编码', '解码'],
   calculator: ['表达式计算'],
   codeFormatter: ['格式化JS', '格式化JSON', '格式化CSS', '格式化HTML', '格式化Markdown', '格式化YAML'],
+  entityGen: ['生成TypeScript', '生成Java', '生成Go', '生成Rust', '生成Python', '生成C#'],
 }
 
 // 预置工作流模板
@@ -764,6 +766,20 @@ async function executeStep(tool: string, action: string, input: string): Promise
       return executeCalculatorAction(action, input)
     case 'codeFormatter':
       return executeCodeFormatterAction(action, input)
+    case 'entityGen': {
+      // 代码实体生成：动作名 → 目标语言，输入自动识别 JSON / SQL
+      const { generateFromInput } = await import('@/utils/entityGen')
+      const text = input.trim()
+      if (!text) return ''
+      const format = text.startsWith('{') || text.startsWith('[') ? 'json' : 'sql'
+      const langMap: Record<string, 'typescript' | 'java' | 'go' | 'rust' | 'python' | 'csharp'> = {
+        生成TypeScript: 'typescript', 生成Java: 'java', 生成Go: 'go',
+        生成Rust: 'rust', 生成Python: 'python', '生成C#': 'csharp',
+      }
+      const lang = langMap[action] ?? 'typescript'
+      const res = generateFromInput(text, { format, rootName: 'Root' }, [lang])
+      return res.error || res.code[lang] || ''
+    }
     case 'certViewer':
       return executeCertAction(action, input)
     case 'fileRenamer':

@@ -151,6 +151,31 @@ export async function deleteSnippet(id: string): Promise<void> {
   return invoke('cmd_db_delete_snippet', { id });
 }
 
+// TOTP 二次验证密钥相关
+export interface TotpSecret {
+  id: string;
+  issuer: string;
+  account: string;
+  secret: string;
+  algorithm: string;
+  digits: number;
+  period: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function listTotpSecrets(): Promise<TotpSecret[]> {
+  return invoke('cmd_db_list_totp_secrets');
+}
+
+export async function saveTotpSecret(item: TotpSecret): Promise<void> {
+  return invoke('cmd_db_save_totp_secret', { item });
+}
+
+export async function deleteTotpSecret(id: string): Promise<void> {
+  return invoke('cmd_db_delete_totp_secret', { id });
+}
+
 // Markdown 保存记录相关
 export interface MarkdownRecord {
   id: string;

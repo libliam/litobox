@@ -127,6 +127,9 @@ const QuickLaunchTool = defineAsyncComponent(() => import('@/views/QuickLaunchTo
 const SvgTool = defineAsyncComponent(() => import('@/views/SvgTool.vue'))
 const BatchReplaceTool = defineAsyncComponent(() => import('@/views/BatchReplaceTool.vue'))
 const ChangelogView = defineAsyncComponent(() => import('@/views/ChangelogView.vue'))
+const EntityGenTool = defineAsyncComponent(() => import('@/views/EntityGenTool.vue'))
+const FolderDiffTool = defineAsyncComponent(() => import('@/views/FolderDiffTool.vue'))
+const TotpTool = defineAsyncComponent(() => import('@/views/TotpTool.vue'))
 import CommandPalette from '@/components/CommandPalette.vue'
 import QuickLaunchOverlay from '@/components/QuickLaunchOverlay.vue'
 import { ConfirmDialogWrapper } from '@/composables/useConfirmDialog'
@@ -224,6 +227,9 @@ const toolComponentMap: Record<string, any> = {
   quickLaunch: QuickLaunchTool,
   svg: SvgTool,
   changelog: ChangelogView,
+  entityGen: EntityGenTool,
+  folderDiff: FolderDiffTool,
+  totp: TotpTool,
 }
 
 const store = useToolboxStore()
