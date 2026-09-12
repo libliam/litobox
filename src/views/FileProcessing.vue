@@ -1,14 +1,14 @@
 <template>
-  <div class="tool-container">
+  <div class="tool-container file-container">
     <el-tabs v-model="activeTab" class="file-tabs" @tab-click="handleTabClick">
       <el-tab-pane label="批量文本处理" name="batchText" />
       <el-tab-pane label="文件编码" name="fileEncoding" />
       <el-tab-pane label="十六进制查看" name="hexViewer" />
     </el-tabs>
 
-    <BatchTextTool v-if="activeTab === 'batchText'" />
-    <FileEncodingTool v-if="activeTab === 'fileEncoding'" />
-    <HexViewerTool v-if="activeTab === 'hexViewer'" />
+    <BatchTextTool v-show="activeTab === 'batchText'" class="file-subtool" />
+    <FileEncodingTool v-show="activeTab === 'fileEncoding'" class="file-subtool" />
+    <HexViewerTool v-show="activeTab === 'hexViewer'" class="file-subtool" />
   </div>
 </template>
 
@@ -32,6 +32,16 @@ const handleTabClick = () => {
   padding: 16px 16px 16px 8px;
 }
 
+/* 让当前子工具撑满 Tab 栏之外的剩余空间，配合子组件内部的填充布局 */
+.file-container {
+  display: flex;
+  flex-direction: column;
+}
+.file-subtool {
+  flex: 1;
+  min-height: 0;
+}
+
 /* 一级 Tab（开发工具/文件处理） */
 .file-tabs {
   position: sticky;
@@ -41,6 +51,7 @@ const handleTabClick = () => {
   padding-left: 8px;
   margin-bottom: 16px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  flex-shrink: 0;
 }
 
 html.light .file-tabs {

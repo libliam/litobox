@@ -1,5 +1,5 @@
 <template>
-  <div class="tool-container">
+  <div class="tool-container" :class="{ 'pdf-fill-layout': activeTab === 'textExtract' }">
     <!-- Tab 栏 -->
     <div class="tool-card sticky-card">
       <el-tabs v-model="activeTab" class="pdf-tabs">
@@ -224,7 +224,7 @@
       </div>
     </div>
 
-    <div v-if="activeTab === 'textExtract'" class="tool-card">
+    <div v-if="activeTab === 'textExtract'" class="tool-card fill-card">
       <div class="card-header">
         <span class="card-title">提取结果</span>
         <div class="card-actions">
@@ -2337,6 +2337,55 @@ html.light .pdf-tabs :deep(.el-tabs__header) {
 
 .card-body {
   padding: 16px 20px;
+}
+
+/* ===== 文本提取：让「提取结果」卡片撑满剩余高度 ===== */
+.pdf-fill-layout {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.pdf-fill-layout > .tool-card {
+  flex-shrink: 0;
+}
+
+.fill-card {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.fill-card > .card-header {
+  flex-shrink: 0;
+}
+
+.fill-card > .card-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.fill-card > .card-body > .action-grid,
+.fill-card > .card-body > .text-info,
+.fill-card > .card-body > .error-message {
+  flex-shrink: 0;
+}
+
+.fill-card :deep(.el-textarea) {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.fill-card :deep(.el-textarea__inner) {
+  flex: 1;
+  height: 100%;
+  box-sizing: border-box;
 }
 
 .card-actions {

@@ -54,7 +54,7 @@
             <el-input
               v-model="tabState.preview.input"
               type="textarea"
-              :rows="6"
+              :rows="3"
               placeholder="请输入 Markdown 文本..."
               resize="vertical"
               class="markdown-input"
@@ -63,7 +63,7 @@
         </div>
 
         <!-- 预览卡片 -->
-        <div class="tool-card">
+        <div class="tool-card fill-card">
           <div class="card-header">
             <span class="card-title">预览</span>
             <div class="card-actions">
@@ -119,7 +119,7 @@
             <el-input
               v-model="tabState.html.input"
               type="textarea"
-              :rows="10"
+              :rows="5"
               :placeholder="htmlDirection === 'md2html' ? '请输入 Markdown 文本...' : '请输入 HTML 代码...'"
               resize="vertical"
             />
@@ -127,7 +127,7 @@
         </div>
 
         <!-- 输出卡片 -->
-        <div class="tool-card">
+        <div class="tool-card fill-card">
           <div class="card-header">
             <span class="card-title">输出</span>
             <el-button size="small" @click="handleCopy('html')">复制</el-button>
@@ -183,7 +183,7 @@
             <el-input
               v-model="tabState.stats.input"
               type="textarea"
-              :rows="8"
+              :rows="4"
               placeholder="请输入 Markdown 文本..."
               resize="vertical"
             />
@@ -289,7 +289,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { QuestionFilled, Top } from '@element-plus/icons-vue'
 import MarkdownIt from 'markdown-it'
@@ -665,6 +665,34 @@ const handleSaveRecord = async () => {
   }
 }
 
+// ============ Ctrl+S 快捷键保存 ============
+// ponytail: window 级监听 + KeepAlive onActivated/onDeactivated 控制，避免缓存页面在后台误触发
+let pageVisible = true
+
+const handleGlobalKeydown = (e: KeyboardEvent) => {
+  if (!pageVisible) return
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+    e.preventDefault()
+    handleSaveRecord()
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', handleGlobalKeydown)
+})
+
+onActivated(() => {
+  pageVisible = true
+})
+
+onDeactivated(() => {
+  pageVisible = false
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleGlobalKeydown)
+})
+
 const handleLoadRecord = (record: db.MarkdownRecord) => {
   tabState.preview.input = record.content
   activeTab.value = 'preview'
@@ -733,6 +761,63 @@ html.light .markdown-tool-tabs :deep(.el-tabs__header) {
 
 .markdown-tool-tabs :deep(.el-tabs__nav-wrap::after) {
   background-color: var(--border-color);
+}
+
+/* ===== 让内容撑满 Tab 剩余高度（预览/输出卡片吸收空白） ===== */
+.markdown-tool-tabs {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.markdown-tool-tabs :deep(.el-tabs__content) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.markdown-tool-tabs :deep(.el-tab-pane) {
+  /* flex 撑满 content，内容超出时由 pane 自身滚动（内容多滚动、内容少撑满） */
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.fill-card {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.fill-card > .card-header {
+  flex-shrink: 0;
+}
+
+.fill-card > .card-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.fill-card :deep(.el-textarea) {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.fill-card :deep(.el-textarea__inner) {
+  flex: 1;
+  height: 100%;
+  box-sizing: border-box;
 }
 
 /* ===== 工具卡片 ===== */
@@ -871,8 +956,8 @@ html.light .markdown-tool-tabs :deep(.el-tabs__header) {
   padding: 16px;
   background: var(--bg-input);
   border-radius: 6px;
-  /* ponytail: 预览区铺满窗口剩余空间；560px = Tab栏36 + 底栏28 + 边框2 + 容器内边距40 + 上方卡片高度 */
-  height: calc(100vh - 560px);
+  /* 撑满预览卡片剩余高度（由 .fill-card 布局分配），内容超出时内部滚动 */
+  flex: 1;
   min-height: 240px;
   overflow-y: auto;
   line-height: 1.7;

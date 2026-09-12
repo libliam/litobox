@@ -274,6 +274,8 @@ watch([leftText, rightText, diffMode, ignoreWhitespace, ignoreCase], () => {
   overflow-y: auto;
   padding: 20px;
   background: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
 }
 
 .tool-card {
@@ -337,12 +339,20 @@ watch([leftText, rightText, diffMode, ignoreWhitespace, ignoreCase], () => {
 }
 .input-card { margin-bottom: 0; }
 
-.result-body { padding: 0; }
+.result-card {
+  flex: 1;
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
+}
+.result-card > .card-header { flex-shrink: 0; }
+.result-body { padding: 0; flex: 1; min-height: 0; display: flex; }
 .diff-container {
+  flex: 1;
+  min-height: 0;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  max-height: 60vh;
-  overflow: auto;
+  overflow: hidden;
 }
 .diff-left, .diff-right {
   overflow: auto;

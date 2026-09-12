@@ -92,20 +92,20 @@
       <div class="card-body">
         <el-tabs v-model="activeTab">
           <el-tab-pane label="文件夹大小" name="folders">
-            <FoldersTab v-if="activeTab === 'folders'" :scan-id="scanId" :root-path="scanPath" />
+            <FoldersTab v-show="activeTab === 'folders'" :scan-id="scanId" :root-path="scanPath" />
           </el-tab-pane>
           <el-tab-pane label="大文件 Top N" name="topFiles">
-            <TopFilesTab v-if="activeTab === 'topFiles'" :scan-id="scanId" />
+            <TopFilesTab v-show="activeTab === 'topFiles'" :scan-id="scanId" />
           </el-tab-pane>
           <el-tab-pane label="按类型" name="extensions">
-            <ExtensionsTab v-if="activeTab === 'extensions'" :scan-id="scanId" />
+            <ExtensionsTab v-show="activeTab === 'extensions'" :scan-id="scanId" />
           </el-tab-pane>
           <el-tab-pane
             v-if="opts.detectDuplicates"
             label="重复文件"
             name="duplicates"
           >
-            <DuplicatesTab v-if="activeTab === 'duplicates'" :scan-id="scanId" />
+            <DuplicatesTab v-show="activeTab === 'duplicates'" :scan-id="scanId" />
           </el-tab-pane>
         </el-tabs>
       </div>
