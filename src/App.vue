@@ -130,6 +130,7 @@ const ChangelogView = defineAsyncComponent(() => import('@/views/ChangelogView.v
 const EntityGenTool = defineAsyncComponent(() => import('@/views/EntityGenTool.vue'))
 const FolderDiffTool = defineAsyncComponent(() => import('@/views/FolderDiffTool.vue'))
 const TotpTool = defineAsyncComponent(() => import('@/views/TotpTool.vue'))
+const OllamaTool = defineAsyncComponent(() => import('@/views/OllamaTool.vue'))
 import CommandPalette from '@/components/CommandPalette.vue'
 import QuickLaunchOverlay from '@/components/QuickLaunchOverlay.vue'
 import { ConfirmDialogWrapper } from '@/composables/useConfirmDialog'
@@ -230,6 +231,7 @@ const toolComponentMap: Record<string, any> = {
   entityGen: EntityGenTool,
   folderDiff: FolderDiffTool,
   totp: TotpTool,
+  ollama: OllamaTool,
 }
 
 const store = useToolboxStore()

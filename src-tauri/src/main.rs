@@ -47,6 +47,7 @@ mod zip_tools;
 mod pomodoro;
 mod log_viewer;
 mod window_state;
+mod ollama;
 
 use tauri::{Manager, Emitter};
 use tauri_plugin_dialog::{DialogExt, MessageDialogBuilder, MessageDialogButtons, MessageDialogKind};
@@ -354,6 +355,15 @@ fn main() {
             // 窗口状态命令
             window_state::save_window_state,
             window_state::app_ready,
+            // Ollama 本地大模型管理命令
+            ollama::ollama_check,
+            ollama::ollama_list,
+            ollama::ollama_show,
+            ollama::ollama_delete,
+            ollama::ollama_ps,
+            ollama::ollama_pull,
+            ollama::ollama_chat,
+            ollama::ollama_stop,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
