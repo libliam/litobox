@@ -15,8 +15,22 @@ export interface ChangelogData {
 }
 
 export const changelogData: ChangelogData = {
-  versionRange: "从 v1.0 到 v8.10.0 更新内容",
+  versionRange: "从 v1.0 到 v8.11.1 更新内容",
   entries: [
+  {
+    "version": "8.11.1",
+    "date": "2026-09-14",
+    "content": "Ollama 对话新增自定义 Python 工具（Tool Calling 自动调用）：工具管理弹窗可新增/编辑/删除工具（工具名、描述、参数 JSON Schema、Python 代码），工具本地 localStorage 持久化；对话时模型自动决策调用工具，Rust 后端以 stdin 传参执行 Python（参数注入全局作用域并额外提供 params 字典）、stdout 返回结果，支持多轮工具结果自动回灌；聊天区展示工具调用卡片（工具名/参数/结果）；新增 ollama_run_tool 命令供前端单独测试工具",
+    "isEnhancement": false,
+    "isNewFeature": true
+  },
+  {
+    "version": "8.11.0",
+    "date": "2026-09-12",
+    "content": "本地大模型（Ollama）管理工具：服务状态检测、模型下载/删除/详情、运行监控与显存释放、流式对话测试，纯本地 API 调用无网络依赖",
+    "isEnhancement": false,
+    "isNewFeature": false
+  },
   {
     "version": "8.10.0",
     "date": "2026-09-12",

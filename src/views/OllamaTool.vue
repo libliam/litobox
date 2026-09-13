@@ -160,8 +160,12 @@
       <div class="card-header">
         <div class="header-left">
           <span class="card-title">对话测试</span>
+          <el-tag v-if="tools.length > 0" size="small" type="success" effect="plain" style="margin-left: 8px">
+            {{ tools.length }} 个工具
+          </el-tag>
         </div>
         <div class="card-actions">
+          <el-button size="small" @click="toolDialogVisible = true">工具管理</el-button>
           <el-select v-model="chatModel" size="small" placeholder="选择模型" style="width: 220px" :disabled="chatting">
             <el-option
               v-for="m in models"
@@ -170,17 +174,37 @@
               :value="m.name"
             />
           </el-select>
-          <el-button size="small" @click="loadModels" :disabled="chatting">刷新模型</el-button>
+          <el-button size="small" @click="loadModels" :disabled="chatting">刷新</el-button>
           <el-button size="small" type="danger" plain @click="clearChat" :disabled="chatting">清空</el-button>
         </div>
       </div>
       <div class="card-body">
         <div class="chat-container">
           <div class="chat-messages" ref="chatMessagesRef">
-            <div v-for="(msg, i) in chatMessages" :key="i" class="chat-message" :class="msg.role">
-              <div class="msg-role">{{ msg.role === 'user' ? '我' : 'AI' }}</div>
-              <div class="msg-content">{{ msg.content }}</div>
-            </div>
+            <template v-for="(msg, i) in chatMessages" :key="i">
+              <!-- 工具调用消息 -->
+              <div v-if="msg.role === 'tool'" class="chat-message tool">
+                <div class="msg-role tool">
+                  <el-icon><Tools /></el-icon>
+                </div>
+                <div class="msg-content tool-msg">
+                  <div class="tool-name">🔧 {{ msg.toolName }}</div>
+                  <div class="tool-section">
+                    <span class="tool-label">参数：</span>
+                    <code>{{ JSON.stringify(msg.arguments) }}</code>
+                  </div>
+                  <div class="tool-section">
+                    <span class="tool-label">结果：</span>
+                    <pre class="tool-result">{{ msg.result }}</pre>
+                  </div>
+                </div>
+              </div>
+              <!-- 普通消息 -->
+              <div v-else class="chat-message" :class="msg.role">
+                <div class="msg-role">{{ msg.role === 'user' ? '我' : 'AI' }}</div>
+                <div class="msg-content">{{ msg.content }}</div>
+              </div>
+            </template>
             <div v-if="chatting" class="chat-message assistant">
               <div class="msg-role">AI</div>
               <div class="msg-content streaming">{{ streamingContent }}<span class="cursor">▋</span></div>
@@ -206,6 +230,84 @@
       </div>
     </div>
 
+    <!-- 工具管理弹窗 -->
+    <el-dialog v-model="toolDialogVisible" title="Python 工具管理" width="720px" top="8vh">
+      <div class="tool-mgr">
+        <!-- 工具列表 -->
+        <div class="tool-list">
+          <div
+            v-for="(t, i) in tools"
+            :key="i"
+            class="tool-item"
+            :class="{ active: editingIndex === i }"
+            @click="selectTool(i)"
+          >
+            <div class="tool-item-name">{{ t.name }}</div>
+            <div class="tool-item-desc">{{ t.description }}</div>
+          </div>
+          <div v-if="tools.length === 0" class="empty-tip">暂无工具，点击"新增工具"开始</div>
+        </div>
+
+        <!-- 工具编辑区 -->
+        <div class="tool-editor">
+          <div class="editor-actions">
+            <el-button size="small" type="primary" @click="addTool">新增工具</el-button>
+            <el-button
+              v-if="editingIndex !== null"
+              size="small"
+              type="danger"
+              @click="deleteTool"
+            >删除</el-button>
+            <el-button
+              v-if="editingIndex !== null"
+              size="small"
+              @click="testTool"
+              :loading="testingTool"
+            >测试运行</el-button>
+          </div>
+
+          <div v-if="editingIndex !== null" class="editor-form">
+            <el-form label-width="80px" size="small">
+              <el-form-item label="工具名">
+                <el-input v-model="currentTool.name" placeholder="英文，如 calculate" />
+              </el-form-item>
+              <el-form-item label="描述">
+                <el-input
+                  v-model="currentTool.description"
+                  type="textarea"
+                  :rows="2"
+                  placeholder="告诉模型这个工具的用途"
+                />
+              </el-form-item>
+              <el-form-item label="参数 Schema">
+                <el-input
+                  v-model="currentTool.parameters"
+                  type="textarea"
+                  :rows="4"
+                  placeholder='JSON Schema，如 {"type":"object","properties":{"a":{"type":"number"}},"required":["a"]}'
+                />
+              </el-form-item>
+              <el-form-item label="Python 代码">
+                <el-input
+                  v-model="currentTool.code"
+                  type="textarea"
+                  :rows="8"
+                  placeholder="参数可直接用变量名（如 a）或 params['a']。用 print() 输出结果。"
+                />
+              </el-form-item>
+              <el-form-item>
+                <el-alert
+                  type="info"
+                  :closable="false"
+                  title="参数通过 stdin（JSON）传入，已注入全局作用域。代码中直接使用参数名即可，结果通过 print() 返回给模型。"
+                />
+              </el-form-item>
+            </el-form>
+          </div>
+        </div>
+      </div>
+    </el-dialog>
+
     <!-- 模型详情弹窗 -->
     <el-dialog v-model="detailVisible" title="模型详情" width="640px">
       <pre class="detail-pre">{{ modelDetail }}</pre>
@@ -214,13 +316,118 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { QuestionFilled } from '@element-plus/icons-vue'
+import { QuestionFilled, Tools } from '@element-plus/icons-vue'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 
 const activeTab = ref('models')
+
+// ===== 工具管理 =====
+interface ToolDef {
+  name: string
+  description: string
+  parameters: string // JSON Schema 字符串
+  code: string
+}
+
+interface ChatMsg {
+  role: string
+  content: string
+  toolName?: string
+  arguments?: any
+  result?: string
+}
+
+const TOOLS_STORAGE_KEY = 'ollama_tools'
+
+const toolDialogVisible = ref(false)
+const tools = ref<ToolDef[]>([])
+const editingIndex = ref<number | null>(null)
+const currentTool = ref<ToolDef>({ name: '', description: '', parameters: '', code: '' })
+const testingTool = ref(false)
+
+const loadTools = () => {
+  try {
+    const saved = localStorage.getItem(TOOLS_STORAGE_KEY)
+    if (saved) {
+      tools.value = JSON.parse(saved)
+    }
+  } catch (e) {
+    console.error('加载工具失败', e)
+  }
+}
+
+const saveTools = () => {
+  localStorage.setItem(TOOLS_STORAGE_KEY, JSON.stringify(tools.value))
+}
+
+const addTool = () => {
+  tools.value.push({
+    name: '',
+    description: '',
+    parameters: '{"type":"object","properties":{}}',
+    code: '',
+  })
+  editingIndex.value = tools.value.length - 1
+  currentTool.value = tools.value[editingIndex.value]
+}
+
+const selectTool = (i: number) => {
+  editingIndex.value = i
+  currentTool.value = tools.value[i]
+}
+
+const deleteTool = async () => {
+  if (editingIndex.value === null) return
+  try {
+    await ElMessageBox.confirm('确定删除此工具？', '确认', { type: 'warning' })
+  } catch { return }
+  tools.value.splice(editingIndex.value, 1)
+  editingIndex.value = tools.value.length > 0 ? 0 : null
+  if (editingIndex.value !== null) {
+    currentTool.value = tools.value[editingIndex.value]
+  }
+  saveTools()
+}
+
+const testTool = async () => {
+  if (editingIndex.value === null) return
+  testingTool.value = true
+  try {
+    // 解析 parameters 获取必填字段，生成测试参数
+    let params: Record<string, any> = {}
+    try {
+      const schema = JSON.parse(currentTool.value.parameters)
+      if (schema.properties) {
+        for (const [key, val] of Object.entries<any>(schema.properties)) {
+          // 根据类型生成默认测试值
+          if (val.type === 'string') params[key] = 'test'
+          else if (val.type === 'number' || val.type === 'integer') params[key] = 1
+          else if (val.type === 'boolean') params[key] = true
+          else params[key] = 'test'
+        }
+      }
+    } catch {
+      // schema 解析失败，用空参数
+    }
+    const result = await invoke<string>('ollama_run_tool', {
+      code: currentTool.value.code,
+      arguments: params,
+    })
+    ElMessage.success('执行成功，输出:\n' + result)
+  } catch (e) {
+    ElMessage.error('执行失败: ' + String(e))
+  } finally {
+    testingTool.value = false
+  }
+}
+
+// 关闭弹窗时保存
+watch(toolDialogVisible, (val) => {
+  if (!val) saveTools()
+})
 
 // ===== 服务状态 =====
 const hostInput = ref('http://localhost:11434')
@@ -402,12 +609,13 @@ const stopModel = async (row: any) => {
 const chatModel = ref('')
 const chatInput = ref('')
 const chatting = ref(false)
-const chatMessages = ref<{ role: string; content: string }[]>([])
+const chatMessages = ref<ChatMsg[]>([])
 const streamingContent = ref('')
 const chatMessagesRef = ref<HTMLElement>()
 
 let chatChunkUnlisten: UnlistenFn | null = null
 let chatDoneUnlisten: UnlistenFn | null = null
+let chatToolUnlisten: UnlistenFn | null = null
 
 const scrollToBottom = () => {
   nextTick(() => {
@@ -430,8 +638,20 @@ const sendChat = async () => {
   streamingContent.value = ''
   scrollToBottom()
 
-  // chatMessages 已包含最新 user 消息，直接传给后端
+  // 构建传给后端的工具定义（parameters 从字符串解析为对象）
+  const toolsForApi = tools.value
+    .filter(t => t.name && t.code)
+    .map(t => ({
+      name: t.name,
+      description: t.description,
+      parameters: (() => { try { return JSON.parse(t.parameters) } catch { return { type: 'object', properties: {} } } })(),
+      code: t.code,
+    }))
+
+  // chatMessages 已包含最新 user 消息，直接传给后端（去掉工具消息，只传 user/assistant）
   const messagesForApi = chatMessages.value
+    .filter(m => m.role === 'user' || m.role === 'assistant')
+    .map(m => ({ role: m.role, content: m.content }))
 
   chatChunkUnlisten = await listen('ollama-chat-chunk', (event) => {
     const payload = event.payload as any
@@ -439,8 +659,22 @@ const sendChat = async () => {
     scrollToBottom()
   })
 
+  chatToolUnlisten = await listen('ollama-tool-call', (event) => {
+    const payload = event.payload as any
+    chatMessages.value.push({
+      role: 'tool',
+      content: '',
+      toolName: payload.name,
+      arguments: payload.arguments,
+      result: payload.result,
+    })
+    scrollToBottom()
+  })
+
   chatDoneUnlisten = await listen('ollama-chat-done', () => {
-    chatMessages.value.push({ role: 'assistant', content: streamingContent.value })
+    if (streamingContent.value) {
+      chatMessages.value.push({ role: 'assistant', content: streamingContent.value })
+    }
     streamingContent.value = ''
     chatting.value = false
     cleanupChatListeners()
@@ -452,6 +686,7 @@ const sendChat = async () => {
       host: hostInput.value || undefined,
       model: chatModel.value,
       messages: messagesForApi,
+      tools: toolsForApi.length > 0 ? toolsForApi : undefined,
     })
   } catch (e) {
     chatting.value = false
@@ -464,6 +699,7 @@ const sendChat = async () => {
 const cleanupChatListeners = () => {
   if (chatChunkUnlisten) { chatChunkUnlisten(); chatChunkUnlisten = null }
   if (chatDoneUnlisten) { chatDoneUnlisten(); chatDoneUnlisten = null }
+  if (chatToolUnlisten) { chatToolUnlisten(); chatToolUnlisten = null }
 }
 
 const clearChat = () => {
@@ -474,6 +710,7 @@ const clearChat = () => {
 // ===== 生命周期 =====
 onMounted(() => {
   checkService()
+  loadTools()
 })
 
 onBeforeUnmount(() => {
@@ -697,5 +934,130 @@ html.light .ollama-tabs :deep(.el-tabs__header) {
   font-size: 13px;
   line-height: 1.5;
   color: var(--text-primary);
+}
+
+/* 工具消息 */
+.chat-message.tool .msg-role.tool {
+  background: var(--accent-orange);
+}
+
+.tool-msg {
+  max-width: 85%;
+  background: rgba(249, 115, 22, 0.08);
+  border: 1px solid rgba(249, 115, 22, 0.3);
+}
+
+.tool-name {
+  font-weight: 600;
+  color: var(--accent-orange);
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.tool-section {
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.tool-label {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.tool-section code {
+  background: var(--bg-input);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.tool-result {
+  background: var(--bg-input);
+  padding: 8px 10px;
+  border-radius: 4px;
+  margin-top: 4px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* 工具管理弹窗 */
+.tool-mgr {
+  display: flex;
+  gap: 16px;
+  min-height: 480px;
+}
+
+.tool-list {
+  width: 200px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border-color);
+  padding-right: 12px;
+  overflow-y: auto;
+}
+
+.tool-item {
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  margin-bottom: 6px;
+  border: 1px solid transparent;
+  transition: all 0.2s;
+}
+
+.tool-item:hover {
+  background: var(--bg-input);
+}
+
+.tool-item.active {
+  background: rgba(0, 212, 255, 0.1);
+  border-color: var(--accent-cyan);
+}
+
+.tool-item-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+.tool-item-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.empty-tip {
+  text-align: center;
+  color: var(--text-secondary);
+  padding: 40px 8px;
+  font-size: 13px;
+}
+
+.tool-editor {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.editor-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.editor-form {
+  flex: 1;
+  overflow-y: auto;
 }
 </style>

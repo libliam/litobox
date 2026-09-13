@@ -364,6 +364,7 @@ fn main() {
             ollama::ollama_pull,
             ollama::ollama_chat,
             ollama::ollama_stop,
+            ollama::ollama_run_tool,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
