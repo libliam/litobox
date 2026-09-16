@@ -21,6 +21,41 @@ html, body {
   height: 100%;
 }
 
+/* ===== 页面高度自适应（新页面标准）=====
+   用法：根容器写 `class="tool-container fill-height"`，
+   最后一个 .tool-card（通常是输入/操作区）会自动撑满剩余可视高度，
+   避免窗口最大化/全屏时内容区下方留下大片空白。
+   Tab 栏（.sticky-card）不参与拉伸，保持原高度。
+   旧页面未加 .fill-height，行为不变。 */
+.tool-container.fill-height {
+  display: flex;
+  flex-direction: column;
+}
+
+.tool-container.fill-height > .sticky-card {
+  flex-shrink: 0;
+}
+
+.tool-container.fill-height > .tool-card:last-child {
+  flex: 1 1 auto;
+  min-height: 240px;
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tool-container.fill-height > .tool-card:last-child > .card-header {
+  flex-shrink: 0;
+}
+
+.tool-container.fill-height > .tool-card:last-child > .card-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
 .tool-section {
   margin-bottom: 20px;
 }

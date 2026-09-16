@@ -10,9 +10,15 @@
   - Tab 栏放在独立的 `.tool-card.sticky-card` 中，使用 `class="xxx-tabs"`（自定义类名）
   - 各 Tab 内容用 `v-if="activeTab === 'xxx'"` 的 `.tool-card` 独立渲染，不要放在 el-tab-pane 内
   - 参考：PdfTool.vue、ImageToolEnhanced.vue
+
+  ⚠️ 高度自适应规范（强制）：
+  - 根容器必须写 `class="tool-container fill-height"`，最后一个 `.tool-card` 会撑满剩余可视高度
+  - 这样窗口最大化/全屏时内容区不会在下方留出大片空白
+  - 若本页有固定高度的内部容器，需额外提供撑满分支（参考 OllamaTool.vue 的 `chat-mode`）
+  - 全局工具类定义在 `src/style/main.css`，页面 scoped 样式不要重复实现
 -->
 <template>
-  <div class="tool-container">
+  <div class="tool-container fill-height">
     <!-- Tab 栏（sticky 置顶） -->
     <div class="tool-card sticky-card">
       <el-tabs v-model="activeTab" class="new-tool-tabs">

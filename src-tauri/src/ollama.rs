@@ -315,7 +315,16 @@ pub struct ToolDef {
     pub code: String,
 }
 
+/// 子进程输出解码：先试 UTF-8，失败回退 GBK（与 log_viewer / file_encoding 一致）
+fn decode_output(bytes: &[u8]) -> String {
+    match std::str::from_utf8(bytes) {
+        Ok(s) => s.trim().to_string(),
+        Err(_) => encoding_rs::GBK.decode(bytes).0.trim().to_string(),
+    }
+}
+
 /// 执行 Python 工具代码，参数通过 stdin 传入（JSON），stdout 作为结果返回
+/// 依次尝试 python / py / python3，兼容仅安装 py 启动器或 python 未加入 PATH 的环境
 fn run_python_tool(code: &str, args: &serde_json::Value) -> Result<String, String> {
     let args_json = serde_json::to_string(args).unwrap_or("{}".to_string());
     // ponytail: 把 params 注入全局作用域，用户代码可直接用参数名或 params["name"]
@@ -327,37 +336,63 @@ fn run_python_tool(code: &str, args: &serde_json::Value) -> Result<String, Strin
     use std::io::Write;
     use std::process::{Command, Stdio};
 
-    let mut cmd = Command::new("python");
-    cmd.arg("-c")
-        .arg(&wrapper)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+    let mut output = None;
+    let mut last_err = String::new();
 
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    for exe in ["python", "py", "python3"] {
+        let mut cmd = Command::new(exe);
+        cmd.arg("-c")
+            .arg(&wrapper)
+            // ponytail: 强制子进程 stdio 用 UTF-8，避免中文参数（stdin）和中文输出（stdout/stderr）在 GBK 控制台下乱码
+            .env("PYTHONIOENCODING", "utf-8")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        }
+
+        let mut child = match cmd.spawn() {
+            Ok(c) => c,
+            Err(e) => {
+                debug_log!("[ollama] 启动解释器 {} 失败，尝试下一个: {}", exe, e);
+                last_err = e.to_string();
+                continue;
+            }
+        };
+        debug_log!("[ollama] 使用解释器 {} 执行工具", exe);
+
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin
+                .write_all(args_json.as_bytes())
+                .map_err(|e| format!("写入参数失败: {}", e))?;
+        }
+
+        output = Some(
+            child
+                .wait_with_output()
+                .map_err(|e| format!("等待 Python 执行失败: {}", e))?,
+        );
+        break;
     }
 
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("启动 Python 失败（请确认已安装 python）: {}", e))?;
+    let output = match output {
+        Some(o) => o,
+        None => {
+            debug_log!("[ollama] 未找到可用 Python 解释器: {}", last_err);
+            return Err(format!(
+                "启动 Python 失败（请确认已安装 Python，且 python/py 已加入 PATH）: {}",
+                last_err
+            ));
+        }
+    };
 
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(args_json.as_bytes())
-            .map_err(|e| format!("写入参数失败: {}", e))?;
-    }
-
-    let output = child
-        .wait_with_output()
-        .map_err(|e| format!("等待 Python 执行失败: {}", e))?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stdout = decode_output(&output.stdout);
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(format!("Python 执行错误:\n{}", stderr));
+        return Err(format!("Python 执行错误:\n{}", decode_output(&output.stderr)));
     }
 
     Ok(if stdout.is_empty() {
@@ -591,4 +626,17 @@ pub async fn ollama_stop(host: Option<String>, name: String) -> Result<(), Strin
 
     debug_log!("[ollama] stopped model: {}", name);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::decode_output;
+
+    #[test]
+    fn decode_output_handles_utf8_and_gbk() {
+        assert_eq!(decode_output("字符数: 4".as_bytes()), "字符数: 4");
+        // GBK 编码的「中文」：非 UTF-8 字节必须回退 GBK，而不是变成替换字符
+        assert_eq!(decode_output(&[0xD6, 0xD0, 0xCE, 0xC4]), "中文");
+        assert_eq!(decode_output(b"  result\n"), "result");
+    }
 }

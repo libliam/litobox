@@ -1,5 +1,5 @@
 <template>
-  <div class="tool-container">
+  <div class="tool-container" :class="{ 'chat-mode': activeTab === 'chat' }">
     <!-- 服务状态条 -->
     <div class="tool-card">
       <div class="card-header">
@@ -156,7 +156,7 @@
     </div>
 
     <!-- Tab 3: 对话测试 -->
-    <div v-if="activeTab === 'chat'" class="tool-card">
+    <div v-if="activeTab === 'chat'" class="tool-card chat-card">
       <div class="card-header">
         <div class="header-left">
           <span class="card-title">对话测试</span>
@@ -175,6 +175,9 @@
             />
           </el-select>
           <el-button size="small" @click="loadModels" :disabled="chatting">刷新</el-button>
+          <el-button size="small" @click="sessionDialogVisible = true" :disabled="chatting">
+            会话{{ sessions.length > 1 ? ` (${sessions.length})` : '' }}
+          </el-button>
           <el-button size="small" type="danger" plain @click="clearChat" :disabled="chatting">清空</el-button>
         </div>
       </div>
@@ -245,13 +248,14 @@
             <div class="tool-item-name">{{ t.name }}</div>
             <div class="tool-item-desc">{{ t.description }}</div>
           </div>
-          <div v-if="tools.length === 0" class="empty-tip">暂无工具，点击"新增工具"开始</div>
+          <div v-if="tools.length === 0" class="empty-tip">暂无工具，点击"加载示例"快速体验，或"新增工具"自定义</div>
         </div>
 
         <!-- 工具编辑区 -->
         <div class="tool-editor">
           <div class="editor-actions">
             <el-button size="small" type="primary" @click="addTool">新增工具</el-button>
+            <el-button size="small" @click="loadExample">加载示例</el-button>
             <el-button
               v-if="editingIndex !== null"
               size="small"
@@ -305,6 +309,38 @@
             </el-form>
           </div>
         </div>
+      </div>
+    </el-dialog>
+
+    <!-- 历史会话弹窗 -->
+    <el-dialog v-model="sessionDialogVisible" title="历史会话" width="560px">
+      <div class="session-actions">
+        <el-button size="small" type="primary" @click="newSession()">新建会话</el-button>
+        <el-button
+          size="small"
+          type="danger"
+          plain
+          :disabled="sessions.length === 0"
+          @click="clearAllSessions"
+        >清空全部</el-button>
+      </div>
+      <div class="session-list">
+        <div
+          v-for="s in sortedSessions"
+          :key="s.id"
+          class="session-item"
+          :class="{ active: s.id === currentSessionId }"
+          @click="switchSession(s.id)"
+        >
+          <div class="session-main">
+            <div class="session-title">{{ sessionTitle(s) }}</div>
+            <div class="session-meta">
+              {{ formatTime(s.updatedAt) }} · {{ s.messages.length }} 条消息
+            </div>
+          </div>
+          <el-button link type="danger" @click.stop="deleteSession(s.id)">删除</el-button>
+        </div>
+        <div v-if="sessions.length === 0" class="empty-tip">暂无历史会话</div>
       </div>
     </el-dialog>
 
@@ -372,6 +408,26 @@ const addTool = () => {
   })
   editingIndex.value = tools.value.length - 1
   currentTool.value = tools.value[editingIndex.value]
+}
+
+// 示例工具：可直接「测试运行」看效果（测试参数按类型生成，text 为 'test'）
+const EXAMPLE_TOOL: ToolDef = {
+  name: 'word_count',
+  description: '统计一段文本的字符数、词数、行数',
+  parameters: '{"type":"object","properties":{"text":{"type":"string","description":"待统计的文本"}},"required":["text"]}',
+  code: 'lines = text.splitlines()\nwords = text.split()\nprint(f"字符数: {len(text)}")\nprint(f"词数: {len(words)}")\nprint(f"行数: {len(lines)}")',
+}
+
+const loadExample = () => {
+  const i = tools.value.findIndex(t => t.name === EXAMPLE_TOOL.name)
+  if (i >= 0) {
+    selectTool(i)
+  } else {
+    tools.value.push({ ...EXAMPLE_TOOL })
+    selectTool(tools.value.length - 1)
+  }
+  saveTools()
+  ElMessage.success('已加载示例工具，点击「测试运行」查看效果')
 }
 
 const selectTool = (i: number) => {
@@ -609,13 +665,145 @@ const stopModel = async (row: any) => {
 const chatModel = ref('')
 const chatInput = ref('')
 const chatting = ref(false)
-const chatMessages = ref<ChatMsg[]>([])
 const streamingContent = ref('')
 const chatMessagesRef = ref<HTMLElement>()
 
 let chatChunkUnlisten: UnlistenFn | null = null
 let chatDoneUnlisten: UnlistenFn | null = null
 let chatToolUnlisten: UnlistenFn | null = null
+
+// ===== 历史会话（多段对话，最多保留 20 段）=====
+interface ChatSession {
+  id: string
+  title: string
+  updatedAt: number
+  messages: ChatMsg[]
+}
+
+const CHAT_STORAGE_KEY = 'ollama_chat_sessions'
+const LEGACY_CHAT_KEY = 'ollama_chat_history'
+const MAX_SESSIONS = 20
+const MAX_MESSAGES_PER_SESSION = 200
+
+const sessions = ref<ChatSession[]>([])
+const currentSessionId = ref('')
+const sessionDialogVisible = ref(false)
+
+const currentSession = computed(() => sessions.value.find(s => s.id === currentSessionId.value))
+
+// 用 computed 代理当前会话的消息，原有的 chatMessages.value.push / = [] 写法无需改动
+const chatMessages = computed<ChatMsg[]>({
+  get: () => currentSession.value?.messages ?? [],
+  set: (v) => { if (currentSession.value) currentSession.value.messages = v },
+})
+
+const sortedSessions = computed(() => [...sessions.value].sort((a, b) => b.updatedAt - a.updatedAt))
+
+// 标题取该会话第一条用户消息，用户无需手动命名
+const sessionTitle = (s: ChatSession) =>
+  s.title || s.messages.find(m => m.role === 'user')?.content.slice(0, 20) || '新会话'
+
+const formatTime = (ts: number) => new Date(ts).toLocaleString('zh-CN', { hour12: false })
+
+const genId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+
+const saveChat = () => {
+  try {
+    const s = currentSession.value
+    if (s) s.updatedAt = Date.now()
+    // ponytail: 每段最多 200 条、总共最多 20 段；只读不写内存状态，避免 deep watch 自触发
+    const data = sortedSessions.value.slice(0, MAX_SESSIONS).map(x => ({
+      ...x,
+      title: sessionTitle(x),
+      messages: x.messages.slice(-MAX_MESSAGES_PER_SESSION),
+    }))
+    localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(data))
+  } catch (e) {
+    console.error('保存对话记录失败', e)
+  }
+}
+
+const loadChat = () => {
+  try {
+    const saved = localStorage.getItem(CHAT_STORAGE_KEY)
+    if (saved) {
+      const arr = JSON.parse(saved)
+      if (Array.isArray(arr)) sessions.value = arr.filter(s => s && Array.isArray(s.messages))
+    }
+    // 兼容旧版单会话存储：迁移成一段会话后删除旧 key
+    if (sessions.value.length === 0) {
+      const legacy = localStorage.getItem(LEGACY_CHAT_KEY)
+      if (legacy) {
+        const msgs = JSON.parse(legacy)
+        if (Array.isArray(msgs) && msgs.length > 0) {
+          sessions.value = [{ id: genId(), title: '', updatedAt: Date.now(), messages: msgs }]
+        }
+        localStorage.removeItem(LEGACY_CHAT_KEY)
+      }
+    }
+  } catch (e) {
+    console.error('加载对话记录失败', e)
+  }
+  if (sessions.value.length === 0) newSession(true)
+  else currentSessionId.value = sortedSessions.value[0].id
+}
+
+const newSession = (silent = false) => {
+  const s: ChatSession = { id: genId(), title: '', updatedAt: Date.now(), messages: [] }
+  sessions.value.unshift(s)
+  if (sessions.value.length > MAX_SESSIONS) sessions.value = sortedSessions.value.slice(0, MAX_SESSIONS)
+  currentSessionId.value = s.id
+  saveChat()
+  if (!silent) {
+    sessionDialogVisible.value = false
+    ElMessage.success('已新建会话')
+  }
+}
+
+const switchSession = (id: string) => {
+  // 流式输出期间切换会把结果写进错误的会话，直接拦掉
+  if (chatting.value) {
+    ElMessage.warning('对话进行中，请等待本轮结束再切换')
+    return
+  }
+  sessionDialogVisible.value = false
+  if (id === currentSessionId.value) return
+  currentSessionId.value = id
+  scrollToBottom()
+}
+
+const deleteSession = async (id: string) => {
+  if (sessions.value.length <= 1) {
+    ElMessage.warning('至少保留一段会话')
+    return
+  }
+  try {
+    await ElMessageBox.confirm('删除后该段对话不可恢复，确定删除？', '删除确认', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+    })
+  } catch { return }
+  sessions.value = sessions.value.filter(s => s.id !== id)
+  if (currentSessionId.value === id) currentSessionId.value = sortedSessions.value[0]?.id ?? ''
+  saveChat()
+}
+
+const clearAllSessions = async () => {
+  try {
+    await ElMessageBox.confirm('将删除全部历史会话，此操作不可恢复。', '清空确认', {
+      type: 'warning',
+      confirmButtonText: '清空',
+      cancelButtonText: '取消',
+    })
+  } catch { return }
+  sessions.value = []
+  newSession(true)
+  ElMessage.success('已清空全部会话')
+}
+
+// 消息数量少、变动不频繁，用 deep watch 统一兜住所有写入点（含清空）
+watch(chatMessages, saveChat, { deep: true })
 
 const scrollToBottom = () => {
   nextTick(() => {
@@ -624,6 +812,11 @@ const scrollToBottom = () => {
     }
   })
 }
+
+// 切回对话 Tab 时滚到底部，避免恢复的历史记录停在顶部
+watch(activeTab, (val) => {
+  if (val === 'chat') scrollToBottom()
+})
 
 const sendChat = async () => {
   if (!chatModel.value) {
@@ -711,6 +904,8 @@ const clearChat = () => {
 onMounted(() => {
   checkService()
   loadTools()
+  loadChat()
+  scrollToBottom()
 })
 
 onBeforeUnmount(() => {
@@ -844,8 +1039,44 @@ html.light .ollama-tabs :deep(.el-tabs__header) {
   height: 500px;
 }
 
+/* ponytail: 对话 Tab 下让卡片撑满可视高度，避免下方大片留白；其他 Tab 保持原有滚动布局 */
+.tool-container.chat-mode {
+  display: flex;
+  flex-direction: column;
+}
+
+.tool-container.chat-mode > .tool-card:not(.chat-card) {
+  flex-shrink: 0;
+}
+
+.tool-container.chat-mode .chat-card {
+  flex: 1 1 auto;
+  min-height: 320px;
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tool-container.chat-mode .chat-card .card-header {
+  flex-shrink: 0;
+}
+
+.tool-container.chat-mode .chat-card .card-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tool-container.chat-mode .chat-container {
+  height: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .chat-messages {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 12px;
   background: var(--bg-input);
@@ -919,6 +1150,7 @@ html.light .ollama-tabs :deep(.el-tabs__header) {
   display: flex;
   gap: 10px;
   align-items: flex-end;
+  flex-shrink: 0;
 }
 
 .chat-input-area :deep(.el-textarea) {
@@ -1033,6 +1265,61 @@ html.light .ollama-tabs :deep(.el-tabs__header) {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
+}
+
+/* 历史会话弹窗 */
+.session-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.session-list {
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.session-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  margin-bottom: 6px;
+  border: 1px solid transparent;
+  transition: all 0.2s;
+}
+
+.session-item:hover {
+  background: var(--bg-input);
+}
+
+.session-item.active {
+  background: rgba(0, 212, 255, 0.1);
+  border-color: var(--accent-cyan);
+}
+
+.session-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.session-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-meta {
+  font-size: 12px;
+  color: var(--text-secondary);
 }
 
 .empty-tip {
