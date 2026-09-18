@@ -89,6 +89,56 @@ export function sortLines(text: string): string {
   return text.split('\n').sort().join('\n')
 }
 
+export function sortLinesDescending(text: string): string {
+  return text.split('\n').sort((a, b) => b.localeCompare(a)).join('\n')
+}
+
+export function sortLinesIgnoreCase(text: string): string {
+  return text.split('\n').sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase())).join('\n')
+}
+
+export function sortLinesNumeric(text: string): string {
+  return text.split('\n').sort((a, b) => {
+    const numA = parseFloat(a) || 0
+    const numB = parseFloat(b) || 0
+    return numA - numB
+  }).join('\n')
+}
+
+export function sortLinesNatural(text: string): string {
+  return text.split('\n').sort((a, b) =>
+    a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
+  ).join('\n')
+}
+
+export function sortLinesRandom(text: string): string {
+  const lines = text.split('\n')
+  for (let i = lines.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[lines[i], lines[j]] = [lines[j], lines[i]]
+  }
+  return lines.join('\n')
+}
+
+export function sortLinesUnique(text: string): string {
+  const seen = new Set<string>()
+  return text.split('\n').filter(line => {
+    const trimmed = line.trim()
+    if (seen.has(trimmed)) return false
+    seen.add(trimmed)
+    return true
+  }).sort().join('\n')
+}
+
+export function sortLinesByColumn(text: string, delimiter: string, columnIndex: number, descending = false): string {
+  return text.split('\n').sort((a, b) => {
+    const valA = a.split(delimiter)[columnIndex] || ''
+    const valB = b.split(delimiter)[columnIndex] || ''
+    const result = valA.localeCompare(valB)
+    return descending ? -result : result
+  }).join('\n')
+}
+
 export function toKebabCase(text: string): string {
   return text.replace(/([A-Z])/g, (_, char) => '-' + char)
     .replace(/[_\s]+/g, '-')

@@ -130,6 +130,10 @@ const ChangelogView = defineAsyncComponent(() => import('@/views/ChangelogView.v
 const EntityGenTool = defineAsyncComponent(() => import('@/views/EntityGenTool.vue'))
 const FolderDiffTool = defineAsyncComponent(() => import('@/views/FolderDiffTool.vue'))
 const TotpTool = defineAsyncComponent(() => import('@/views/TotpTool.vue'))
+const HexViewerTool = defineAsyncComponent(() => import('@/views/HexViewerTool.vue'))
+const FileEncodingTool = defineAsyncComponent(() => import('@/views/FileEncodingTool.vue'))
+const EmojiPanelTool = defineAsyncComponent(() => import('@/views/EmojiPanelTool.vue'))
+const FontPreviewTool = defineAsyncComponent(() => import('@/views/FontPreviewTool.vue'))
 const OllamaTool = defineAsyncComponent(() => import('@/views/OllamaTool.vue'))
 import CommandPalette from '@/components/CommandPalette.vue'
 import QuickLaunchOverlay from '@/components/QuickLaunchOverlay.vue'
@@ -231,6 +235,10 @@ const toolComponentMap: Record<string, any> = {
   entityGen: EntityGenTool,
   folderDiff: FolderDiffTool,
   totp: TotpTool,
+  hexViewer: HexViewerTool,
+  fileEncoding: FileEncodingTool,
+  emojiPanel: EmojiPanelTool,
+  fontPreview: FontPreviewTool,
   ollama: OllamaTool,
 }
 

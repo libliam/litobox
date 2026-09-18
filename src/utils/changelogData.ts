@@ -15,8 +15,15 @@ export interface ChangelogData {
 }
 
 export const changelogData: ChangelogData = {
-  versionRange: "从 v1.0 到 v8.11.1 更新内容",
+  versionRange: "从 v1.0 到 v8.12.0 更新内容",
   entries: [
+  {
+    "version": "8.12.0",
+    "date": "2026-09-17",
+    "content": "Ollama 对话测试历史改为多段会话管理：聊天记录从单会话（新对话即覆盖旧记录）升级为会话列表，最多保留 20 段、每段最多 200 条消息，历史会话弹窗支持新建/切换/删除/清空全部，标题自动取该段首条用户消息无需手动命名，列表按最近使用时间排序并显示时间与消息数；旧版单会话数据首次打开自动迁移为一段会话不丢失；流式输出期间禁止切换会话避免结果写错段；Python 工具执行修复（依次尝试 python/py/python3 解释器并在未安装时给出可操作提示、子进程强制 UTF-8 输出并对返回内容做 UTF-8/GBK 双编码解码，解决中文结果乱码/执行失败）",
+    "isEnhancement": true,
+    "isNewFeature": false
+  },
   {
     "version": "8.11.1",
     "date": "2026-09-14",

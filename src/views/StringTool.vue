@@ -133,6 +133,24 @@
               <el-button size="small" @click="applyBatch('toFullWidth')">转全角</el-button>
               <el-button size="small" @click="applyBatch('toHalfWidth')">转半角</el-button>
             </div>
+            <div class="action-group sort-group">
+              <span class="group-label">行排序</span>
+              <div class="sort-buttons">
+                <el-button size="small" @click="applySort('asc')">升序</el-button>
+                <el-button size="small" @click="applySort('desc')">降序</el-button>
+                <el-button size="small" @click="applySort('ignoreCase')">忽略大小写</el-button>
+                <el-button size="small" @click="applySort('numeric')">数字排序</el-button>
+                <el-button size="small" @click="applySort('natural')">自然排序</el-button>
+                <el-button size="small" @click="applySort('random')">随机打乱</el-button>
+                <el-button size="small" @click="applySort('unique')">去重排序</el-button>
+              </div>
+              <div class="sort-by-column">
+                <el-input v-model="sortDelimiter" size="small" placeholder="分隔符" style="width: 100px" />
+                <el-input-number v-model="sortColumnIndex" size="small" :min="0" :max="99" controls-position="right" style="width: 90px" />
+                <el-checkbox v-model="sortDescending" size="small">降序</el-checkbox>
+                <el-button size="small" type="primary" @click="applySort('byColumn')">按列排序</el-button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -198,6 +216,11 @@ const separator = ref(',')
 // 批量处理状态
 const batchInputText = ref('')
 const batchResults = ref<string[]>([])
+
+// 排序状态
+const sortDelimiter = ref(',')
+const sortColumnIndex = ref(0)
+const sortDescending = ref(false)
 
 const operationMap: Record<string, (text: string) => string> = {
   toUpperCase: stringUtils.toUpperCase,
@@ -295,6 +318,63 @@ const applyBatch = (operation: string) => {
   })
 
   ElMessage.success(`已处理 ${batchResults.value.length} 行文本`)
+}
+
+// 排序方法（对整个文本按行排序，非逐行处理）
+const applySort = (mode: string) => {
+  if (!batchInputText.value.trim()) {
+    ElMessage.warning('请先输入文本')
+    return
+  }
+
+  let result: string
+  switch (mode) {
+    case 'asc':
+      result = stringUtils.sortLines(batchInputText.value)
+      break
+    case 'desc':
+      result = stringUtils.sortLinesDescending(batchInputText.value)
+      break
+    case 'ignoreCase':
+      result = stringUtils.sortLinesIgnoreCase(batchInputText.value)
+      break
+    case 'numeric':
+      result = stringUtils.sortLinesNumeric(batchInputText.value)
+      break
+    case 'natural':
+      result = stringUtils.sortLinesNatural(batchInputText.value)
+      break
+    case 'random':
+      result = stringUtils.sortLinesRandom(batchInputText.value)
+      break
+    case 'unique':
+      result = stringUtils.sortLinesUnique(batchInputText.value)
+      break
+    case 'byColumn':
+      result = stringUtils.sortLinesByColumn(
+        batchInputText.value,
+        sortDelimiter.value,
+        sortColumnIndex.value,
+        sortDescending.value
+      )
+      break
+    default:
+      result = stringUtils.sortLines(batchInputText.value)
+  }
+
+  batchResults.value = result.split('\n')
+
+  store.addHistory({
+    tool: 'string',
+    action: `sort-${mode}`,
+    inputPreview: batchInputText.value.slice(0, 50),
+    outputPreview: result.slice(0, 50),
+    inputFull: batchInputText.value,
+    outputFull: result,
+    options: { activeTab: activeTab.value, sortDelimiter: sortDelimiter.value, sortColumnIndex: sortColumnIndex.value, sortDescending: sortDescending.value }
+  })
+
+  ElMessage.success('排序完成')
 }
 
 const handleBatchClear = () => {
@@ -463,6 +543,26 @@ html.light .string-tabs :deep(.el-tabs__header) {
   flex-wrap: wrap;
   gap: 8px;
   flex: 1;
+}
+
+/* 排序组样式 */
+.sort-group {
+  flex-wrap: wrap;
+}
+.sort-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 1;
+}
+.sort-by-column {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  width: 100%;
+  margin-top: 8px;
+  padding-left: 80px;
 }
 
 /* 批量处理样式 */
