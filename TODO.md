@@ -22,12 +22,23 @@
 
 修改内容：新增 3 个文件（emojiData.ts、EmojiPanelTool.vue、FontPreviewTool.vue），修改 stringUtils.ts、StringTool.vue、App.vue、store/index.ts。`vue-tsc --noEmit` 类型检查通过。
 
-## 批次 2：系统命令封装工具
+## 批次 2：系统命令封装工具 ✅ 已完成
 
 需要后端调用 Windows 系统命令 / 操作注册表。
 
-- [ ] **Ping / Traceroute** — 可视化 ICMP Ping（延迟、丢包率、TTL）与 Traceroute（路由跳数、每跳延迟）。后端封装 `ping` / `tracert` 命令，实时输出进度。category: system。
-- [ ] **右键菜单管理** — 管理 Windows 右键菜单：文件/文件夹/桌面右键的"新建"、"发送到"、自定义项的增删启用。通过注册表操作，自动备份。category: system。
+- [x] **Ping / Traceroute** — 可视化 ICMP Ping（延迟、丢包率、TTL）与 Traceroute（路由跳数、每跳延迟）。后端封装 `ping` / `tracert` 命令，实时输出进度。category: system。
+  - 后端 `src-tauri/src/ping_tools.rs`：spawn 子进程逐行读取 stdout，通过 `ping-event` / `tracert-event` 事件推送进度；解析中英文 ping 输出（回复行/超时行/统计行）和 tracert 跳行。支持取消。
+  - 前端 `src/views/PingTool.vue`：Ping Tab（次数/超时/包大小可调，实时回复列表+统计卡片）、Traceroute Tab（最大跳数/超时可调，逐跳表格）。
+  - 解析函数含单元测试（中英文 ping 回复、统计、tracert 正常/超时跳）。
+- [x] **右键菜单管理** — 管理 Windows 右键菜单：文件/文件夹/桌面右键的自定义项增删，自动备份。category: system。
+  - 后端 `src-tauri/src/context_menu.rs`：通过 `reg` 命令操作注册表（HKCR\*\shell、HKCR\Directory\shell、HKCR\Directory\Background\shell）。增删前自动 `reg export` 备份到 `%LOCALAPPDATA%\com.dev.toolbox\context_menu_backups\`，支持备份列表/恢复/删除。系统内置项标记为只读。
+  - 增强（读取范围）：原实现只读 3 个 `shell` 静态路径，实际菜单项严重偏少。改为 `REG_SOURCES` 多源读取——静态菜单项（`*\shell`、`Directory\shell`、`Directory\Background\shell`）+ COM 处理器（`shellex\ContextMenuHandlers`）+ 通用位置（`AllFilesystemObjects`、`Folder`），共 11 个注册表来源；COM 项解析 CLSID 显示名与 `InprocServer32` 的 DLL 路径，按 DLL 是否位于系统目录判定系统内置/第三方，并读取 Blocked 列表标注「已屏蔽」。
+  - 增强（删除安全）：第三方项可删除，删除前用 `reg export` **精确备份该单项**（非整段导出），并加 `is_allowed_item_path` 白名单校验（仅允许 `REG_SOURCES` 基路径下的单级子键）；备份接口改为返回数组（一个 scope 含多个来源）。
+  - 前端 `src/views/ContextMenuTool.vue`：三 scope 切换、自定义项卡片列表、添加对话框（键名/显示名/命令/图标）、备份管理对话框；列表项展示来源标签、COM 标记、已屏蔽标记、处理器 DLL 路径，`item_path` 作为唯一标识与删除依据。
+  - 增强（筛选）：列表支持关键词搜索（显示名/键名/命令/处理器）+ 类型（静态项/COM）+ 归属（自定义/系统/已屏蔽）组合筛选，实时显示命中数量，一键重置。
+  - 零新增依赖（复用 dirs/encoding_rs，不引入 winreg/chrono）。
+
+修改内容：新增后端 2 个文件（ping_tools.rs、context_menu.rs），前端 2 个 client（pingClient.ts、contextMenuClient.ts）+ 2 个视图（PingTool.vue、ContextMenuTool.vue），修改 main.rs（注册 mod+命令）、App.vue（路由）、store/index.ts（TOOL_LIST 两项）。`vue-tsc --noEmit` 类型检查通过，`cargo check` 编译通过，7 个单元测试全部通过。
 
 ## 批次 3：需要新依赖的工具
 

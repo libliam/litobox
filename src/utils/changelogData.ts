@@ -15,8 +15,22 @@ export interface ChangelogData {
 }
 
 export const changelogData: ChangelogData = {
-  versionRange: "从 v1.0 到 v8.12.0 更新内容",
+  versionRange: "从 v1.0 到 v8.14.0 更新内容",
   entries: [
+  {
+    "version": "8.14.0",
+    "date": "2026-09-18",
+    "content": "右键菜单管理工具：集中管理 Windows 文件/文件夹/桌面右键的自定义菜单项，读取范围覆盖静态菜单项（`*\\shell`、`Directory\\shell`、`Directory\\Background\\shell`）与 COM 处理器（`shellex\\ContextMenuHandlers`，含 `AllFilesystemObjects`、`Folder` 等通用位置），大幅补齐真实菜单项数量；COM 项自动解析 CLSID 显示名与处理器 DLL 路径，依据 DLL 所在目录（系统目录 / 第三方路径）判定系统内置项（只读）与第三方项（可删除），并标注被 Windows 屏蔽的项；支持新增自定义菜单项（键名/显示名/命令/图标），删除第三方项前用 `reg export` 精确备份该单项（防误删），备份记录支持列表/恢复/删除，删除路径经白名单校验；列表支持关键词搜索（显示名/键名/命令/处理器）与类型（静态项/COM）、归属（自定义/系统/已屏蔽）筛选，并实时显示命中数量；零新增依赖",
+    "isEnhancement": false,
+    "isNewFeature": true
+  },
+  {
+    "version": "8.13.0",
+    "date": "2026-09-18",
+    "content": "三个纯前端工具：**文本排序增强**（字符串工具批量处理 Tab 新增行排序操作组：升序/降序/忽略大小写/数字排序/自然排序/随机打乱/去重排序/按列排序，支持自定义分隔符与列索引，底层函数在 stringUtils.ts）；**表情符号面板**（26 分类 emoji 浏览：笑脸/动物/食物/植物/活动/旅行/物品/符号/旗帜/颜文字/emoji组合/数学/几何/货币/星座/棋类/技术/标点等，搜索同时匹配字符与名称，hover 纯 CSS `:hover::after` 显示名称零组件开销避免卡顿，最近使用记录，点击复制）；**字体预览工具**（100+ 常用字体列表，前端渲染宽度对比法检测字体可用性，自定义预览文本/字号/粗细，搜索过滤，点击复制字体名）",
+    "isEnhancement": true,
+    "isNewFeature": true
+  },
   {
     "version": "8.12.0",
     "date": "2026-09-17",

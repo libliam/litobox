@@ -113,6 +113,7 @@ const ServiceListView = defineAsyncComponent(() => import('@/views/ServiceListVi
 const HotkeyView = defineAsyncComponent(() => import('@/views/HotkeyView.vue'))
 const HostsView = defineAsyncComponent(() => import('@/views/HostsView.vue'))
 const NetworkConnections = defineAsyncComponent(() => import('@/views/NetworkConnections.vue'))
+const ContextMenuTool = defineAsyncComponent(() => import('@/views/ContextMenuTool.vue'))
 const ScheduledTasksView = defineAsyncComponent(() => import('@/views/ScheduledTasksView.vue'))
 const StartupItemsView = defineAsyncComponent(() => import('@/views/StartupItemsView.vue'))
 const LogViewerView = defineAsyncComponent(() => import('@/views/LogViewerView.vue'))
@@ -219,6 +220,7 @@ const toolComponentMap: Record<string, any> = {
   hotkeyViewer: HotkeyView,
   hostsManager: HostsView,
   networkConnections: NetworkConnections,
+  contextMenu: ContextMenuTool,
   scheduledTasks: ScheduledTasksView,
   startupItems: StartupItemsView,
   logViewer: LogViewerView,

@@ -48,6 +48,8 @@ mod pomodoro;
 mod log_viewer;
 mod window_state;
 mod ollama;
+mod ping_tools;
+mod context_menu;
 
 use tauri::{Manager, Emitter};
 use tauri_plugin_dialog::{DialogExt, MessageDialogBuilder, MessageDialogButtons, MessageDialogKind};
@@ -365,6 +367,21 @@ fn main() {
             ollama::ollama_chat,
             ollama::ollama_stop,
             ollama::ollama_run_tool,
+            // Ping / Traceroute 命令
+            ping_tools::ping_start,
+            ping_tools::ping_cancel,
+            ping_tools::ping_get_status,
+            ping_tools::ping_echo,
+            ping_tools::tracert_start,
+            ping_tools::tracert_cancel,
+            // 右键菜单管理命令
+            context_menu::cm_list_items,
+            context_menu::cm_add_item,
+            context_menu::cm_delete_item,
+            context_menu::cm_backup,
+            context_menu::cm_restore,
+            context_menu::cm_list_backups,
+            context_menu::cm_delete_backup,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
