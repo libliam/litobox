@@ -46,6 +46,15 @@
               </div>
             </div>
           </div>
+          <div class="separator-row">
+            <span class="separator-label">拼接分隔符</span>
+            <el-input
+              v-model="separator"
+              placeholder="自定义分隔符"
+              size="small"
+              style="width: 160px"
+            />
+          </div>
         </div>
       </div>
 
@@ -84,20 +93,6 @@
           />
         </div>
       </div>
-
-      <div class="tool-card">
-        <div class="card-header">
-          <span class="card-title">分隔符设置</span>
-        </div>
-        <div class="card-body">
-          <el-input
-            v-model="separator"
-            placeholder="自定义分隔符（用于拼接操作）"
-            size="small"
-            style="width: 260px"
-          />
-        </div>
-      </div>
     </div>
 
     <!-- 批量处理 Tab -->
@@ -109,29 +104,53 @@
         <div class="card-body">
           <div class="action-grid">
             <div class="action-group">
-              <span class="group-label">大小写</span>
-              <el-button size="small" @click="applyBatch('toUpperCase')">转大写</el-button>
-              <el-button size="small" @click="applyBatch('toLowerCase')">转小写</el-button>
-              <el-button size="small" @click="applyBatch('capitalize')">首字母大写</el-button>
-              <el-button size="small" @click="applyBatch('toCamelCase')">转驼峰</el-button>
-              <el-button size="small" @click="applyBatch('toPascalCase')">转大驼峰</el-button>
-              <el-button size="small" @click="applyBatch('toSnakeCase')">转下划线</el-button>
-              <el-button size="small" @click="applyBatch('toKebabCase')">转短横线</el-button>
+              <div class="group-label">大小写</div>
+              <div class="group-buttons">
+                <el-button size="small" @click="applyBatch('toUpperCase')">转大写</el-button>
+                <el-button size="small" @click="applyBatch('toLowerCase')">转小写</el-button>
+                <el-button size="small" @click="applyBatch('capitalize')">首字母大写</el-button>
+                <el-button size="small" @click="applyBatch('toCamelCase')">转驼峰</el-button>
+                <el-button size="small" @click="applyBatch('toPascalCase')">转大驼峰</el-button>
+                <el-button size="small" @click="applyBatch('toSnakeCase')">转下划线</el-button>
+                <el-button size="small" @click="applyBatch('toKebabCase')">转短横线</el-button>
+              </div>
             </div>
             <div class="action-group">
-              <span class="group-label">空格处理</span>
-              <el-button size="small" @click="applyBatch('trimAllSpaces')">去除所有空格</el-button>
-              <el-button size="small" @click="applyBatch('normalizeSpaces')">规范化空格</el-button>
+              <div class="group-label">空格处理</div>
+              <div class="group-buttons">
+                <el-button size="small" @click="applyBatch('trimAllSpaces')">去除所有空格</el-button>
+                <el-button size="small" @click="applyBatch('normalizeSpaces')">规范化空格</el-button>
+              </div>
             </div>
             <div class="action-group">
-              <span class="group-label">文本处理</span>
-              <el-button size="small" @click="applyBatch('removeEmptyLines')">删除空行</el-button>
-              <el-button size="small" @click="applyBatch('removeDuplicates')">去重</el-button>
-              <el-button size="small" @click="applyBatch('reverseLines')">行反转</el-button>
-              <el-button size="small" @click="applyBatch('sortLines')">行排序</el-button>
-              <el-button size="small" @click="applyBatch('reverseString')">反转字符串</el-button>
-              <el-button size="small" @click="applyBatch('toFullWidth')">转全角</el-button>
-              <el-button size="small" @click="applyBatch('toHalfWidth')">转半角</el-button>
+              <div class="group-label">文本处理</div>
+              <div class="group-buttons">
+                <el-button size="small" @click="applyBatch('removeEmptyLines')">删除空行</el-button>
+                <el-button size="small" @click="applyBatch('removeDuplicates')">去重</el-button>
+                <el-button size="small" @click="applyBatch('reverseLines')">行反转</el-button>
+                <el-button size="small" @click="applyBatch('sortLines')">行排序</el-button>
+                <el-button size="small" @click="applyBatch('reverseString')">反转字符串</el-button>
+                <el-button size="small" @click="applyBatch('toFullWidth')">转全角</el-button>
+                <el-button size="small" @click="applyBatch('toHalfWidth')">转半角</el-button>
+              </div>
+            </div>
+            <div class="action-group sort-group">
+              <div class="group-label">行排序</div>
+              <div class="group-buttons">
+                <el-button size="small" @click="applySort('asc')">升序</el-button>
+                <el-button size="small" @click="applySort('desc')">降序</el-button>
+                <el-button size="small" @click="applySort('ignoreCase')">忽略大小写</el-button>
+                <el-button size="small" @click="applySort('numeric')">数字排序</el-button>
+                <el-button size="small" @click="applySort('natural')">自然排序</el-button>
+                <el-button size="small" @click="applySort('random')">随机打乱</el-button>
+                <el-button size="small" @click="applySort('unique')">去重排序</el-button>
+              </div>
+              <div class="sort-by-column">
+                <el-input v-model="sortDelimiter" size="small" placeholder="分隔符" style="width: 100px" />
+                <el-input-number v-model="sortColumnIndex" size="small" :min="0" :max="99" controls-position="right" style="width: 90px" />
+                <el-checkbox v-model="sortDescending" size="small">降序</el-checkbox>
+                <el-button size="small" type="primary" @click="applySort('byColumn')">按列排序</el-button>
+              </div>
             </div>
           </div>
         </div>
@@ -198,6 +217,11 @@ const separator = ref(',')
 // 批量处理状态
 const batchInputText = ref('')
 const batchResults = ref<string[]>([])
+
+// 排序状态
+const sortDelimiter = ref(',')
+const sortColumnIndex = ref(0)
+const sortDescending = ref(false)
 
 const operationMap: Record<string, (text: string) => string> = {
   toUpperCase: stringUtils.toUpperCase,
@@ -295,6 +319,63 @@ const applyBatch = (operation: string) => {
   })
 
   ElMessage.success(`已处理 ${batchResults.value.length} 行文本`)
+}
+
+// 排序方法（对整个文本按行排序，非逐行处理）
+const applySort = (mode: string) => {
+  if (!batchInputText.value.trim()) {
+    ElMessage.warning('请先输入文本')
+    return
+  }
+
+  let result: string
+  switch (mode) {
+    case 'asc':
+      result = stringUtils.sortLines(batchInputText.value)
+      break
+    case 'desc':
+      result = stringUtils.sortLinesDescending(batchInputText.value)
+      break
+    case 'ignoreCase':
+      result = stringUtils.sortLinesIgnoreCase(batchInputText.value)
+      break
+    case 'numeric':
+      result = stringUtils.sortLinesNumeric(batchInputText.value)
+      break
+    case 'natural':
+      result = stringUtils.sortLinesNatural(batchInputText.value)
+      break
+    case 'random':
+      result = stringUtils.sortLinesRandom(batchInputText.value)
+      break
+    case 'unique':
+      result = stringUtils.sortLinesUnique(batchInputText.value)
+      break
+    case 'byColumn':
+      result = stringUtils.sortLinesByColumn(
+        batchInputText.value,
+        sortDelimiter.value,
+        sortColumnIndex.value,
+        sortDescending.value
+      )
+      break
+    default:
+      result = stringUtils.sortLines(batchInputText.value)
+  }
+
+  batchResults.value = result.split('\n')
+
+  store.addHistory({
+    tool: 'string',
+    action: `sort-${mode}`,
+    inputPreview: batchInputText.value.slice(0, 50),
+    outputPreview: result.slice(0, 50),
+    inputFull: batchInputText.value,
+    outputFull: result,
+    options: { activeTab: activeTab.value, sortDelimiter: sortDelimiter.value, sortColumnIndex: sortColumnIndex.value, sortDescending: sortDescending.value }
+  })
+
+  ElMessage.success('排序完成')
 }
 
 const handleBatchClear = () => {
@@ -444,25 +525,69 @@ html.light .string-tabs :deep(.el-tabs__header) {
 .action-grid {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 10px;
 }
 .action-group {
   display: flex;
   align-items: flex-start;
-  gap: 16px;
+  gap: 14px;
+  padding: 8px 0;
+  border-bottom: 1px dashed var(--border-color);
+  max-width: 760px;
+  margin: 0 auto;
+  width: 100%;
+}
+.action-group:last-child {
+  border-bottom: none;
 }
 .group-label {
   font-size: 12px;
-  color: var(--text-secondary);
-  min-width: 80px;
-  padding-top: 4px;
-  font-weight: 500;
+  color: var(--accent-cyan);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  min-width: 72px;
+  padding-top: 6px;
+  flex-shrink: 0;
+  text-align: left;
 }
 .group-buttons {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
   flex: 1;
+}
+
+/* 排序组样式 */
+.sort-group {
+  flex-wrap: wrap;
+}
+.sort-by-column {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  width: 100%;
+  padding-top: 8px;
+  margin-top: 4px;
+  border-top: 1px dashed var(--border-color);
+}
+
+/* 分隔符行 */
+.separator-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 760px;
+  margin: 10px auto 0;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border-color);
+}
+.separator-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  min-width: 72px;
 }
 
 /* 批量处理样式 */

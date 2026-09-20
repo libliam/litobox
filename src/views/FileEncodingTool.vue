@@ -6,7 +6,7 @@
     </el-tabs>
 
     <!-- 单文件转换 -->
-    <div v-if="activeTab === 'single'">
+    <div v-if="activeTab === 'single'" class="tab-panel">
       <div class="tool-card">
         <div class="card-header">
           <span class="card-title">文件操作</span>
@@ -81,7 +81,7 @@
     </div>
 
     <!-- 批量转换 -->
-    <div v-if="activeTab === 'batch'">
+    <div v-if="activeTab === 'batch'" class="tab-panel">
       <div class="tool-card">
         <div class="card-header">
           <span class="card-title">选择文件</span>
@@ -356,10 +356,13 @@ const handleBatchConvert = async () => {
   height: 100%;
   overflow-y: auto;
   padding: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 /* 二级 Tab（子功能切换） */
 .encoding-tabs {
+  flex-shrink: 0;
   margin-bottom: 8px;
   margin-top: -4px;
   background: var(--bg-card);
@@ -433,6 +436,48 @@ html.light .encoding-tabs :deep(.el-tabs__item.is-active) {
 
 .tool-card:last-child {
   margin-bottom: 0;
+}
+
+/* 二级 Tab 内容面板撑满剩余高度 */
+.tab-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 最后一个卡片（预览/操作）撑满剩余高度 */
+.tab-panel > .tool-card:last-child {
+  flex: 1 1 auto;
+  min-height: 240px;
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tab-panel > .tool-card:last-child > .card-header {
+  flex-shrink: 0;
+}
+
+.tab-panel > .tool-card:last-child > .card-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 预览文本域撑满卡片 */
+.tab-panel > .tool-card:last-child .tool-textarea {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tab-panel > .tool-card:last-child .tool-textarea :deep(.el-textarea__inner) {
+  flex: 1;
+  height: auto;
 }
 
 .tool-card:hover {

@@ -10,13 +10,13 @@
       <el-tab-pane label="ID生成器" name="uuid" />
     </el-tabs>
 
-    <EncodeTool v-if="activeTab === 'encode'" />
-    <CryptoTool v-if="activeTab === 'crypto'" />
-    <TimeTool v-if="activeTab === 'time'" />
-    <URLTool v-if="activeTab === 'url'" />
-    <RegexTool v-if="activeTab === 'regex'" />
-    <BaseConverter v-if="activeTab === 'base'" />
-    <UUIDTool v-if="activeTab === 'uuid'" />
+    <EncodeTool v-show="activeTab === 'encode'" />
+    <CryptoTool v-show="activeTab === 'crypto'" />
+    <TimeTool v-show="activeTab === 'time'" />
+    <URLTool v-show="activeTab === 'url'" />
+    <RegexTool v-show="activeTab === 'regex'" />
+    <BaseConverter v-show="activeTab === 'base'" />
+    <UUIDTool v-show="activeTab === 'uuid'" />
   </div>
 </template>
 

@@ -76,11 +76,16 @@
               <span class="item-command">{{ row.command || '—' }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="来源" width="110" align="center">
+          <el-table-column label="来源" width="130" align="center">
             <template #default="{ row }">
-              <el-tag size="small" :type="row.source === 'registry' ? 'primary' : 'success'">
-                {{ row.source === 'registry' ? '注册表' : '启动文件夹' }}
-              </el-tag>
+              <div style="display: flex; flex-direction: column; align-items: center; gap: 2px;">
+                <el-tag size="small" :type="row.source === 'registry' ? 'primary' : 'success'">
+                  {{ row.source === 'registry' ? '注册表' : '启动文件夹' }}
+                </el-tag>
+                <el-tag v-if="row.is_system" size="small" type="danger" effect="plain" style="font-size: 10px; height: 16px; line-height: 14px;">
+                  系统级
+                </el-tag>
+              </div>
             </template>
           </el-table-column>
           <el-table-column label="位置" width="120" show-overflow-tooltip>
@@ -304,11 +309,14 @@ const handleAction = async (item: any, action: 'enable' | 'disable' | 'delete') 
     })
 
     if (result.success) {
-      ElMessage.success(result.message)
-    } else if (result.message.includes('管理员') || result.message.includes('拒绝')) {
-      ElMessage.error(result.message)
+      ElMessage.success(`${actionLabel}成功：${item.name}`)
     } else {
-      ElMessage.warning(result.message)
+      const isAccessDenied = /管理员|拒绝|权限|不被允许|access|denied/i.test(result.message)
+      if (isAccessDenied && item.is_system) {
+        ElMessage.error(`${item.name} 是系统级启动项，需要以管理员身份运行栗的百宝箱才能${actionLabel}`)
+      } else {
+        ElMessage.error(`${actionLabel}失败：${result.message}`)
+      }
     }
 
     if (action === 'delete' && result.success) {

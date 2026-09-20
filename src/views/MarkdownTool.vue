@@ -20,6 +20,7 @@
               </el-tooltip>
             </div>
             <div class="card-actions">
+              <el-button size="small" type="primary" @click="handleSaveRecord">保存</el-button>
               <el-button size="small" @click="handleClear('preview')">清空</el-button>
               <el-button size="small" @click="handlePaste('preview')">粘贴</el-button>
               <el-button size="small" @click="showTemplateSelect = !showTemplateSelect">模板</el-button>
@@ -53,7 +54,7 @@
             <el-input
               v-model="tabState.preview.input"
               type="textarea"
-              :rows="12"
+              :rows="3"
               placeholder="请输入 Markdown 文本..."
               resize="vertical"
               class="markdown-input"
@@ -62,7 +63,7 @@
         </div>
 
         <!-- 预览卡片 -->
-        <div class="tool-card">
+        <div class="tool-card fill-card">
           <div class="card-header">
             <span class="card-title">预览</span>
             <div class="card-actions">
@@ -118,7 +119,7 @@
             <el-input
               v-model="tabState.html.input"
               type="textarea"
-              :rows="10"
+              :rows="5"
               :placeholder="htmlDirection === 'md2html' ? '请输入 Markdown 文本...' : '请输入 HTML 代码...'"
               resize="vertical"
             />
@@ -126,7 +127,7 @@
         </div>
 
         <!-- 输出卡片 -->
-        <div class="tool-card">
+        <div class="tool-card fill-card">
           <div class="card-header">
             <span class="card-title">输出</span>
             <el-button size="small" @click="handleCopy('html')">复制</el-button>
@@ -182,7 +183,7 @@
             <el-input
               v-model="tabState.stats.input"
               type="textarea"
-              :rows="8"
+              :rows="4"
               placeholder="请输入 Markdown 文本..."
               resize="vertical"
             />
@@ -232,19 +233,73 @@
         </div>
       </el-tab-pane>
 
+      <!-- Tab 4: 保存记录 -->
+      <el-tab-pane label="记录" name="records">
+        <div class="tool-card sticky-card">
+          <div class="card-header">
+            <div class="header-left">
+              <span class="card-title">保存记录（{{ records.length }}）</span>
+              <el-tooltip placement="top" effect="dark">
+                <template #content>
+                  <div class="tooltip-content">
+                    <p>非置顶记录最多保留 20 条，超出后自动清理最旧的</p>
+                    <p>置顶记录不会被自动清理</p>
+                  </div>
+                </template>
+                <el-icon class="hint-icon"><QuestionFilled /></el-icon>
+              </el-tooltip>
+            </div>
+            <div class="card-actions">
+              <el-button size="small" @click="loadRecords">刷新</el-button>
+            </div>
+          </div>
+        </div>
+
+        <div class="tool-card">
+          <div class="card-body records-body">
+            <div v-if="records.length === 0" class="records-empty">
+              暂无保存记录，在"预览"页点击"保存"添加
+            </div>
+            <div
+              v-for="r in records"
+              :key="r.id"
+              class="record-item"
+              :class="{ pinned: r.pinned }"
+            >
+              <div class="record-main">
+                <div class="record-title">
+                  <el-icon v-if="r.pinned" class="pin-icon"><Top /></el-icon>
+                  <span class="record-title-text">{{ r.title }}</span>
+                </div>
+                <div class="record-preview">{{ r.content.slice(0, 120) }}</div>
+                <div class="record-time">{{ formatTime(r.updated_at) }}</div>
+              </div>
+              <div class="record-actions">
+                <el-button size="small" type="primary" @click="handleLoadRecord(r)">载入</el-button>
+                <el-button size="small" @click="handleTogglePin(r)">{{ r.pinned ? '取消置顶' : '置顶' }}</el-button>
+                <el-button size="small" type="danger" @click="handleDeleteRecord(r)">删除</el-button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </el-tab-pane>
+
     </el-tabs>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
-import { ElMessage } from 'element-plus'
-import { QuestionFilled } from '@element-plus/icons-vue'
+import { ref, reactive, computed, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { QuestionFilled, Top } from '@element-plus/icons-vue'
 import MarkdownIt from 'markdown-it'
 import { useToolboxStore } from '@/store'
 import { saveFileWithDialog } from '@/utils/fileSaver'
+import * as db from '@/utils/dbClient'
+import { useConfirmDialog } from '@/composables/useConfirmDialog'
 
 const store = useToolboxStore()
+const { confirm } = useConfirmDialog()
 
 // 初始化 markdown-it
 const md = new MarkdownIt({
@@ -556,6 +611,116 @@ const handleStats = () => {
   ElMessage.success('统计完成')
 }
 
+// ============ 保存记录 ============
+const records = ref<db.MarkdownRecord[]>([])
+
+const loadRecords = async () => {
+  try {
+    records.value = await db.listMarkdownRecords()
+  } catch {
+    records.value = []
+  }
+}
+
+onMounted(loadRecords)
+
+const formatTime = (iso: string) => {
+  const d = new Date(iso)
+  return isNaN(d.getTime()) ? iso : d.toLocaleString('zh-CN', { hour12: false })
+}
+
+const handleSaveRecord = async () => {
+  const content = tabState.preview.input
+  if (!content.trim()) {
+    ElMessage.warning('没有可保存的内容')
+    return
+  }
+  // 默认标题：取首个 Markdown 标题，没有则用时间
+  const heading = content.match(/^#{1,6}\s+(.+)$/m)
+  const defaultTitle = heading
+    ? heading[1].trim().slice(0, 40)
+    : `Markdown ${new Date().toLocaleString('zh-CN', { hour12: false })}`
+  try {
+    const { value } = await ElMessageBox.prompt('请输入记录标题', '保存记录', {
+      confirmButtonText: '保存',
+      cancelButtonText: '取消',
+      inputValue: defaultTitle,
+      inputValidator: (v: string) => (v && v.trim() ? true : '标题不能为空')
+    })
+    const now = new Date().toISOString()
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
+    await db.saveMarkdownRecord({
+      id,
+      title: value.trim(),
+      content,
+      pinned: false,
+      created_at: now,
+      updated_at: now
+    })
+    await loadRecords()
+    ElMessage.success('已保存到记录')
+    addHistory('保存记录')
+  } catch {
+    // 用户取消
+  }
+}
+
+// ============ Ctrl+S 快捷键保存 ============
+// ponytail: window 级监听 + KeepAlive onActivated/onDeactivated 控制，避免缓存页面在后台误触发
+let pageVisible = true
+
+const handleGlobalKeydown = (e: KeyboardEvent) => {
+  if (!pageVisible) return
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+    e.preventDefault()
+    handleSaveRecord()
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', handleGlobalKeydown)
+})
+
+onActivated(() => {
+  pageVisible = true
+})
+
+onDeactivated(() => {
+  pageVisible = false
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleGlobalKeydown)
+})
+
+const handleLoadRecord = (record: db.MarkdownRecord) => {
+  tabState.preview.input = record.content
+  activeTab.value = 'preview'
+  ElMessage.success(`已载入「${record.title}」`)
+}
+
+const handleTogglePin = async (record: db.MarkdownRecord) => {
+  try {
+    await db.setMarkdownPin(record.id, !record.pinned)
+    await loadRecords()
+    ElMessage.success(record.pinned ? '已取消置顶' : '已置顶')
+  } catch {
+    ElMessage.error('操作失败')
+  }
+}
+
+const handleDeleteRecord = async (record: db.MarkdownRecord) => {
+  const ok = await confirm.ask('删除记录', `确定删除「${record.title}」吗？`, { type: 'danger', confirmText: '删除' })
+  if (!ok) return
+  try {
+    await db.deleteMarkdownRecord(record.id)
+    await loadRecords()
+    ElMessage.success('已删除')
+  } catch {
+    ElMessage.error('删除失败')
+  }
+}
+
 // ============ 自动执行（预览 Tab 实时渲染） ============
 // 预览 Tab 不需要自动执行，因为 computed 已经实时渲染
 </script>
@@ -596,6 +761,63 @@ html.light .markdown-tool-tabs :deep(.el-tabs__header) {
 
 .markdown-tool-tabs :deep(.el-tabs__nav-wrap::after) {
   background-color: var(--border-color);
+}
+
+/* ===== 让内容撑满 Tab 剩余高度（预览/输出卡片吸收空白） ===== */
+.markdown-tool-tabs {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.markdown-tool-tabs :deep(.el-tabs__content) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.markdown-tool-tabs :deep(.el-tab-pane) {
+  /* flex 撑满 content，内容超出时由 pane 自身滚动（内容多滚动、内容少撑满） */
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.fill-card {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.fill-card > .card-header {
+  flex-shrink: 0;
+}
+
+.fill-card > .card-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.fill-card :deep(.el-textarea) {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.fill-card :deep(.el-textarea__inner) {
+  flex: 1;
+  height: 100%;
+  box-sizing: border-box;
 }
 
 /* ===== 工具卡片 ===== */
@@ -734,8 +956,9 @@ html.light .markdown-tool-tabs :deep(.el-tabs__header) {
   padding: 16px;
   background: var(--bg-input);
   border-radius: 6px;
-  min-height: 200px;
-  max-height: 600px;
+  /* 撑满预览卡片剩余高度（由 .fill-card 布局分配），内容超出时内部滚动 */
+  flex: 1;
+  min-height: 240px;
   overflow-y: auto;
   line-height: 1.7;
   color: var(--text-primary);
@@ -889,5 +1112,84 @@ html.light .markdown-tool-tabs :deep(.el-tabs__header) {
   padding: 40px 0;
   color: var(--text-muted);
   font-style: italic;
+}
+
+/* ===== 保存记录 ===== */
+.records-body {
+  padding: 8px 12px;
+}
+
+.records-empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.record-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  transition: background 0.2s, border-color 0.2s;
+  margin-bottom: 4px;
+}
+
+.record-item:hover {
+  background: rgba(0, 212, 255, 0.05);
+}
+
+.record-item.pinned {
+  border-color: rgba(0, 212, 255, 0.3);
+  background: rgba(0, 212, 255, 0.06);
+}
+
+.record-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.record-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.record-title-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pin-icon {
+  color: var(--accent-cyan);
+  flex-shrink: 0;
+}
+
+.record-preview {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.record-time {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.record-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
 }
 </style>

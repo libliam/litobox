@@ -64,7 +64,7 @@
     </div>
 
     <!-- 空状态 -->
-    <div v-if="!hexData" class="tool-card">
+    <div v-if="!hexData" class="tool-card fill-card">
       <div
         class="card-body drop-zone"
         :class="{ 'drag-over': isDragging }"
@@ -227,6 +227,8 @@ const formatFileSize = (bytes: number): string => {
   overflow-y: auto;
   padding: 20px;
   background: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
 }
 
 /* 工具卡片 */
@@ -245,6 +247,7 @@ const formatFileSize = (bytes: number): string => {
   position: sticky;
   top: 0;
   z-index: 10;
+  flex-shrink: 0;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
@@ -292,16 +295,32 @@ const formatFileSize = (bytes: number): string => {
 .info-size, .info-bytes { color: var(--text-muted); }
 
 /* 十六进制内容 */
-.hex-card { max-height: calc(100vh - 200px); }
-.hex-body { padding: 0; overflow: hidden; }
+.hex-card {
+  flex: 1 1 auto;
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
+}
+.hex-card > .card-header { flex-shrink: 0; }
+.hex-body { flex: 1; min-height: 0; padding: 0; overflow: hidden; display: flex; }
 
 .hex-content {
-  max-height: calc(100vh - 300px);
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
   font-size: 13px;
   line-height: 1.8;
 }
+
+/* 空状态卡片撑满剩余高度 */
+.fill-card {
+  flex: 1 1 auto;
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+}
+.fill-card > .card-body { flex: 1; min-height: 0; }
 
 .hex-row {
   display: flex;

@@ -98,6 +98,15 @@ litobox/
 - 错误提示红色边框+发光效果
 - **禁止硬编码颜色**，所有颜色使用 `theme.css` 中定义的CSS变量
 - 新增页面基于 `src/views/_ToolTemplate.vue` 模板创建
+- **高度自适应**：新页面根容器必须写 `class="tool-container fill-height"`，让内容区撑满可视高度（见「页面高度自适应规范」）
+
+### 页面高度自适应规范（新页面强制）
+- **根容器必须加 `fill-height`**：`<div class="tool-container fill-height">`。全局工具类定义在 `src/style/main.css`，页面 scoped 样式**不要**重复实现
+- 效果：页面最后一个 `.tool-card`（通常是输入/操作区）自动撑满剩余可视高度；Tab 栏 `.sticky-card` 不参与拉伸
+- **原因**：不加的话窗口最大化/全屏时，内容区只在顶部占一小块，下方留出大片空白，浪费空间
+- 若本页有固定高度的内部容器（如聊天区 `height: 500px`），必须额外提供撑满分支（参考 `OllamaTool.vue` 的 `.chat-mode`）
+- 页面内滚动交给容器的 `overflow-y: auto`，不要用固定 `height` 锁死
+- 已存在的旧页面无需改造，仅新页面遵守
 
 ### 多Tab页面规范
 - 每个Tab独立维护 `input/output/error`，切换不互相覆盖

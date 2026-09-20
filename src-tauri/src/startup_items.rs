@@ -156,9 +156,12 @@ foreach ($rp in $regPaths) {
     if (Test-Path $rp.Path) {
         $props = Get-ItemProperty -Path $rp.Path
         $props.PSObject.Properties | Where-Object { $_.Name -notin @('PSPath','PSParentPath','PSChildName','PSDrive','PSProvider') } | ForEach-Object {
-            $enabled = -not $_.Name.StartsWith('_disabled_')
+            $rawName = $_.Name
+            $enabled = -not $rawName.StartsWith('_disabled_')
+            # 去掉 _disabled_ 前缀，返回干净名称供前端展示和操作
+            $displayName = if ($enabled) { $rawName } else { $rawName.Substring(10) }
             $items += [PSCustomObject]@{
-                Name     = $_.Name
+                Name     = $displayName
                 Command  = $_.Value
                 Location = $rp.Path.Replace('Microsoft.PowerShell.Core\Registry::','')
                 Source   = 'registry'
@@ -169,7 +172,7 @@ foreach ($rp in $regPaths) {
     }
 }
 
-# 路2: 启动文件夹
+# 路2: 启动文件夹（同时匹配 .lnk 和 .lnk.disabled）
 $folderPaths = @(
     @{Path="$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup"; IsSystem=$false},
     @{Path="$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"; IsSystem=$true}
@@ -177,12 +180,15 @@ $folderPaths = @(
 foreach ($fp in $folderPaths) {
     if (Test-Path $fp.Path) {
         $shell = New-Object -ComObject WScript.Shell
-        Get-ChildItem $fp.Path -Filter '*.lnk' -ErrorAction SilentlyContinue | ForEach-Object {
-            $enabled = -not $_.Name.EndsWith('.disabled')
+        Get-ChildItem $fp.Path -ErrorAction SilentlyContinue | Where-Object { $_.Name -like '*.lnk' -or $_.Name -like '*.lnk.disabled' } | ForEach-Object {
+            $rawName = $_.Name
+            $enabled = -not $rawName.EndsWith('.disabled')
+            # 去掉 .lnk 或 .lnk.disabled 后缀，返回干净名称
+            $displayName = $rawName -replace '\.lnk(\.disabled)?$',''
             $cmd = ''
             try { $cmd = $shell.CreateShortcut($_.FullName).TargetPath } catch {}
             $items += [PSCustomObject]@{
-                Name     = $_.Name -replace '\.lnk$','' -replace '\.disabled$',''
+                Name     = $displayName
                 Command  = $cmd
                 Location = $fp.Path
                 Source   = 'startup_folder'
@@ -246,20 +252,31 @@ try {{
     )
 }
 
-/// 删除注册表值
+/// 删除注册表值（同时处理已启用和已禁用 _disabled_ 前缀两种状态）
 fn build_reg_delete_script(name: &str, location: &str) -> String {
     let reg_path = location.replace("HKCU:", "HKCU").replace("HKLM:", "HKLM");
     format!(
         r#"$ErrorActionPreference = 'Stop'
 try {{
+    $deleted = $false
+    # 先尝试删除原名（已启用状态）
     reg delete "{}" /v "{}" /f 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) {{ throw "删除失败" }}
+    if ($LASTEXITCODE -eq 0) {{ $deleted = $true }}
+    # 再尝试删除 _disabled_ 前缀名（已禁用状态）
+    if (-not $deleted) {{
+        reg delete "{}" /v "_disabled_{}" /f 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) {{ $deleted = $true }}
+    }}
+    if (-not $deleted) {{ throw "注册表值不存在" }}
     Write-Output 'SUCCESS:已删除'
 }} catch {{
     Write-Output "ERROR:$($_.Exception.Message)"
-}}"#,
+}}
+"#,
         reg_path.replace("\\", "\\\\"),
-        name.replace("\"", "\\\"")
+        name.replace("\"", "\\\""),
+        reg_path.replace("\\", "\\\\"),
+        name.replace("\"", "\\\""),
     )
 }
 

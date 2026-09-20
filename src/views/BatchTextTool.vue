@@ -49,7 +49,7 @@
       </div>
       <div class="card-body">
         <div v-if="readLoading" class="loading-state">读取中...</div>
-        <div v-else>
+        <div v-else class="result-list">
           <div v-for="(result, index) in readResults" :key="index" class="read-result">
             <div class="result-header">
               <span class="result-file">{{ result.path }}</span>
@@ -63,7 +63,7 @@
               :model-value="result.content"
               readonly
               type="textarea"
-              :rows="4"
+              :rows="12"
               resize="vertical"
               class="result-content"
             />
@@ -351,10 +351,13 @@ const handleCopy = async (text: string) => {
   height: 100%;
   overflow-y: auto;
   padding: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 /* 二级 Tab（子功能切换） */
 .batch-tabs {
+  flex-shrink: 0;
   margin-bottom: 8px;
   margin-top: -4px;
   background: var(--bg-card);
@@ -426,8 +429,25 @@ html.light .batch-tabs :deep(.el-tabs__item.is-active) {
   transition: border-color 0.3s;
 }
 
+/* 最后一个卡片（操作）撑满剩余高度 */
 .tool-card:last-child {
+  flex: 1 1 auto;
+  min-height: 200px;
   margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tool-card:last-child > .card-header {
+  flex-shrink: 0;
+}
+
+.tool-card:last-child > .card-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
 }
 
 .tool-card:hover {
@@ -526,6 +546,39 @@ html.light .batch-tabs :deep(.el-tabs__item.is-active) {
 
 .read-result:last-child {
   margin-bottom: 0;
+}
+
+/* 批量读取：多个文件预览平分剩余高度，低于最小高度则保持最小高度并滚动 */
+.result-list {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.result-list .read-result {
+  flex: 1 1 0;
+  min-height: 300px;
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.result-list .read-result > .result-header {
+  flex-shrink: 0;
+}
+
+.result-list .read-result > .result-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.result-list .read-result > .result-content :deep(.el-textarea__inner) {
+  flex: 1;
+  height: auto;
 }
 
 .result-header {

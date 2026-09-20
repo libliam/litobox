@@ -17,15 +17,12 @@
       <div class="card-body">
         <div class="current-time">
           <div class="time-display">{{ currentTime }}</div>
-          <div class="timestamp-row">
-            <span class="ts-label">毫秒戳：</span>
-            <span class="ts-value">{{ currentTimestampMs }}</span>
-            <el-button size="small" @click="handleCopy(currentTimestampMs)">复制</el-button>
-          </div>
-          <div class="timestamp-row">
-            <span class="ts-label">秒级戳：</span>
-            <span class="ts-value">{{ currentTimestampS }}</span>
-            <el-button size="small" @click="handleCopy(currentTimestampS)">复制</el-button>
+        </div>
+        <div class="format-grid">
+          <div v-for="item in commonFormats" :key="item.label" class="format-row">
+            <span class="format-label" :title="item.label">{{ item.label }}</span>
+            <span class="format-value" :title="item.value">{{ item.value }}</span>
+            <el-button size="small" link @click="handleCopy(item.value)">复制</el-button>
           </div>
         </div>
       </div>
@@ -328,16 +325,41 @@ const activeTab = ref('timestamp')
 
 // 当前时间
 const currentTime = ref('')
-const currentTimestampMs = ref('')
-const currentTimestampS = ref('')
+const nowMs = ref(Date.now())
 let timeInterval: number | null = null
 
 const updateTime = () => {
-  const now = new Date()
-  currentTime.value = now.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
-  currentTimestampMs.value = String(now.getTime())
-  currentTimestampS.value = String(Math.floor(now.getTime() / 1000))
+  nowMs.value = Date.now()
+  currentTime.value = new Date(nowMs.value).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
 }
+
+// 常用时间格式，逐行可复制
+const commonFormats = computed(() => {
+  const d = new Date(nowMs.value)
+  const p = (n: number) => String(n).padStart(2, '0')
+  const y = d.getFullYear()
+  const mo = d.getMonth() + 1
+  const day = d.getDate()
+  const hms = `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+  return [
+    { label: '中文日期', value: `${y}年${mo}月${day}日` },
+    { label: '中文日期时间', value: `${y}年${mo}月${day}日 ${hms}` },
+    { label: '中文星期', value: `星期${'日一二三四五六'[d.getDay()]}` },
+    { label: '横杠日期', value: `${y}-${mo}-${day}` },
+    { label: '横杠日期时间', value: `${y}-${mo}-${day} ${hms}` },
+    { label: '补零日期', value: `${y}-${p(mo)}-${p(day)}` },
+    { label: '补零日期时间', value: `${y}-${p(mo)}-${p(day)} ${hms}` },
+    { label: '斜杠日期', value: `${y}/${p(mo)}/${p(day)}` },
+    { label: '斜杠日期时间', value: `${y}/${p(mo)}/${p(day)} ${hms}` },
+    { label: '时间', value: hms },
+    { label: '紧凑日期', value: `${y}${p(mo)}${p(day)}` },
+    { label: '紧凑日期时间', value: `${y}${p(mo)}${p(day)}${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}` },
+    { label: 'ISO 8601', value: `${y}-${p(mo)}-${p(day)}T${hms}` },
+    { label: 'UTC 时间', value: d.toISOString() },
+    { label: '毫秒时间戳', value: String(d.getTime()) },
+    { label: '秒级时间戳', value: String(Math.floor(d.getTime() / 1000)) }
+  ]
+})
 
 // 时间戳转换
 const tsInput = ref('')
@@ -821,12 +843,49 @@ html.light .time-tabs :deep(.el-tabs__item.is-active) {
   margin-bottom: 12px;
 }
 
-.timestamp-row {
+.format-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px 12px;
+}
+
+.format-row {
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 8px;
-  margin-bottom: 6px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  transition: border-color 0.2s;
+}
+
+.format-row:hover {
+  border-color: var(--border-color);
+}
+
+.format-label {
+  flex: 0 0 80px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.format-value {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-primary);
+  font-family: 'Courier New', monospace;
+  user-select: all;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .format-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .ts-label {

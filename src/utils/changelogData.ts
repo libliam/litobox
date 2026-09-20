@@ -15,8 +15,99 @@ export interface ChangelogData {
 }
 
 export const changelogData: ChangelogData = {
-  versionRange: "从 v1.0 到 v8.5.0 更新内容",
+  versionRange: "从 v1.0 到 v8.15.0 更新内容",
   entries: [
+  {
+    "version": "8.15.0",
+    "date": "2026-09-20",
+    "content": "**ASCII 艺术生成工具**：文本转字符画（5×7 像素字库，8 种填充风格：像素/方块/深灰/中灰/浅灰/星点/@/自定义，支持反转、字间距开关）；图片转 ASCII（4 种输出模式：灰度字符/彩色HTML/Braille盲文/半角方块，6 种字符集预设+自定义，宽度与反转可调，彩色模式复制 HTML 粘贴富文本）；**工作流增强**：步骤新增条件判断（总是/包含/不包含/等于/不等于/为空/不为空/正则匹配，不满足则跳过该步）与循环执行（逐行处理：按行拆分逐行执行再合并；重复 N 次：以上次输出为输入重复执行），条件与循环可叠加使用，旧工作流自动兼容",
+    "isEnhancement": true,
+    "isNewFeature": true
+  },
+  {
+    "version": "8.14.0",
+    "date": "2026-09-18",
+    "content": "右键菜单管理工具：集中管理 Windows 文件/文件夹/桌面右键的自定义菜单项，读取范围覆盖静态菜单项（`*\\shell`、`Directory\\shell`、`Directory\\Background\\shell`）与 COM 处理器（`shellex\\ContextMenuHandlers`，含 `AllFilesystemObjects`、`Folder` 等通用位置），大幅补齐真实菜单项数量；COM 项自动解析 CLSID 显示名与处理器 DLL 路径，依据 DLL 所在目录（系统目录 / 第三方路径）判定系统内置项（只读）与第三方项（可删除），并标注被 Windows 屏蔽的项；支持新增自定义菜单项（键名/显示名/命令/图标），删除第三方项前用 `reg export` 精确备份该单项（防误删），备份记录支持列表/恢复/删除，删除路径经白名单校验；列表支持关键词搜索（显示名/键名/命令/处理器）与类型（静态项/COM）、归属（自定义/系统/已屏蔽）筛选，并实时显示命中数量；零新增依赖",
+    "isEnhancement": false,
+    "isNewFeature": true
+  },
+  {
+    "version": "8.13.0",
+    "date": "2026-09-18",
+    "content": "三个纯前端工具：**文本排序增强**（字符串工具批量处理 Tab 新增行排序操作组：升序/降序/忽略大小写/数字排序/自然排序/随机打乱/去重排序/按列排序，支持自定义分隔符与列索引，底层函数在 stringUtils.ts）；**表情符号面板**（26 分类 emoji 浏览：笑脸/动物/食物/植物/活动/旅行/物品/符号/旗帜/颜文字/emoji组合/数学/几何/货币/星座/棋类/技术/标点等，搜索同时匹配字符与名称，hover 纯 CSS `:hover::after` 显示名称零组件开销避免卡顿，最近使用记录，点击复制）；**字体预览工具**（100+ 常用字体列表，前端渲染宽度对比法检测字体可用性，自定义预览文本/字号/粗细，搜索过滤，点击复制字体名）",
+    "isEnhancement": true,
+    "isNewFeature": true
+  },
+  {
+    "version": "8.12.0",
+    "date": "2026-09-17",
+    "content": "Ollama 对话测试历史改为多段会话管理：聊天记录从单会话（新对话即覆盖旧记录）升级为会话列表，最多保留 20 段、每段最多 200 条消息，历史会话弹窗支持新建/切换/删除/清空全部，标题自动取该段首条用户消息无需手动命名，列表按最近使用时间排序并显示时间与消息数；旧版单会话数据首次打开自动迁移为一段会话不丢失；流式输出期间禁止切换会话避免结果写错段；Python 工具执行修复（依次尝试 python/py/python3 解释器并在未安装时给出可操作提示、子进程强制 UTF-8 输出并对返回内容做 UTF-8/GBK 双编码解码，解决中文结果乱码/执行失败）",
+    "isEnhancement": true,
+    "isNewFeature": false
+  },
+  {
+    "version": "8.11.1",
+    "date": "2026-09-14",
+    "content": "Ollama 对话新增自定义 Python 工具（Tool Calling 自动调用）：工具管理弹窗可新增/编辑/删除工具（工具名、描述、参数 JSON Schema、Python 代码），工具本地 localStorage 持久化；对话时模型自动决策调用工具，Rust 后端以 stdin 传参执行 Python（参数注入全局作用域并额外提供 params 字典）、stdout 返回结果，支持多轮工具结果自动回灌；聊天区展示工具调用卡片（工具名/参数/结果）；新增 ollama_run_tool 命令供前端单独测试工具",
+    "isEnhancement": false,
+    "isNewFeature": true
+  },
+  {
+    "version": "8.11.0",
+    "date": "2026-09-12",
+    "content": "本地大模型（Ollama）管理工具：服务状态检测、模型下载/删除/详情、运行监控与显存释放、流式对话测试，纯本地 API 调用无网络依赖",
+    "isEnhancement": false,
+    "isNewFeature": false
+  },
+  {
+    "version": "8.10.0",
+    "date": "2026-09-12",
+    "content": "三个新工具：**TOTP 二次验证器**（otpauth 二维码扫码 / 剪贴板 / 手动导入，密钥本地明文存 SQLite 独立表，多账号实时验证码 + 1 秒倒计时进度条，支持 SHA1/SHA256/SHA512 与 6/8 位，编辑/删除/点击复制）；**目录对比**（递归对比左右文件夹的新增/删除/修改/相同，忽略规则支持 * 与 ? 通配（如 node_modules、*.log、dist/），可选 sha256 内容比对，扫描进度/取消 + 轮询兜底，差异明细按状态筛选 + 关键词搜索 + 分页，纯只读查看）；**代码实体生成**（JSON/JSON5 或 SQL DDL 输入，自动推断实体并递归拆分嵌套对象，一键生成 TypeScript/Java/Go/Rust/Python/C# 六语言实体类，命名风格自动转换，六语言自由勾选，支持复制/保存）",
+    "isEnhancement": false,
+    "isNewFeature": true
+  },
+  {
+    "version": "8.9.2",
+    "date": "2026-09-12",
+    "content": "时间工具「当前时间」新增 16 种常用时间格式网格（中文年月日/中文日期时间/星期/横杠日期/横杠日期时间/补零日期/补零日期时间/斜杠日期/斜杠日期时间/时间/紧凑日期 yyyymmdd/紧凑日期时间 yyyymmddHHmmss/ISO 8601/UTC/毫秒与秒级时间戳），随当前时间每秒刷新，逐行一键复制；多处工具预览区改为弹性撑满剩余高度、消除底部大片空白（文件处理、编码转换、文本对比、批量读取、Markdown、PDF、Hex、SVG 等）；批量读取预览支持最小高度 + 多文件自动平分剩余空间（低于最小高度则内部滚动）；各工具二级 Tab 切换改用 v-show 保留已输入内容，不再因切换清空（DevTools、磁盘空间分析、文件处理、编码转换等）；Markdown 编辑器输入区行数减半、新增 Ctrl+S 快捷保存",
+    "isEnhancement": false,
+    "isNewFeature": true
+  },
+  {
+    "version": "8.9.1",
+    "date": "2026-09-11",
+    "content": "脑图画布增强：左键框选多节点（mouseSelectionButton:0）、空白处右键菜单（居中/适配画布/全选）、视图状态持久化（每个脑图记住上次的平移位置与缩放比例，打开自动恢复）、SVG 导出修复（escapeXhtml 解码导致的 XML 解析错误）；SVG 工具优化：预览区高度随窗口自适应（flex 布局填满剩余空间）、SVG 预览支持滚轮缩放 + 按钮（放大/缩小/重置/适应窗口）、转 PNG 修复 canvas tainted（内联外部图片为 base64、移除 script、data URL 替代 Blob URL）",
+    "isEnhancement": true,
+    "isNewFeature": false
+  },
+  {
+    "version": "8.9.0",
+    "date": "2026-09-11",
+    "content": "脑图画布（自由编辑版）：基于 mind-elixir 的思维导图编辑器，4 种布局方向（两侧/左/右/下）、8 套深浅主题、双击节点编辑、Tab 新增子节点/Enter 新增兄弟节点/Delete 删除、撤销重做、右键中文菜单（插入子/父/同级、删除、专注、上移下移、摘要、关联线）、空白处右键菜单（居中/适配/全选）、导入空白/JSON/Markdown、导出 PNG/SVG/JSON/Markdown，数据存 SQLite 自动保存",
+    "isEnhancement": false,
+    "isNewFeature": true
+  },
+  {
+    "version": "8.8.0",
+    "date": "2026-09-11",
+    "content": "WebSocket 客户端：连接/断开 ws/wss、子协议、自动重连、消息收发与日志（时间/方向/大小着色）、请求头配置、心跳保活、消息历史导出；Markdown 幻灯片：用 `---` 分割页面，左右键/空格翻页，全屏预览，导出单文件离线 HTML（内嵌样式）；思维导图（Markdown 版）：Markdown 文本自动生成思维导图（markmap），画布拖拽缩放、8 种主题配色、字体大小/字重分层、导出 PNG/SVG",
+    "isEnhancement": false,
+    "isNewFeature": false
+  },
+  {
+    "version": "8.7.0",
+    "date": "2026-09-10",
+    "content": "速查表扩展（12 个 Tab / 650+ 条记录）：新增 Linux 常用命令（含 vim/ssh/tmux 补充）、Git 版本控制、SQL 通用语法、PostgreSQL/MySQL 差异对照表、Docker 容器、Redis 数据结构/高可用、Conda 环境/包管理、PowerShell Windows 命令、NPM/Yarn/Pnpm 三系对照、正则表达式速查（元字符/断言/现成模板 + 陷阱提醒）；所有命令示例点击展开即可复制；速查表数据独立文件组织，新增 Tab 仅需新建数据文件 + index.ts 注册",
+    "isEnhancement": false,
+    "isNewFeature": true
+  },
+  {
+    "version": "8.6.0",
+    "date": "2026-09-09",
+    "content": "日志实时查看器工具：选择/拖入日志文件实时监控文件变化并追加显示（类 tail -f）；多关键词过滤（空格/逗号分隔，支持\"与/或\"模式，过滤词自动高亮）；多关键词高亮（8 色循环分配）；自动换行开关（关闭横向滚动）、自动滚动、区分大小写、到底部按钮；虚拟滚动支持 5 万行流畅浏览（仅渲染可视区 + 高亮只处理可视行）；输入 400ms 防抖 + loading 图标避免卡顿；四种主题（跟随系统/深色/浅色/护眼绿豆沙）；UTF-8/GBK 编码自动识别，文件截断/轮转自动重载并提示；Rust 后端轮询文件大小变化（300ms，零新增依赖），通过事件推送新增内容",
+    "isEnhancement": false,
+    "isNewFeature": true
+  },
   {
     "version": "8.5.0",
     "date": "2026-09-03",

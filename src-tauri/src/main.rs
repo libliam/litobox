@@ -21,6 +21,7 @@ mod note_manager;
 mod system_info;
 mod sqlite_viewer;
 mod disk_analyzer;
+mod dir_diff;
 mod file_searcher;
 mod icon_generator;
 mod image_tools;
@@ -44,7 +45,11 @@ mod git_stats;
 mod http_server;
 mod zip_tools;
 mod pomodoro;
+mod log_viewer;
 mod window_state;
+mod ollama;
+mod ping_tools;
+mod context_menu;
 
 use tauri::{Manager, Emitter};
 use tauri_plugin_dialog::{DialogExt, MessageDialogBuilder, MessageDialogButtons, MessageDialogKind};
@@ -115,6 +120,15 @@ fn main() {
             db::cmd_db_list_snippets,
             db::cmd_db_save_snippet,
             db::cmd_db_delete_snippet,
+            // TOTP 二次验证密钥命令
+            db::cmd_db_list_totp_secrets,
+            db::cmd_db_save_totp_secret,
+            db::cmd_db_delete_totp_secret,
+            // Markdown 保存记录命令
+            db::cmd_db_list_markdown_records,
+            db::cmd_db_save_markdown_record,
+            db::cmd_db_delete_markdown_record,
+            db::cmd_db_set_markdown_pin,
             db::cmd_db_list_recent_tools,
             db::cmd_db_add_recent_tool,
             db::cmd_db_list_ocr_history,
@@ -144,6 +158,11 @@ fn main() {
             db::db_note_get_last_opened,
             db::db_note_set_last_opened,
             db::open_notes_folder,
+            // 思维导图命令
+            db::db_mindmap_list,
+            db::db_mindmap_save,
+            db::db_mindmap_delete,
+            db::db_mindmap_get,
             // Note manager 命令
             note_manager::note_read,
             note_manager::note_write,
@@ -174,6 +193,9 @@ fn main() {
             startup_items::disable_startup_item,
             startup_items::delete_startup_item,
             startup_items::add_startup_item,
+            log_viewer::log_viewer_open,
+            log_viewer::log_viewer_close,
+            log_viewer::log_viewer_reload,
             env_vars::get_env_vars,
             env_vars::set_env_var,
             env_vars::delete_env_var,
@@ -222,6 +244,13 @@ fn main() {
             disk_analyzer::disk_delete_files,
             disk_analyzer::disk_clear_scan,
             disk_analyzer::disk_locate_in_explorer,
+            // 目录对比命令
+            dir_diff::dir_diff_start,
+            dir_diff::dir_diff_cancel,
+            dir_diff::dir_diff_status,
+            dir_diff::dir_diff_get_summary,
+            dir_diff::dir_diff_get_entries,
+            dir_diff::dir_diff_clear,
             // 全文搜索命令
             file_searcher::file_search_start,
             file_searcher::file_search_cancel,
@@ -328,6 +357,31 @@ fn main() {
             // 窗口状态命令
             window_state::save_window_state,
             window_state::app_ready,
+            // Ollama 本地大模型管理命令
+            ollama::ollama_check,
+            ollama::ollama_list,
+            ollama::ollama_show,
+            ollama::ollama_delete,
+            ollama::ollama_ps,
+            ollama::ollama_pull,
+            ollama::ollama_chat,
+            ollama::ollama_stop,
+            ollama::ollama_run_tool,
+            // Ping / Traceroute 命令
+            ping_tools::ping_start,
+            ping_tools::ping_cancel,
+            ping_tools::ping_get_status,
+            ping_tools::ping_echo,
+            ping_tools::tracert_start,
+            ping_tools::tracert_cancel,
+            // 右键菜单管理命令
+            context_menu::cm_list_items,
+            context_menu::cm_add_item,
+            context_menu::cm_delete_item,
+            context_menu::cm_backup,
+            context_menu::cm_restore,
+            context_menu::cm_list_backups,
+            context_menu::cm_delete_backup,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -416,3 +470,4 @@ fn main() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+

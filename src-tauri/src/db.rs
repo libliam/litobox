@@ -3,6 +3,15 @@ use serde::{Deserialize, Serialize};
 use std::sync::{Mutex, OnceLock};
 use std::path::PathBuf;
 
+// ponytail: debug 模式输出日志到 stderr，release 模式编译时移除（零开销），沿用项目惯例
+macro_rules! debug_log {
+    ($($arg:tt)*) => {
+        if cfg!(debug_assertions) {
+            eprintln!($($arg)*)
+        }
+    };
+}
+
 static DB_CONN: OnceLock<Result<Mutex<Connection>, String>> = OnceLock::new();
 
 fn get_conn() -> Result<&'static Mutex<Connection>, String> {
@@ -257,6 +266,18 @@ fn init_tables(conn: &Connection) -> Result<()> {
           file_count   INTEGER NOT NULL DEFAULT 0,
           status       TEXT NOT NULL DEFAULT 'pending'
         );
+        -- TOTP 二次验证密钥（本地明文存储，无网络）
+        CREATE TABLE IF NOT EXISTS totp_secrets (
+            id TEXT PRIMARY KEY,
+            issuer TEXT NOT NULL DEFAULT '',
+            account TEXT NOT NULL DEFAULT '',
+            secret TEXT NOT NULL,
+            algorithm TEXT NOT NULL DEFAULT 'SHA1',
+            digits INTEGER NOT NULL DEFAULT 6,
+            period INTEGER NOT NULL DEFAULT 30,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
     "#)?;
 
     // 迁移：旧版 snippets 表有 category 列但无 lang/note 列
@@ -311,6 +332,31 @@ fn init_tables(conn: &Connection) -> Result<()> {
             FOREIGN KEY (parent_id) REFERENCES notes(id) ON DELETE CASCADE
         );
         CREATE INDEX IF NOT EXISTS idx_notes_parent ON notes(parent_id);
+    "#).ok();
+
+    // 思维导图表
+    conn.execute_batch(r#"
+        CREATE TABLE IF NOT EXISTS mindmaps (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL DEFAULT '未命名脑图',
+            data_json TEXT NOT NULL DEFAULT '{}',
+            direction TEXT NOT NULL DEFAULT 'side',
+            theme TEXT NOT NULL DEFAULT 'default',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+    "#).ok();
+
+    // Markdown 保存记录表（pinned=1 的置顶记录不参与 20 条上限清理）
+    conn.execute_batch(r#"
+        CREATE TABLE IF NOT EXISTS markdown_records (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            content TEXT NOT NULL,
+            pinned INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
     "#).ok();
 
     Ok(())
@@ -388,6 +434,150 @@ pub fn db_delete_snippet(id: String) -> Result<(), String> {
     with_conn(|conn| {
         conn.execute("DELETE FROM snippets WHERE id = ?1", params![id])
             .map_err(|e| e.to_string())?;
+        Ok(())
+    })
+}
+
+// ========== TOTP 二次验证密钥 CRUD（明文本地存储） ==========
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct TotpSecret {
+    pub id: String,
+    pub issuer: String,
+    pub account: String,
+    pub secret: String,
+    pub algorithm: String,
+    pub digits: i64,
+    pub period: i64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+pub fn db_list_totp_secrets() -> Result<Vec<TotpSecret>, String> {
+    with_conn(|conn| {
+        let mut stmt = conn
+            .prepare("SELECT id, issuer, account, secret, algorithm, digits, period, created_at, updated_at FROM totp_secrets ORDER BY created_at ASC")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(TotpSecret {
+                    id: row.get(0)?,
+                    issuer: row.get(1)?,
+                    account: row.get(2)?,
+                    secret: row.get(3)?,
+                    algorithm: row.get(4)?,
+                    digits: row.get(5)?,
+                    period: row.get(6)?,
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    })
+}
+
+pub fn db_save_totp_secret(item: TotpSecret) -> Result<(), String> {
+    debug_log!("db: 保存 TOTP 密钥 id={}", item.id);
+    with_conn(|conn| {
+        conn.execute(
+            "INSERT INTO totp_secrets (id, issuer, account, secret, algorithm, digits, period, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             ON CONFLICT(id) DO UPDATE SET
+                 issuer = ?2, account = ?3, secret = ?4, algorithm = ?5,
+                 digits = ?6, period = ?7, updated_at = ?9",
+            params![
+                item.id, item.issuer, item.account, item.secret,
+                item.algorithm, item.digits, item.period,
+                item.created_at, item.updated_at
+            ],
+        ).map_err(|e| e.to_string())?;
+        Ok(())
+    })
+}
+
+pub fn db_delete_totp_secret(id: String) -> Result<(), String> {
+    debug_log!("db: 删除 TOTP 密钥 id={}", id);
+    with_conn(|conn| {
+        conn.execute("DELETE FROM totp_secrets WHERE id = ?1", params![id])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    })
+}
+
+// ========== Markdown 保存记录 CRUD ==========
+
+/// 非置顶记录的最大保留数量（置顶记录不受限制）
+const MARKDOWN_RECORD_LIMIT: i64 = 20;
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct MarkdownRecord {
+    pub id: String,
+    pub title: String,
+    pub content: String,
+    pub pinned: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+pub fn db_list_markdown_records() -> Result<Vec<MarkdownRecord>, String> {
+    with_conn(|conn| {
+        let mut stmt = conn
+            .prepare("SELECT id, title, content, pinned, created_at, updated_at FROM markdown_records ORDER BY pinned DESC, updated_at DESC")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(MarkdownRecord {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    content: row.get(2)?,
+                    pinned: row.get(3)?,
+                    created_at: row.get(4)?,
+                    updated_at: row.get(5)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    })
+}
+
+pub fn db_save_markdown_record(record: MarkdownRecord) -> Result<(), String> {
+    with_conn(|conn| {
+        conn.execute(
+            "INSERT INTO markdown_records (id, title, content, pinned, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(id) DO UPDATE SET
+                 title = ?2, content = ?3, pinned = ?4, updated_at = ?6",
+            params![
+                record.id, record.title, record.content,
+                record.pinned, record.created_at, record.updated_at
+            ],
+        ).map_err(|e| e.to_string())?;
+        // 仅保留最近 MARKDOWN_RECORD_LIMIT 条非置顶记录，置顶记录永久保留
+        conn.execute(
+            "DELETE FROM markdown_records WHERE pinned = 0 AND id NOT IN (
+                 SELECT id FROM markdown_records WHERE pinned = 0 ORDER BY updated_at DESC LIMIT ?1
+             )",
+            params![MARKDOWN_RECORD_LIMIT],
+        ).map_err(|e| e.to_string())?;
+        Ok(())
+    })
+}
+
+pub fn db_delete_markdown_record(id: String) -> Result<(), String> {
+    with_conn(|conn| {
+        conn.execute("DELETE FROM markdown_records WHERE id = ?1", params![id])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    })
+}
+
+pub fn db_set_markdown_pin(id: String, pinned: bool) -> Result<(), String> {
+    with_conn(|conn| {
+        conn.execute(
+            "UPDATE markdown_records SET pinned = ?2 WHERE id = ?1",
+            params![id, pinned],
+        ).map_err(|e| e.to_string())?;
         Ok(())
     })
 }
@@ -1204,6 +1394,45 @@ pub fn cmd_db_save_snippet(snippet: Snippet) -> Result<(), String> {
 #[tauri::command]
 pub fn cmd_db_delete_snippet(id: String) -> Result<(), String> {
     db_delete_snippet(id)
+}
+
+// ========== TOTP 二次验证密钥 Tauri 命令 ==========
+
+#[tauri::command]
+pub fn cmd_db_list_totp_secrets() -> Result<Vec<TotpSecret>, String> {
+    db_list_totp_secrets()
+}
+
+#[tauri::command]
+pub fn cmd_db_save_totp_secret(item: TotpSecret) -> Result<(), String> {
+    db_save_totp_secret(item)
+}
+
+#[tauri::command]
+pub fn cmd_db_delete_totp_secret(id: String) -> Result<(), String> {
+    db_delete_totp_secret(id)
+}
+
+// ========== Markdown 保存记录 Tauri 命令 ==========
+
+#[tauri::command]
+pub fn cmd_db_list_markdown_records() -> Result<Vec<MarkdownRecord>, String> {
+    db_list_markdown_records()
+}
+
+#[tauri::command]
+pub fn cmd_db_save_markdown_record(record: MarkdownRecord) -> Result<(), String> {
+    db_save_markdown_record(record)
+}
+
+#[tauri::command]
+pub fn cmd_db_delete_markdown_record(id: String) -> Result<(), String> {
+    db_delete_markdown_record(id)
+}
+
+#[tauri::command]
+pub fn cmd_db_set_markdown_pin(id: String, pinned: bool) -> Result<(), String> {
+    db_set_markdown_pin(id, pinned)
 }
 
 // ========== 最近工具 Tauri 命令 ==========
@@ -2117,4 +2346,99 @@ pub fn do_ql_rebuild_fts(conn: &mut Connection) -> Result<(), String> {
             .map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+// ========== 思维导图 CRUD ==========
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct MindmapRecord {
+    pub id: String,
+    pub title: String,
+    pub data_json: String,
+    pub direction: String,
+    pub theme: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn db_mindmap_list() -> Result<Vec<MindmapRecord>, String> {
+    with_conn(|conn| {
+        let mut stmt = conn
+            .prepare("SELECT id, title, data_json, direction, theme, created_at, updated_at FROM mindmaps ORDER BY updated_at DESC")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(MindmapRecord {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    data_json: row.get(2)?,
+                    direction: row.get(3)?,
+                    theme: row.get(4)?,
+                    created_at: row.get(5)?,
+                    updated_at: row.get(6)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        let mut list = Vec::new();
+        for r in rows {
+            list.push(r.map_err(|e| e.to_string())?);
+        }
+        Ok(list)
+    })
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn db_mindmap_save(
+    id: String,
+    title: String,
+    data_json: String,
+    direction: String,
+    theme: String,
+) -> Result<(), String> {
+    with_conn(|conn| {
+        conn.execute(
+            "INSERT INTO mindmaps (id, title, data_json, direction, theme, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, datetime('now'))
+             ON CONFLICT(id) DO UPDATE SET title=excluded.title, data_json=excluded.data_json, direction=excluded.direction, theme=excluded.theme, updated_at=datetime('now')",
+            params![id, title, data_json, direction, theme],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    })
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn db_mindmap_delete(id: String) -> Result<(), String> {
+    with_conn(|conn| {
+        conn.execute("DELETE FROM mindmaps WHERE id = ?1", params![id])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    })
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn db_mindmap_get(id: String) -> Result<Option<MindmapRecord>, String> {
+    with_conn(|conn| {
+        let mut stmt = conn
+            .prepare("SELECT id, title, data_json, direction, theme, created_at, updated_at FROM mindmaps WHERE id = ?1")
+            .map_err(|e| e.to_string())?;
+        let mut rows = stmt
+            .query_map(params![id], |row| {
+                Ok(MindmapRecord {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    data_json: row.get(2)?,
+                    direction: row.get(3)?,
+                    theme: row.get(4)?,
+                    created_at: row.get(5)?,
+                    updated_at: row.get(6)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        if let Some(r) = rows.next() {
+            Ok(Some(r.map_err(|e| e.to_string())?))
+        } else {
+            Ok(None)
+        }
+    })
 }

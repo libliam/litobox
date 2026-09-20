@@ -84,6 +84,7 @@ const QrTool = defineAsyncComponent(() => import('@/views/QrTool.vue'))
 const BarcodeTool = defineAsyncComponent(() => import('@/views/BarcodeTool.vue'))
 const SnippetTool = defineAsyncComponent(() => import('@/views/SnippetTool.vue'))
 const HttpTool = defineAsyncComponent(() => import('@/views/HttpTool.vue'))
+const WSClientTool = defineAsyncComponent(() => import('@/views/WSClientTool.vue'))
 const CurlTool = defineAsyncComponent(() => import('@/views/CurlTool.vue'))
 const HistoryView = defineAsyncComponent(() => import('@/views/HistoryView.vue'))
 const WorkflowView = defineAsyncComponent(() => import('@/views/WorkflowView.vue'))
@@ -104,13 +105,20 @@ const VideoTool = defineAsyncComponent(() => import('@/views/VideoTool.vue'))
 const MediaInfoTool = defineAsyncComponent(() => import('@/views/MediaInfoTool.vue'))
 const ZipTool = defineAsyncComponent(() => import('@/views/ZipTool.vue'))
 const MermaidTool = defineAsyncComponent(() => import('@/views/MermaidTool.vue'))
+const SlideTool = defineAsyncComponent(() => import('@/views/SlideTool.vue'))
+const MindmapTool = defineAsyncComponent(() => import('@/views/MindmapTool.vue'))
+const MindmapEditorTool = defineAsyncComponent(() => import('@/views/MindmapEditorTool.vue'))
 const PomodoroTool = defineAsyncComponent(() => import('@/views/PomodoroTool.vue'))
 const ServiceListView = defineAsyncComponent(() => import('@/views/ServiceListView.vue'))
 const HotkeyView = defineAsyncComponent(() => import('@/views/HotkeyView.vue'))
 const HostsView = defineAsyncComponent(() => import('@/views/HostsView.vue'))
 const NetworkConnections = defineAsyncComponent(() => import('@/views/NetworkConnections.vue'))
+const ContextMenuTool = defineAsyncComponent(() => import('@/views/ContextMenuTool.vue'))
 const ScheduledTasksView = defineAsyncComponent(() => import('@/views/ScheduledTasksView.vue'))
 const StartupItemsView = defineAsyncComponent(() => import('@/views/StartupItemsView.vue'))
+const LogViewerView = defineAsyncComponent(() => import('@/views/LogViewerView.vue'))
+const ChmodTool = defineAsyncComponent(() => import('@/views/ChmodTool.vue'))
+const CheatSheetTool = defineAsyncComponent(() => import('@/views/CheatSheetTool.vue'))
 const EnvVarsView = defineAsyncComponent(() => import('@/views/EnvVarsView.vue'))
 const CertViewer = defineAsyncComponent(() => import('@/views/CertViewer.vue'))
 const BoostView = defineAsyncComponent(() => import('@/views/BoostView.vue'))
@@ -120,6 +128,15 @@ const QuickLaunchTool = defineAsyncComponent(() => import('@/views/QuickLaunchTo
 const SvgTool = defineAsyncComponent(() => import('@/views/SvgTool.vue'))
 const BatchReplaceTool = defineAsyncComponent(() => import('@/views/BatchReplaceTool.vue'))
 const ChangelogView = defineAsyncComponent(() => import('@/views/ChangelogView.vue'))
+const EntityGenTool = defineAsyncComponent(() => import('@/views/EntityGenTool.vue'))
+const FolderDiffTool = defineAsyncComponent(() => import('@/views/FolderDiffTool.vue'))
+const TotpTool = defineAsyncComponent(() => import('@/views/TotpTool.vue'))
+const HexViewerTool = defineAsyncComponent(() => import('@/views/HexViewerTool.vue'))
+const FileEncodingTool = defineAsyncComponent(() => import('@/views/FileEncodingTool.vue'))
+const EmojiPanelTool = defineAsyncComponent(() => import('@/views/EmojiPanelTool.vue'))
+const FontPreviewTool = defineAsyncComponent(() => import('@/views/FontPreviewTool.vue'))
+const AsciiArtTool = defineAsyncComponent(() => import('@/views/AsciiArtTool.vue'))
+const OllamaTool = defineAsyncComponent(() => import('@/views/OllamaTool.vue'))
 import CommandPalette from '@/components/CommandPalette.vue'
 import QuickLaunchOverlay from '@/components/QuickLaunchOverlay.vue'
 import { ConfirmDialogWrapper } from '@/composables/useConfirmDialog'
@@ -141,6 +158,9 @@ const toolComponentMap: Record<string, any> = {
   fileprocessing: FileProcessing,
   zipTool: ZipTool,
   mermaid: MermaidTool,
+  slide: SlideTool,
+  mindmap: MindmapTool,
+  mindmapEditor: MindmapEditorTool,
   pomodoro: PomodoroTool,
   sql: SqlTool,
   batchReplace: BatchReplaceTool,
@@ -179,6 +199,7 @@ const toolComponentMap: Record<string, any> = {
   barcode: BarcodeTool,
   snippet: SnippetTool,
   http: HttpTool,
+  wsClient: WSClientTool,
   curl: CurlTool,
   history: HistoryView,
   workflow: WorkflowView,
@@ -200,8 +221,12 @@ const toolComponentMap: Record<string, any> = {
   hotkeyViewer: HotkeyView,
   hostsManager: HostsView,
   networkConnections: NetworkConnections,
+  contextMenu: ContextMenuTool,
   scheduledTasks: ScheduledTasksView,
   startupItems: StartupItemsView,
+  logViewer: LogViewerView,
+  chmod: ChmodTool,
+  cheatSheet: CheatSheetTool,
   envVars: EnvVarsView,
   certViewer: CertViewer,
   boost: BoostView,
@@ -210,6 +235,15 @@ const toolComponentMap: Record<string, any> = {
   quickLaunch: QuickLaunchTool,
   svg: SvgTool,
   changelog: ChangelogView,
+  entityGen: EntityGenTool,
+  folderDiff: FolderDiffTool,
+  totp: TotpTool,
+  hexViewer: HexViewerTool,
+  fileEncoding: FileEncodingTool,
+  emojiPanel: EmojiPanelTool,
+  fontPreview: FontPreviewTool,
+  asciiArt: AsciiArtTool,
+  ollama: OllamaTool,
 }
 
 const store = useToolboxStore()
