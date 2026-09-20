@@ -15,8 +15,15 @@ export interface ChangelogData {
 }
 
 export const changelogData: ChangelogData = {
-  versionRange: "从 v1.0 到 v8.14.0 更新内容",
+  versionRange: "从 v1.0 到 v8.15.0 更新内容",
   entries: [
+  {
+    "version": "8.15.0",
+    "date": "2026-09-20",
+    "content": "**ASCII 艺术生成工具**：文本转字符画（5×7 像素字库，8 种填充风格：像素/方块/深灰/中灰/浅灰/星点/@/自定义，支持反转、字间距开关）；图片转 ASCII（4 种输出模式：灰度字符/彩色HTML/Braille盲文/半角方块，6 种字符集预设+自定义，宽度与反转可调，彩色模式复制 HTML 粘贴富文本）；**工作流增强**：步骤新增条件判断（总是/包含/不包含/等于/不等于/为空/不为空/正则匹配，不满足则跳过该步）与循环执行（逐行处理：按行拆分逐行执行再合并；重复 N 次：以上次输出为输入重复执行），条件与循环可叠加使用，旧工作流自动兼容",
+    "isEnhancement": true,
+    "isNewFeature": true
+  },
   {
     "version": "8.14.0",
     "date": "2026-09-18",

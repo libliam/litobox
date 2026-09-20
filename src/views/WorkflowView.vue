@@ -85,6 +85,43 @@
                       />
                     </el-select>
                   </div>
+                  <!-- 条件 & 循环配置 -->
+                  <div class="step-row step-config-row">
+                    <span class="config-label">条件</span>
+                    <el-select v-model="step.condition.type" size="small" style="width: 110px">
+                      <el-option label="总是执行" value="always" />
+                      <el-option label="包含" value="contains" />
+                      <el-option label="不包含" value="notContains" />
+                      <el-option label="等于" value="equals" />
+                      <el-option label="不等于" value="notEquals" />
+                      <el-option label="为空" value="isEmpty" />
+                      <el-option label="不为空" value="notEmpty" />
+                      <el-option label="正则匹配" value="regex" />
+                    </el-select>
+                    <el-input
+                      v-if="needsConditionValue(step.condition.type)"
+                      v-model="step.condition.value"
+                      placeholder="匹配值"
+                      size="small"
+                      style="width: 120px"
+                    />
+                    <span class="config-label" style="margin-left: 16px">循环</span>
+                    <el-switch v-model="step.loop.enabled" size="small" />
+                    <template v-if="step.loop.enabled">
+                      <el-select v-model="step.loop.mode" size="small" style="width: 110px; margin-left: 8px">
+                        <el-option label="逐行处理" value="perLine" />
+                        <el-option label="重复N次" value="repeat" />
+                      </el-select>
+                      <el-input-number
+                        v-if="step.loop.mode === 'repeat'"
+                        v-model="step.loop.times"
+                        :min="1"
+                        :max="100"
+                        size="small"
+                        style="width: 90px; margin-left: 8px"
+                      />
+                    </template>
+                  </div>
                 </div>
                 <el-button
                   size="small"
@@ -310,12 +347,27 @@ const showAddVariable = ref(false)
 const newVariable = ref({ name: '', value: '' })
 
 // 类型定义
+type ConditionType = 'always' | 'contains' | 'notContains' | 'equals' | 'notEquals' | 'isEmpty' | 'notEmpty' | 'regex'
+
+interface Condition {
+  type: ConditionType
+  value: string
+}
+
+interface LoopConfig {
+  enabled: boolean
+  mode: 'perLine' | 'repeat'
+  times: number
+}
+
 interface WorkflowStep {
   tool: string
   action: string
   input: string
   manualInput: string
   variableName: string
+  condition: Condition
+  loop: LoopConfig
 }
 
 interface WorkflowWithSteps extends db.Workflow {
@@ -417,9 +469,45 @@ function getActionsForTool(tool: string): string[] {
   return TOOL_ACTIONS[tool] || []
 }
 
+// 条件类型是否需要输入匹配值
+function needsConditionValue(type: ConditionType): boolean {
+  return !['always', 'isEmpty', 'notEmpty'].includes(type)
+}
+
+// 条件判断：对上一步输出求值
+function evalCondition(cond: Condition, input: string): boolean {
+  switch (cond.type) {
+    case 'always': return true
+    case 'contains': return input.includes(cond.value)
+    case 'notContains': return !input.includes(cond.value)
+    case 'equals': return input === cond.value
+    case 'notEquals': return input !== cond.value
+    case 'isEmpty': return input.trim() === ''
+    case 'notEmpty': return input.trim() !== ''
+    case 'regex':
+      try {
+        return new RegExp(cond.value).test(input)
+      } catch {
+        return false
+      }
+    default: return true
+  }
+}
+
 function parseSteps(stepsJson: string): WorkflowStep[] {
   try {
-    return JSON.parse(stepsJson)
+    const parsed = JSON.parse(stepsJson)
+    if (!Array.isArray(parsed)) return []
+    // 兼容旧数据：补齐 condition / loop 字段
+    return parsed.map((s: any) => ({
+      tool: s.tool || '',
+      action: s.action || '',
+      input: s.input || 'prev_output',
+      manualInput: s.manualInput || '',
+      variableName: s.variableName || '',
+      condition: s.condition || { type: 'always', value: '' },
+      loop: s.loop || { enabled: false, mode: 'perLine', times: 1 },
+    }))
   } catch {
     return []
   }
@@ -497,6 +585,8 @@ function handleAddStep() {
     input: isFirst ? 'exec_input' : 'prev_output',
     manualInput: '',
     variableName: '',
+    condition: { type: 'always', value: '' },
+    loop: { enabled: false, mode: 'perLine', times: 1 },
   })
 }
 
@@ -567,6 +657,64 @@ function handleRunWorkflow(wf: db.Workflow) {
 }
 
 // 一键剪贴板执行
+// 通用执行引擎：支持条件跳过 + 循环（逐行/重复）
+async function runSteps(
+  steps: WorkflowStep[],
+  initialInput: string,
+  onProgress?: (stepIndex: number) => void
+): Promise<string> {
+  let currentInput = initialInput
+  for (let i = 0; i < steps.length; i++) {
+    onProgress?.(i)
+    const step = steps[i]
+
+    // 获取输入来源
+    let input = currentInput
+    if (step.input === 'variable') {
+      try {
+        input = await db.getVariable(step.variableName)
+      } catch {
+        input = ''
+      }
+    } else if (step.input === 'manual') {
+      input = step.manualInput || currentInput
+    } else if (step.input === 'exec_input') {
+      input = initialInput || currentInput
+    } else if (step.input === 'prev_output') {
+      input = currentInput
+    }
+
+    // 条件判断：不满足则跳过，currentInput 保持不变
+    if (!evalCondition(step.condition, input)) {
+      continue
+    }
+
+    // 执行步骤（支持循环）
+    let result: string
+    if (step.loop.enabled) {
+      if (step.loop.mode === 'perLine') {
+        const lines = input.split('\n')
+        const outLines: string[] = []
+        for (const line of lines) {
+          outLines.push(await executeStep(step.tool, step.action, line))
+        }
+        result = outLines.join('\n')
+      } else {
+        // repeat：重复执行 N 次，每次输入是上一次输出
+        let val = input
+        for (let t = 0; t < step.loop.times; t++) {
+          val = await executeStep(step.tool, step.action, val)
+        }
+        result = val
+      }
+    } else {
+      result = await executeStep(step.tool, step.action, input)
+    }
+    currentInput = result
+  }
+  return currentInput
+}
+
 async function handleClipboardExecute(wf: db.Workflow) {
   try {
     const clipboardContent = await navigator.clipboard.readText()
@@ -581,22 +729,7 @@ async function handleClipboardExecute(wf: db.Workflow) {
       return
     }
 
-    let result = clipboardContent
-
-    for (let i = 0; i < steps.length; i++) {
-      const step = steps[i]
-      let input = result
-      if (step.input === 'variable') {
-        try {
-          input = await db.getVariable(step.variableName)
-        } catch {
-          input = ''
-        }
-      } else if (step.input === 'manual') {
-        input = step.manualInput || result
-      }
-      result = await executeStep(step.tool, step.action, input)
-    }
+    const result = await runSteps(steps, clipboardContent)
 
     await navigator.clipboard.writeText(result)
     ElMessage.success(`执行完成！结果已复制到剪贴板（${result.length} 字符）`)
@@ -658,39 +791,13 @@ async function handleExecute() {
   execError.value = ''
 
   const steps = executingWorkflow.value.steps
-  let currentInput = execInput.value
 
   try {
-    for (let i = 0; i < steps.length; i++) {
+    const result = await runSteps(steps, execInput.value, (i) => {
       execCurrentStep.value = i
       execProgress.value = Math.round(((i + 1) / steps.length) * 100)
-
-      const step = steps[i]
-      
-      // 获取输入
-      let input = currentInput
-      if (step.input === 'variable') {
-        try {
-          input = await db.getVariable(step.variableName)
-        } catch {
-          input = ''
-        }
-      } else if (step.input === 'manual') {
-        input = step.manualInput || currentInput
-      } else if (step.input === 'exec_input') {
-        // 第一步使用执行输入框的内容
-        input = execInput.value || currentInput
-      } else if (step.input === 'prev_output') {
-        // 后续步骤使用上一步输出
-        input = currentInput
-      }
-
-      // 执行操作
-      const result = await executeStep(step.tool, step.action, input)
-      currentInput = result
-    }
-
-    execOutput.value = currentInput
+    })
+    execOutput.value = result
     ElMessage.success('执行完成')
   } catch (e: any) {
     execError.value = e.message || '执行失败'
@@ -1162,6 +1269,16 @@ onMounted(() => {
 }
 .step-var-input {
   width: 140px;
+}
+.step-config-row {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border-color);
+  font-size: 13px;
+}
+.config-label {
+  color: var(--text-secondary);
+  white-space: nowrap;
 }
 
 /* 执行进度 */

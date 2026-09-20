@@ -135,6 +135,7 @@ const HexViewerTool = defineAsyncComponent(() => import('@/views/HexViewerTool.v
 const FileEncodingTool = defineAsyncComponent(() => import('@/views/FileEncodingTool.vue'))
 const EmojiPanelTool = defineAsyncComponent(() => import('@/views/EmojiPanelTool.vue'))
 const FontPreviewTool = defineAsyncComponent(() => import('@/views/FontPreviewTool.vue'))
+const AsciiArtTool = defineAsyncComponent(() => import('@/views/AsciiArtTool.vue'))
 const OllamaTool = defineAsyncComponent(() => import('@/views/OllamaTool.vue'))
 import CommandPalette from '@/components/CommandPalette.vue'
 import QuickLaunchOverlay from '@/components/QuickLaunchOverlay.vue'
@@ -241,6 +242,7 @@ const toolComponentMap: Record<string, any> = {
   fileEncoding: FileEncodingTool,
   emojiPanel: EmojiPanelTool,
   fontPreview: FontPreviewTool,
+  asciiArt: AsciiArtTool,
   ollama: OllamaTool,
 }
 

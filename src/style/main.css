@@ -36,6 +36,11 @@ html, body {
   flex-shrink: 0;
 }
 
+/* 非末尾卡片不参与收缩，避免内容总高度超出时被压缩导致底部 padding 缩水 */
+.tool-container.fill-height > .tool-card:not(:last-child) {
+  flex-shrink: 0;
+}
+
 .tool-container.fill-height > .tool-card:last-child {
   flex: 1 1 auto;
   min-height: 240px;
