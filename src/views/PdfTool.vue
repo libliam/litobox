@@ -11,6 +11,10 @@
         <el-tab-pane label="PDF压缩" name="compress" />
         <el-tab-pane label="提取图片" name="extractImages" />
         <el-tab-pane label="PDF加水印" name="watermark" />
+        <el-tab-pane label="加密/解密" name="encrypt" />
+        <el-tab-pane label="页面操作" name="pageOps" />
+        <el-tab-pane label="页眉页脚" name="headerFooter" />
+        <el-tab-pane label="注释提取" name="annotations" />
       </el-tabs>
     </div>
 
@@ -881,13 +885,345 @@
       </div>
     </div>
 
+    <!-- Tab 9: 加密/解密（输入卡片） -->
+    <div v-if="activeTab === 'encrypt'" class="tool-card">
+      <div class="card-header">
+        <span class="card-title">PDF 文件</span>
+      </div>
+      <div class="card-body">
+        <input ref="encryptInputRef" type="file" accept="application/pdf" style="display: none" @change="handleEncryptPdfSelect" />
+        <div v-if="!encryptPdfFile" class="drop-zone" @click="triggerEncryptInput">
+          <el-icon :size="40" color="var(--text-secondary)"><UploadFilled /></el-icon>
+          <p>点击选择 PDF 文件</p>
+          <p class="hint">支持加密（设置打开密码/权限）和解密（移除密码）</p>
+        </div>
+        <div v-else class="file-info-row">
+          <el-icon :size="24" color="var(--accent-cyan)"><Document /></el-icon>
+          <div class="file-meta">
+            <div class="file-name">{{ encryptPdfFile.name }}</div>
+            <div class="file-size">{{ formatFileSize(encryptPdfFile.size) }} · {{ encryptPageCount }} 页</div>
+          </div>
+          <el-button size="small" @click="handleClearEncryptPdf">移除</el-button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 9: 加密/解密（操作卡片） -->
+    <div v-if="activeTab === 'encrypt'" class="tool-card">
+      <div class="card-header">
+        <span class="card-title">操作设置</span>
+      </div>
+      <div class="card-body">
+        <el-radio-group v-model="encryptMode" size="default" style="margin-bottom: 16px">
+          <el-radio-button value="encrypt">加密</el-radio-button>
+          <el-radio-button value="decrypt">解密</el-radio-button>
+        </el-radio-group>
+
+        <template v-if="encryptMode === 'encrypt'">
+          <div class="form-row">
+            <label class="form-label">打开密码</label>
+            <el-input v-model="encryptUserPwd" type="password" show-password placeholder="打开 PDF 时需要输入的密码" size="default" />
+          </div>
+          <div class="form-row">
+            <label class="form-label">权限设置</label>
+            <div class="perm-group">
+              <el-checkbox v-model="permPrint">允许打印</el-checkbox>
+              <el-checkbox v-model="permModify">允许修改</el-checkbox>
+              <el-checkbox v-model="permCopy">允许复制</el-checkbox>
+              <el-checkbox v-model="permAnnotate">允许批注</el-checkbox>
+            </div>
+          </div>
+          <div class="form-tip">
+            <el-icon><InfoFilled /></el-icon>
+            <span>采用 AES-256 加密，保存后打开 PDF 必须输入密码。权限设置为提示性，部分阅读器可能不强制限制。</span>
+          </div>
+          <el-button type="primary" :disabled="!encryptPdfFile || !encryptUserPwd" :loading="isEncrypting" @click="handleEncrypt">加密 PDF</el-button>
+        </template>
+
+        <template v-else>
+          <div class="form-row">
+            <label class="form-label">密码</label>
+            <el-input v-model="decryptPwd" type="password" show-password placeholder="输入 PDF 密码" size="default" />
+          </div>
+          <div class="form-tip">
+            <el-icon><InfoFilled /></el-icon>
+            <span>解密后将生成无密码保护的 PDF 文件。</span>
+          </div>
+          <el-button type="primary" :disabled="!encryptPdfFile || !decryptPwd" :loading="isEncrypting" @click="handleDecrypt">解密 PDF</el-button>
+        </template>
+
+        <div v-if="encryptError" class="error-message" style="margin-top: 12px">{{ encryptError }}</div>
+      </div>
+    </div>
+
+    <!-- Tab 9: 加密/解密（结果卡片） -->
+    <div v-if="activeTab === 'encrypt' && encryptResult" class="tool-card">
+      <div class="card-header">
+        <span class="card-title">处理结果</span>
+      </div>
+      <div class="card-body">
+        <div class="file-info-row">
+          <el-icon :size="24" color="var(--accent-green)"><CircleCheckFilled /></el-icon>
+          <div class="file-meta">
+            <div class="file-name">{{ encryptMode === 'encrypt' ? '已加密' : '已解密' }} · {{ formatFileSize(encryptResult.size) }}</div>
+            <div class="file-size">点击保存下载</div>
+          </div>
+          <el-button type="success" @click="handleSaveEncryptedPdf">保存</el-button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 10: 页面操作（输入卡片） -->
+    <div v-if="activeTab === 'pageOps'" class="tool-card">
+      <div class="card-header">
+        <span class="card-title">PDF 文件</span>
+      </div>
+      <div class="card-body">
+        <input ref="pageOpsInputRef" type="file" accept="application/pdf" style="display: none" @change="handlePageOpsPdfSelect" />
+        <div v-if="!pageOpsPdfFile" class="drop-zone" @click="triggerPageOpsInput">
+          <el-icon :size="40" color="var(--text-secondary)"><UploadFilled /></el-icon>
+          <p>点击选择 PDF 文件</p>
+          <p class="hint">旋转指定页面或删除页面</p>
+        </div>
+        <div v-else class="file-info-row">
+          <el-icon :size="24" color="var(--accent-cyan)"><Document /></el-icon>
+          <div class="file-meta">
+            <div class="file-name">{{ pageOpsPdfFile.name }}</div>
+            <div class="file-size">{{ formatFileSize(pageOpsPdfFile.size) }} · {{ pageOpsPageCount }} 页</div>
+          </div>
+          <el-button size="small" @click="handleClearPageOpsPdf">移除</el-button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 10: 页面操作（操作卡片） -->
+    <div v-if="activeTab === 'pageOps'" class="tool-card">
+      <div class="card-header">
+        <span class="card-title">操作设置</span>
+      </div>
+      <div class="card-body">
+        <el-radio-group v-model="pageOpsMode" size="default" style="margin-bottom: 16px">
+          <el-radio-button value="rotate">旋转页面</el-radio-button>
+          <el-radio-button value="delete">删除页面</el-radio-button>
+        </el-radio-group>
+
+        <div class="form-row">
+          <label class="form-label">页码范围</label>
+          <el-input v-model="pageOpsRange" placeholder="如: 1-3,5 或 all / odd / even" size="default" />
+        </div>
+        <div class="form-tip">
+          <el-icon><InfoFilled /></el-icon>
+          <span>支持：<code>all</code> 全部、<code>odd</code> 奇数页、<code>even</code> 偶数页、<code>1-3</code> 连续范围、<code>1,3,5</code> 多页，可组合如 <code>1,3-5,8</code>。页码从 1 开始。</span>
+        </div>
+
+        <template v-if="pageOpsMode === 'rotate'">
+          <div class="form-row">
+            <label class="form-label">旋转角度</label>
+            <el-radio-group v-model="rotateAngle" size="default">
+              <el-radio-button :value="90">顺时针 90°</el-radio-button>
+              <el-radio-button :value="180">180°</el-radio-button>
+              <el-radio-button :value="270">逆时针 90°</el-radio-button>
+            </el-radio-group>
+          </div>
+          <div class="form-tip">
+            <el-icon><InfoFilled /></el-icon>
+            <span>旋转角度会累加在页面原有的旋转方向上。</span>
+          </div>
+          <el-button type="primary" :disabled="!pageOpsPdfFile || !pageOpsRange" :loading="isPageOpsRunning" @click="handleRotatePages">旋转页面</el-button>
+        </template>
+
+        <template v-else>
+          <div class="form-tip danger-tip">
+            <el-icon><Warning /></el-icon>
+            <span>删除操作不可撤销，建议先备份原文件。</span>
+          </div>
+          <el-button type="danger" :disabled="!pageOpsPdfFile || !pageOpsRange" :loading="isPageOpsRunning" @click="handleDeletePages">删除页面</el-button>
+        </template>
+
+        <div v-if="pageOpsError" class="error-message" style="margin-top: 12px">{{ pageOpsError }}</div>
+      </div>
+    </div>
+
+    <!-- Tab 10: 页面操作（结果卡片） -->
+    <div v-if="activeTab === 'pageOps' && pageOpsResult" class="tool-card">
+      <div class="card-header">
+        <span class="card-title">处理结果</span>
+      </div>
+      <div class="card-body">
+        <div class="file-info-row">
+          <el-icon :size="24" color="var(--accent-green)"><CircleCheckFilled /></el-icon>
+          <div class="file-meta">
+            <div class="file-name">{{ pageOpsMode === 'rotate' ? '已旋转' : '已删除页面' }} · {{ formatFileSize(pageOpsResult.size) }}</div>
+            <div class="file-size">点击保存下载</div>
+          </div>
+          <el-button type="success" @click="handleSavePageOpsPdf">保存</el-button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 11: 页眉页脚（输入卡片） -->
+    <div v-if="activeTab === 'headerFooter'" class="tool-card">
+      <div class="card-header">
+        <span class="card-title">PDF 文件</span>
+      </div>
+      <div class="card-body">
+        <input ref="hfInputRef" type="file" accept="application/pdf" style="display: none" @change="handleHfPdfSelect" />
+        <div v-if="!hfPdfFile" class="drop-zone" @click="triggerHfInput">
+          <el-icon :size="40" color="var(--text-secondary)"><UploadFilled /></el-icon>
+          <p>点击选择 PDF 文件</p>
+          <p class="hint">为每页添加页眉、页脚、页码（支持 &#123;n&#125; 当前页 / &#123;total&#125; 总页数变量）</p>
+        </div>
+        <div v-else class="file-info-row">
+          <el-icon :size="24" color="var(--accent-cyan)"><Document /></el-icon>
+          <div class="file-meta">
+            <div class="file-name">{{ hfPdfFile.name }}</div>
+            <div class="file-size">{{ formatFileSize(hfPdfFile.size) }} · {{ hfPageCount }} 页</div>
+          </div>
+          <el-button size="small" @click="handleClearHfPdf">移除</el-button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 11: 页眉页脚（设置卡片） -->
+    <div v-if="activeTab === 'headerFooter'" class="tool-card">
+      <div class="card-header">
+        <span class="card-title">页眉页脚设置</span>
+      </div>
+      <div class="card-body">
+        <div class="form-row">
+          <label class="form-label">页眉文字</label>
+          <el-input v-model="hfHeaderText" placeholder="居中顶部，支持 {n} {total}" size="default" />
+        </div>
+        <div class="form-row">
+          <label class="form-label">页脚文字</label>
+          <el-input v-model="hfFooterText" placeholder="居中底部，支持 {n} {total}" size="default" />
+        </div>
+        <div class="form-tip">
+          <el-icon><InfoFilled /></el-icon>
+          <span>变量：<code>{n}</code> 当前页码、<code>{total}</code> 总页数。页眉居中显示在顶部，页脚居中显示在底部，留空则不添加。</span>
+        </div>
+        <div class="form-row">
+          <el-checkbox v-model="hfShowPageNum">显示页码</el-checkbox>
+        </div>
+        <template v-if="hfShowPageNum">
+          <div class="form-row">
+            <label class="form-label">页码格式</label>
+            <el-input v-model="hfPageNumFormat" placeholder="如: 第 {n} 页 / 共 {total} 页" size="default" />
+          </div>
+          <div class="form-row">
+            <label class="form-label">页码位置</label>
+            <el-select v-model="hfPageNumPos" size="default">
+              <el-option label="页眉左" value="header-left" />
+              <el-option label="页眉中" value="header-center" />
+              <el-option label="页眉右" value="header-right" />
+              <el-option label="页脚左" value="footer-left" />
+              <el-option label="页脚中" value="footer-center" />
+              <el-option label="页脚右" value="footer-right" />
+            </el-select>
+          </div>
+          <div class="form-tip">
+            <el-icon><InfoFilled /></el-icon>
+            <span>页码与页眉/页脚文字相互独立，可同时存在。例：页眉填"项目报告"，页码设为页脚右。</span>
+          </div>
+        </template>
+        <div class="form-row">
+          <label class="form-label">字体大小</label>
+          <el-input-number v-model="hfFontSize" :min="8" :max="72" :step="1" size="default" />
+        </div>
+        <div class="form-row">
+          <label class="form-label">字体颜色</label>
+          <el-color-picker v-model="hfFontColor" size="default" />
+        </div>
+        <div class="form-row">
+          <label class="form-label">边距 (pt)</label>
+          <el-input-number v-model="hfMargin" :min="0" :max="200" :step="5" size="default" />
+        </div>
+        <div class="form-tip">
+          <el-icon><InfoFilled /></el-icon>
+          <span>边距指文字距页面边缘的距离，默认 36pt（约 0.5 英寸）。1 英寸 = 72pt。</span>
+        </div>
+        <el-button type="primary" :disabled="!hfPdfFile" :loading="isHfRunning" @click="handleAddHeaderFooter">添加页眉页脚</el-button>
+        <div v-if="hfError" class="error-message" style="margin-top: 12px">{{ hfError }}</div>
+      </div>
+    </div>
+
+    <!-- Tab 11: 页眉页脚（结果卡片） -->
+    <div v-if="activeTab === 'headerFooter' && hfResult" class="tool-card">
+      <div class="card-header">
+        <span class="card-title">处理结果</span>
+      </div>
+      <div class="card-body">
+        <div class="file-info-row">
+          <el-icon :size="24" color="var(--accent-green)"><CircleCheckFilled /></el-icon>
+          <div class="file-meta">
+            <div class="file-name">已添加页眉页脚 · {{ formatFileSize(hfResult.size) }}</div>
+            <div class="file-size">点击保存下载</div>
+          </div>
+          <el-button type="success" @click="handleSaveHfPdf">保存</el-button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 12: 注释提取（输入卡片） -->
+    <div v-if="activeTab === 'annotations'" class="tool-card">
+      <div class="card-header">
+        <span class="card-title">PDF 文件</span>
+      </div>
+      <div class="card-body">
+        <input ref="annotInputRef" type="file" accept="application/pdf" style="display: none" @change="handleAnnotPdfSelect" />
+        <div v-if="!annotPdfFile" class="drop-zone" @click="triggerAnnotInput">
+          <el-icon :size="40" color="var(--text-secondary)"><UploadFilled /></el-icon>
+          <p>点击选择 PDF 文件</p>
+          <p class="hint">提取高亮/批注/下划线等注释</p>
+        </div>
+        <div v-else class="file-info-row">
+          <el-icon :size="24" color="var(--accent-cyan)"><Document /></el-icon>
+          <div class="file-meta">
+            <div class="file-name">{{ annotPdfFile.name }}</div>
+            <div class="file-size">{{ formatFileSize(annotPdfFile.size) }} · {{ annotPageCount }} 页</div>
+          </div>
+          <el-button size="small" @click="handleClearAnnotPdf">移除</el-button>
+        </div>
+        <div style="margin-top: 12px">
+          <el-button type="primary" :disabled="!annotPdfFile" :loading="isAnnotExtracting" @click="handleExtractAnnotations">提取注释</el-button>
+        </div>
+        <div v-if="annotError" class="error-message" style="margin-top: 12px">{{ annotError }}</div>
+      </div>
+    </div>
+
+    <!-- Tab 12: 注释提取（结果卡片） -->
+    <div v-if="activeTab === 'annotations' && annotations.length" class="tool-card">
+      <div class="card-header">
+        <div class="header-left">
+          <span class="card-title">注释列表</span>
+          <span class="annot-count">共 {{ annotations.length }} 条</span>
+        </div>
+        <div class="card-actions">
+          <el-button size="small" @click="handleCopyAnnotations">复制全部</el-button>
+          <el-button size="small" @click="handleExportAnnotations">导出 TXT</el-button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div v-for="(a, idx) in annotations" :key="idx" class="annotation-item">
+          <div class="annot-head">
+            <el-tag size="small" :type="annotTypeColor(a.type)">{{ a.type }}</el-tag>
+            <span class="annot-page">第 {{ a.page }} 页</span>
+            <span v-if="a.color" class="annot-color-dot" :style="{ background: a.color }"></span>
+            <span v-if="a.author" class="annot-author">{{ a.author }}</span>
+          </div>
+          <div v-if="a.contents" class="annot-contents">{{ a.contents }}</div>
+          <div v-else class="annot-empty">（无文字内容）</div>
+        </div>
+      </div>
+    </div>
+
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
 import { ElMessage, ElLoading } from 'element-plus'
-import { QuestionFilled, Warning } from '@element-plus/icons-vue'
+import { QuestionFilled, Warning, UploadFilled, Document, CircleCheckFilled, InfoFilled } from '@element-plus/icons-vue'
 import {
   pdfToImages,
   extractPdfText,
@@ -898,9 +1234,18 @@ import {
   formatFileSize,
   extractEmbeddedImages,
   addWatermark,
+  encryptPdf,
+  decryptPdf,
+  rotatePdfPages,
+  deletePdfPages,
+  addHeaderFooter,
+  extractAnnotations,
   type ImageToPdfOptions,
   type ExtractedImage,
-  type WatermarkOptions
+  type WatermarkOptions,
+  type EncryptPdfOptions,
+  type HeaderFooterOptions,
+  type PdfAnnotation,
 } from '@/utils/pdfUtils'
 import { recognizeImage, recognizeMarkdown } from '@/utils/ocrUtils'
 import { useToolboxStore } from '@/store'
@@ -1586,6 +1931,401 @@ watch(watermarkPdfFile, async (newFile) => {
     renderWatermarkPreview()
   }
 })
+
+// ============ Tab 9: PDF 加密/解密 ============
+const encryptInputRef = ref<HTMLInputElement | null>(null)
+const encryptPdfFile = ref<File | null>(null)
+const encryptPageCount = ref(0)
+const isEncrypting = ref(false)
+const encryptResult = ref<Blob | null>(null)
+const encryptError = ref('')
+const encryptMode = ref<'encrypt' | 'decrypt'>('encrypt')
+const encryptUserPwd = ref('')
+const decryptPwd = ref('')
+const permPrint = ref(true)
+const permModify = ref(true)
+const permCopy = ref(true)
+const permAnnotate = ref(true)
+
+const triggerEncryptInput = () => encryptInputRef.value?.click()
+
+const handleEncryptPdfSelect = async (e: Event) => {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  encryptError.value = ''
+  encryptResult.value = null
+  if (file.size > 100 * 1024 * 1024) {
+    encryptError.value = 'PDF 过大，建议小于 100MB'
+    return
+  }
+  encryptPdfFile.value = file
+  try {
+    const buffer = await file.arrayBuffer()
+    const doc = await loadPdfDocument(new Uint8Array(buffer))
+    encryptPageCount.value = doc.numPages
+  } catch {
+    encryptPageCount.value = 0
+  }
+  input.value = ''
+}
+
+const handleClearEncryptPdf = () => {
+  encryptPdfFile.value = null
+  encryptPageCount.value = 0
+  encryptResult.value = null
+  encryptError.value = ''
+  if (encryptInputRef.value) encryptInputRef.value.value = ''
+}
+
+const handleEncrypt = async () => {
+  if (!encryptPdfFile.value || !encryptUserPwd.value) return
+  encryptError.value = ''
+  encryptResult.value = null
+  isEncrypting.value = true
+  try {
+    const options: EncryptPdfOptions = {
+      userPassword: encryptUserPwd.value,
+      permissions: {
+        print: permPrint.value,
+        modify: permModify.value,
+        copy: permCopy.value,
+        annotate: permAnnotate.value,
+      },
+    }
+    const blob = await encryptPdf(encryptPdfFile.value, options)
+    encryptResult.value = blob
+    ElMessage.success('加密完成')
+    store.addHistory({
+      tool: 'pdf',
+      action: 'PDF加密',
+      inputPreview: encryptPdfFile.value.name.slice(0, 50),
+      outputPreview: formatFileSize(blob.size),
+      inputFull: encryptPdfFile.value.name,
+      outputFull: `权限: 打印=${permPrint.value}/修改=${permModify.value}/复制=${permCopy.value}/批注=${permAnnotate.value}`,
+    })
+  } catch (e: any) {
+    encryptError.value = e.message || '加密失败'
+  } finally {
+    isEncrypting.value = false
+  }
+}
+
+const handleDecrypt = async () => {
+  if (!encryptPdfFile.value || !decryptPwd.value) return
+  encryptError.value = ''
+  encryptResult.value = null
+  isEncrypting.value = true
+  try {
+    const blob = await decryptPdf(encryptPdfFile.value, decryptPwd.value)
+    encryptResult.value = blob
+    ElMessage.success('解密完成')
+    store.addHistory({
+      tool: 'pdf',
+      action: 'PDF解密',
+      inputPreview: encryptPdfFile.value.name.slice(0, 50),
+      outputPreview: formatFileSize(blob.size),
+      inputFull: encryptPdfFile.value.name,
+      outputFull: '',
+    })
+  } catch (e: any) {
+    encryptError.value = e.message || '解密失败，请检查密码是否正确'
+  } finally {
+    isEncrypting.value = false
+  }
+}
+
+const handleSaveEncryptedPdf = async () => {
+  if (!encryptResult.value) return
+  const baseName = encryptPdfFile.value?.name.replace(/\.pdf$/i, '') || 'pdf'
+  const suffix = encryptMode.value === 'encrypt' ? '_encrypted' : '_decrypted'
+  await saveFileWithDialog(encryptResult.value, `${baseName}${suffix}.pdf`, 'pdf')
+  ElMessage.success('已保存')
+}
+
+// ============ Tab 10: PDF 页面操作 ============
+const pageOpsInputRef = ref<HTMLInputElement | null>(null)
+const pageOpsPdfFile = ref<File | null>(null)
+const pageOpsPageCount = ref(0)
+const isPageOpsRunning = ref(false)
+const pageOpsResult = ref<Blob | null>(null)
+const pageOpsError = ref('')
+const pageOpsMode = ref<'rotate' | 'delete'>('rotate')
+const pageOpsRange = ref('all')
+const rotateAngle = ref<90 | 180 | 270>(90)
+
+const triggerPageOpsInput = () => pageOpsInputRef.value?.click()
+
+const handlePageOpsPdfSelect = async (e: Event) => {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  pageOpsError.value = ''
+  pageOpsResult.value = null
+  if (file.size > 100 * 1024 * 1024) {
+    pageOpsError.value = 'PDF 过大，建议小于 100MB'
+    return
+  }
+  pageOpsPdfFile.value = file
+  try {
+    const buffer = await file.arrayBuffer()
+    const doc = await loadPdfDocument(new Uint8Array(buffer))
+    pageOpsPageCount.value = doc.numPages
+  } catch {
+    pageOpsPageCount.value = 0
+  }
+  input.value = ''
+}
+
+const handleClearPageOpsPdf = () => {
+  pageOpsPdfFile.value = null
+  pageOpsPageCount.value = 0
+  pageOpsResult.value = null
+  pageOpsError.value = ''
+  if (pageOpsInputRef.value) pageOpsInputRef.value.value = ''
+}
+
+const handleRotatePages = async () => {
+  if (!pageOpsPdfFile.value || !pageOpsRange.value) return
+  pageOpsError.value = ''
+  pageOpsResult.value = null
+  isPageOpsRunning.value = true
+  try {
+    const blob = await rotatePdfPages(pageOpsPdfFile.value, pageOpsRange.value, rotateAngle.value)
+    pageOpsResult.value = blob
+    ElMessage.success('旋转完成')
+    store.addHistory({
+      tool: 'pdf',
+      action: 'PDF页面旋转',
+      inputPreview: pageOpsPdfFile.value.name.slice(0, 50),
+      outputPreview: formatFileSize(blob.size),
+      inputFull: pageOpsPdfFile.value.name,
+      outputFull: `范围: ${pageOpsRange.value} | 角度: ${rotateAngle.value}°`,
+    })
+  } catch (e: any) {
+    pageOpsError.value = e.message || '旋转失败'
+  } finally {
+    isPageOpsRunning.value = false
+  }
+}
+
+const handleDeletePages = async () => {
+  if (!pageOpsPdfFile.value || !pageOpsRange.value) return
+  pageOpsError.value = ''
+  pageOpsResult.value = null
+  isPageOpsRunning.value = true
+  try {
+    const blob = await deletePdfPages(pageOpsPdfFile.value, pageOpsRange.value)
+    pageOpsResult.value = blob
+    ElMessage.success('删除完成')
+    store.addHistory({
+      tool: 'pdf',
+      action: 'PDF页面删除',
+      inputPreview: pageOpsPdfFile.value.name.slice(0, 50),
+      outputPreview: formatFileSize(blob.size),
+      inputFull: pageOpsPdfFile.value.name,
+      outputFull: `删除范围: ${pageOpsRange.value}`,
+    })
+  } catch (e: any) {
+    pageOpsError.value = e.message || '删除失败'
+  } finally {
+    isPageOpsRunning.value = false
+  }
+}
+
+const handleSavePageOpsPdf = async () => {
+  if (!pageOpsResult.value) return
+  const baseName = pageOpsPdfFile.value?.name.replace(/\.pdf$/i, '') || 'pdf'
+  const suffix = pageOpsMode.value === 'rotate' ? '_rotated' : '_pages_removed'
+  await saveFileWithDialog(pageOpsResult.value, `${baseName}${suffix}.pdf`, 'pdf')
+  ElMessage.success('已保存')
+}
+
+// ============ Tab 11: PDF 页眉页脚 ============
+const hfInputRef = ref<HTMLInputElement | null>(null)
+const hfPdfFile = ref<File | null>(null)
+const hfPageCount = ref(0)
+const isHfRunning = ref(false)
+const hfResult = ref<Blob | null>(null)
+const hfError = ref('')
+const hfHeaderText = ref('')
+const hfFooterText = ref('')
+const hfShowPageNum = ref(true)
+const hfPageNumFormat = ref('第 {n} 页 / 共 {total} 页')
+const hfPageNumPos = ref<'header-left' | 'header-center' | 'header-right' | 'footer-left' | 'footer-center' | 'footer-right'>('footer-center')
+const hfFontSize = ref(12)
+const hfFontColor = ref('#666666')
+const hfMargin = ref(36)
+
+const triggerHfInput = () => hfInputRef.value?.click()
+
+const handleHfPdfSelect = async (e: Event) => {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  hfError.value = ''
+  hfResult.value = null
+  if (file.size > 100 * 1024 * 1024) {
+    hfError.value = 'PDF 过大，建议小于 100MB'
+    return
+  }
+  hfPdfFile.value = file
+  try {
+    const buffer = await file.arrayBuffer()
+    const doc = await loadPdfDocument(new Uint8Array(buffer))
+    hfPageCount.value = doc.numPages
+  } catch {
+    hfPageCount.value = 0
+  }
+  input.value = ''
+}
+
+const handleClearHfPdf = () => {
+  hfPdfFile.value = null
+  hfPageCount.value = 0
+  hfResult.value = null
+  hfError.value = ''
+  if (hfInputRef.value) hfInputRef.value.value = ''
+}
+
+const handleAddHeaderFooter = async () => {
+  if (!hfPdfFile.value) return
+  hfError.value = ''
+  hfResult.value = null
+  isHfRunning.value = true
+  try {
+    const options: HeaderFooterOptions = {
+      headerText: hfHeaderText.value,
+      footerText: hfFooterText.value,
+      fontSize: hfFontSize.value,
+      fontColor: hexToRgb(hfFontColor.value),
+      showPageNumber: hfShowPageNum.value,
+      pageNumberPosition: hfPageNumPos.value,
+      pageNumberFormat: hfPageNumFormat.value,
+      margin: hfMargin.value,
+    }
+    const blob = await addHeaderFooter(hfPdfFile.value, options)
+    hfResult.value = blob
+    ElMessage.success('页眉页脚添加完成')
+    store.addHistory({
+      tool: 'pdf',
+      action: 'PDF页眉页脚',
+      inputPreview: hfPdfFile.value.name.slice(0, 50),
+      outputPreview: formatFileSize(blob.size),
+      inputFull: hfPdfFile.value.name,
+      outputFull: `页眉: ${hfHeaderText.value || '(无)'} | 页脚: ${hfFooterText.value || '(无)'} | 页码: ${hfShowPageNum.value}`,
+    })
+  } catch (e: any) {
+    hfError.value = e.message || '添加失败'
+  } finally {
+    isHfRunning.value = false
+  }
+}
+
+const handleSaveHfPdf = async () => {
+  if (!hfResult.value) return
+  const baseName = hfPdfFile.value?.name.replace(/\.pdf$/i, '') || 'pdf'
+  await saveFileWithDialog(hfResult.value, `${baseName}_header_footer.pdf`, 'pdf')
+  ElMessage.success('已保存')
+}
+
+// ============ Tab 12: PDF 注释提取 ============
+const annotInputRef = ref<HTMLInputElement | null>(null)
+const annotPdfFile = ref<File | null>(null)
+const annotPageCount = ref(0)
+const isAnnotExtracting = ref(false)
+const annotError = ref('')
+const annotations = ref<PdfAnnotation[]>([])
+
+const triggerAnnotInput = () => annotInputRef.value?.click()
+
+const handleAnnotPdfSelect = async (e: Event) => {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  annotError.value = ''
+  annotations.value = []
+  if (file.size > 100 * 1024 * 1024) {
+    annotError.value = 'PDF 过大，建议小于 100MB'
+    return
+  }
+  annotPdfFile.value = file
+  try {
+    const buffer = await file.arrayBuffer()
+    const doc = await loadPdfDocument(new Uint8Array(buffer))
+    annotPageCount.value = doc.numPages
+  } catch {
+    annotPageCount.value = 0
+  }
+  input.value = ''
+}
+
+const handleClearAnnotPdf = () => {
+  annotPdfFile.value = null
+  annotPageCount.value = 0
+  annotations.value = []
+  annotError.value = ''
+  if (annotInputRef.value) annotInputRef.value.value = ''
+}
+
+const handleExtractAnnotations = async () => {
+  if (!annotPdfFile.value) return
+  annotError.value = ''
+  annotations.value = []
+  isAnnotExtracting.value = true
+  try {
+    const result = await extractAnnotations(annotPdfFile.value)
+    annotations.value = result
+    ElMessage.success(`提取完成，共 ${result.length} 条注释`)
+    store.addHistory({
+      tool: 'pdf',
+      action: 'PDF注释提取',
+      inputPreview: annotPdfFile.value.name.slice(0, 50),
+      outputPreview: `${result.length} 条注释`,
+      inputFull: annotPdfFile.value.name,
+      outputFull: '',
+    })
+  } catch (e: any) {
+    annotError.value = e.message || '提取失败'
+  } finally {
+    isAnnotExtracting.value = false
+  }
+}
+
+function annotTypeColor(type: string): string {
+  const map: Record<string, string> = {
+    Highlight: 'warning',
+    Underline: 'primary',
+    StrikeOut: 'danger',
+    Squiggly: 'success',
+    Text: 'info',
+    FreeText: '',
+  }
+  return map[type] || 'info'
+}
+
+const handleCopyAnnotations = async () => {
+  if (!annotations.value.length) return
+  const text = annotations.value
+    .map(a => `[第${a.page}页][${a.type}] ${a.contents || '(无文字内容)'}`)
+    .join('\n')
+  try {
+    await navigator.clipboard.writeText(text)
+    ElMessage.success('已复制到剪贴板')
+  } catch {
+    ElMessage.error('复制失败')
+  }
+}
+
+const handleExportAnnotations = () => {
+  if (!annotations.value.length) return
+  const text = annotations.value
+    .map(a => `[第${a.page}页][${a.type}] ${a.author ? '(' + a.author + ') ' : ''}${a.contents || '(无文字内容)'}`)
+    .join('\n')
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' })
+  const baseName = annotPdfFile.value?.name.replace(/\.pdf$/i, '') || 'annotations'
+  saveFileWithDialog(blob, `${baseName}_annotations.txt`, 'txt')
+}
 
 // ============ OCR 识别 ============
 const ocrResults = ref<string[]>([])
@@ -3063,5 +3803,148 @@ html.light .extract-preview-thumb {
   text-align: center;
   color: var(--text-secondary);
   font-size: 13px;
+}
+
+/* ===== 新增 Tab 通用样式 ===== */
+.drop-zone {
+  border: 2px dashed var(--border-color);
+  border-radius: 8px;
+  padding: 32px 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.3s, background-color 0.3s;
+  color: var(--text-secondary);
+}
+.drop-zone:hover {
+  border-color: var(--accent-cyan);
+  background: var(--bg-input);
+}
+.drop-zone p { margin: 8px 0 0; }
+.drop-zone .hint { font-size: 12px; opacity: 0.7; }
+
+.file-info-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+.file-meta { flex: 1; min-width: 0; }
+.file-name {
+  font-size: 14px;
+  color: var(--text-primary);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-size { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+
+.form-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.form-label {
+  min-width: 80px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-align: right;
+}
+.form-row .el-input,
+.form-row .el-select { flex: 1; }
+
+.perm-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+/* ===== 注释提取 ===== */
+.annot-count {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-left: 8px;
+}
+.header-left {
+  display: flex;
+  align-items: center;
+}
+.annotation-item {
+  padding: 12px;
+  margin-bottom: 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+.annot-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.annot-page {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.annot-color-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid var(--border-color);
+}
+.annot-author {
+  font-size: 12px;
+  color: var(--accent-cyan);
+}
+.annot-contents {
+  font-size: 13px;
+  color: var(--text-primary);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.annot-empty {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+/* ===== 表单提示 ===== */
+.form-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 14px;
+  line-height: 1.6;
+}
+.form-tip .el-icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--accent-cyan);
+}
+.form-tip code {
+  background: var(--bg-card);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-family: 'Consolas', monospace;
+  font-size: 11px;
+  color: var(--accent-cyan);
+}
+.form-tip.danger-tip {
+  border-color: rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.06);
+}
+.form-tip.danger-tip .el-icon {
+  color: var(--accent-red);
 }
 </style>

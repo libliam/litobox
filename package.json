@@ -1,6 +1,6 @@
 {
   "name": "litobox",
-  "version": "8.15.0",
+  "version": "8.16.0",
   "description": "栗的百宝箱",
   "author": "liam",
   "scripts": {
@@ -67,6 +67,7 @@
     "onnxruntime-web": "^1.27.0",
     "opencc-js": "^1.4.2",
     "pdf-lib": "^1.17.1",
+    "pdf-lib-encrypt": "^1.0.3",
     "pdfjs-dist": "^3.11.174",
     "pinia": "^2.1.0",
     "pinyin-pro": "^3.28.2",

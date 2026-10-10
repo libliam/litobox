@@ -1,8 +1,13 @@
 import * as pdfjsLib from 'pdfjs-dist'
-import { PDFDocument, degrees } from 'pdf-lib'
+import * as pdfLibModule from 'pdf-lib'
+import { PDFDocument, degrees, PDFName, PDFArray, PDFString, PDFHexString } from 'pdf-lib'
+import { configure, lock, unlockInPlace } from 'pdf-lib-encrypt'
 
 // 配置 pdfjs worker（模块加载时执行一次）
 pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js'
+
+// 配置 pdf-lib-encrypt（需在任何加密/解密操作前调用一次）
+configure(pdfLibModule)
 
 // ============ 类型定义 ============
 
@@ -1046,4 +1051,267 @@ function arrayBufferToBase64Local(buffer: Uint8Array): string {
     chunks.push(String.fromCharCode(...chunk))
   }
   return btoa(chunks.join(''))
+}
+
+// ============ F34: PDF 加密 / 解密 ============
+// 基于 pdf-lib-encrypt（AES-256），加密后打开 PDF 必须输入密码
+
+export interface EncryptPdfOptions {
+  userPassword: string
+  ownerPassword?: string   // pdf-lib-encrypt 中 owner 与 user 相同，保留字段供 UI 兼容
+  permissions?: {
+    print?: boolean
+    modify?: boolean
+    copy?: boolean
+    annotate?: boolean
+  }
+}
+
+export async function encryptPdf(
+  pdfFile: File,
+  options: EncryptPdfOptions,
+): Promise<Blob> {
+  // 确保 pdf-lib-encrypt 已配置（模块级 configure 可能因 HMR 失效，这里兜底）
+  configure(pdfLibModule)
+
+  const buffer = await pdfFile.arrayBuffer()
+  // 先用 pdf-lib 加载并保存为明文（确保对象流被展开）
+  const pdfDoc = await PDFDocument.load(new Uint8Array(buffer))
+  const plainBytes = await pdfDoc.save({ useObjectStreams: false })
+
+  // 用 pdf-lib-encrypt 做 AES-256 加密
+  const encryptedBytes = await lock(plainBytes, options.userPassword)
+  return new Blob([toStdU8(encryptedBytes) as any], { type: 'application/pdf' })
+}
+
+export async function decryptPdf(
+  pdfFile: File,
+  password: string,
+): Promise<Blob> {
+  configure(pdfLibModule)
+  const buffer = await pdfFile.arrayBuffer()
+  // 忽略加密加载，再用 unlockInPlace 解密
+  const pdfDoc = await PDFDocument.load(new Uint8Array(buffer), {
+    ignoreEncryption: true,
+  })
+  await unlockInPlace(pdfDoc, password)
+  const outBytes = await pdfDoc.save({ useObjectStreams: false })
+  return new Blob([toStdU8(outBytes) as any], { type: 'application/pdf' })
+}
+
+// ============ F35: PDF 页面旋转 / 删除 ============
+
+export async function rotatePdfPages(
+  pdfFile: File,
+  pageRange: string,
+  angle: 90 | 180 | 270,
+): Promise<Blob> {
+  const buffer = await pdfFile.arrayBuffer()
+  const pdfDoc = await PDFDocument.load(new Uint8Array(buffer))
+  const totalPages = pdfDoc.getPageCount()
+  const pages = parsePageRange(pageRange, totalPages)
+
+  for (const pageNum of pages) {
+    const page = pdfDoc.getPage(pageNum - 1)
+    const currentRotation = page.getRotation().angle
+    page.setRotation(degrees((currentRotation + angle) % 360))
+  }
+
+  const outBytes = await pdfDoc.save()
+  return new Blob([toStdU8(outBytes) as any], { type: 'application/pdf' })
+}
+
+export async function deletePdfPages(
+  pdfFile: File,
+  pageRange: string,
+): Promise<Blob> {
+  const buffer = await pdfFile.arrayBuffer()
+  const pdfDoc = await PDFDocument.load(new Uint8Array(buffer))
+  const totalPages = pdfDoc.getPageCount()
+  const pagesToDelete = parsePageRange(pageRange, totalPages)
+
+  // 从后往前删，避免索引偏移
+  const indices = pagesToDelete.map(n => n - 1).sort((a, b) => b - a)
+  for (const idx of indices) {
+    pdfDoc.removePage(idx)
+  }
+
+  const outBytes = await pdfDoc.save()
+  return new Blob([toStdU8(outBytes) as any], { type: 'application/pdf' })
+}
+
+// ============ F36: PDF 页眉页脚添加 ============
+
+export interface HeaderFooterOptions {
+  headerText: string
+  footerText: string
+  fontSize: number
+  fontColor: [number, number, number]
+  showPageNumber: boolean
+  pageNumberPosition: 'header-left' | 'header-center' | 'header-right' | 'footer-left' | 'footer-center' | 'footer-right'
+  pageNumberFormat: string
+  margin: number
+}
+
+export async function addHeaderFooter(
+  pdfFile: File,
+  options: HeaderFooterOptions,
+): Promise<Blob> {
+  const buffer = await pdfFile.arrayBuffer()
+  const pdfDoc = await PDFDocument.load(new Uint8Array(buffer))
+  const pages = pdfDoc.getPages()
+  const total = pages.length
+
+  for (let i = 0; i < pages.length; i++) {
+    const page = pages[i]
+    const { width, height } = page.getSize()
+    const pageNum = i + 1
+
+    const applyVars = (s: string) =>
+      s.replace(/\{n\}/g, String(pageNum)).replace(/\{total\}/g, String(total))
+
+    // 渲染页眉（居中顶部）
+    if (options.headerText.trim()) {
+      const text = applyVars(options.headerText)
+      const { pngBlob, width: tw, height: th } = await renderTextToPng(
+        text, options.fontSize, 'Helvetica', options.fontColor,
+      )
+      const img = await pdfDoc.embedPng(new Uint8Array(await pngBlob.arrayBuffer()))
+      page.drawImage(img, {
+        x: (width - tw) / 2,
+        y: height - th - options.margin,
+        width: tw,
+        height: th,
+      })
+    }
+
+    // 渲染页脚（居中底部）
+    if (options.footerText.trim()) {
+      const text = applyVars(options.footerText)
+      const { pngBlob, width: tw, height: th } = await renderTextToPng(
+        text, options.fontSize, 'Helvetica', options.fontColor,
+      )
+      const img = await pdfDoc.embedPng(new Uint8Array(await pngBlob.arrayBuffer()))
+      page.drawImage(img, {
+        x: (width - tw) / 2,
+        y: options.margin,
+        width: tw,
+        height: th,
+      })
+    }
+
+    // 渲染页码
+    if (options.showPageNumber) {
+      const text = applyVars(options.pageNumberFormat)
+      const { pngBlob, width: tw, height: th } = await renderTextToPng(
+        text, options.fontSize, 'Helvetica', options.fontColor,
+      )
+      const img = await pdfDoc.embedPng(new Uint8Array(await pngBlob.arrayBuffer()))
+
+      const isHeader = options.pageNumberPosition.startsWith('header')
+      const align = options.pageNumberPosition.split('-')[1]
+      const y = isHeader ? height - th - options.margin : options.margin
+
+      let x: number
+      if (align === 'left') x = options.margin
+      else if (align === 'right') x = width - tw - options.margin
+      else x = (width - tw) / 2
+
+      page.drawImage(img, { x, y, width: tw, height: th })
+    }
+  }
+
+  const outBytes = await pdfDoc.save()
+  return new Blob([toStdU8(outBytes) as any], { type: 'application/pdf' })
+}
+
+// ============ F37: PDF 注释提取 ============
+
+export interface PdfAnnotation {
+  page: number          // 1-based
+  type: string          // Highlight / Underline / StrikeOut / Squiggly / Text / FreeText / ...
+  contents: string      // 批注文字内容（可能为空）
+  rect: [number, number, number, number]
+  color?: string        // hex 颜色
+  author?: string
+  creationDate?: string
+}
+
+export async function extractAnnotations(pdfFile: File): Promise<PdfAnnotation[]> {
+  const buffer = await pdfFile.arrayBuffer()
+  const pdfDoc = await PDFDocument.load(new Uint8Array(buffer))
+  const pages = pdfDoc.getPages()
+  const result: PdfAnnotation[] = []
+
+  for (let p = 0; p < pages.length; p++) {
+    const page = pages[p]
+    const context = page.node.context
+    const annotsArr = page.node.lookupMaybe(PDFName.of('Annots'), PDFArray)
+    if (!annotsArr) continue
+
+    for (let i = 0; i < annotsArr.size(); i++) {
+      const annotRef = annotsArr.get(i)
+      // 用 lookup 解析 ref（PDFRef）得到 annotation dict
+      const dict: any = context.lookup(annotRef)
+      if (!dict || typeof dict.lookup !== 'function') continue
+
+      const subtype = dict.lookup(PDFName.of('Subtype'))
+      const typeName = subtype ? String(subtype).replace('/', '') : 'Unknown'
+
+      const contentsObj = dict.lookup(PDFName.of('Contents'))
+      let contents = ''
+      if (contentsObj instanceof PDFString) {
+        contents = contentsObj.decodeText()
+      } else if (contentsObj instanceof PDFHexString) {
+        contents = contentsObj.decodeText()
+      }
+
+      const rectArr = dict.lookupMaybe(PDFName.of('Rect'), PDFArray)
+      const rect: [number, number, number, number] = [0, 0, 0, 0]
+      if (rectArr) {
+        for (let r = 0; r < 4 && r < rectArr.size(); r++) {
+          const num = rectArr.lookup(r)
+          if (num && typeof num.asNumber === 'function') rect[r] = num.asNumber()
+        }
+      }
+
+      // 颜色
+      const colorArr = dict.lookupMaybe(PDFName.of('C'), PDFArray)
+      let color: string | undefined
+      if (colorArr && colorArr.size() >= 3) {
+        const r = Math.round((colorArr.lookup(0)?.asNumber() ?? 0) * 255)
+        const g = Math.round((colorArr.lookup(1)?.asNumber() ?? 0) * 255)
+        const b = Math.round((colorArr.lookup(2)?.asNumber() ?? 0) * 255)
+        color = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`
+      }
+
+      // 作者
+      const authorObj = dict.lookup(PDFName.of('T'))
+      let author: string | undefined
+      if (authorObj instanceof PDFString) author = authorObj.decodeText()
+      else if (authorObj instanceof PDFHexString) author = authorObj.decodeText()
+
+      // 创建日期
+      const dateObj = dict.lookup(PDFName.of('CreationDate'))
+      let creationDate: string | undefined
+      if (dateObj instanceof PDFString) {
+        try { creationDate = dateObj.decodeDate().toISOString() } catch { creationDate = dateObj.decodeText() }
+      } else if (dateObj instanceof PDFHexString) {
+        creationDate = dateObj.decodeText()
+      }
+
+      // 高亮/下划线等 markup 注释的关联文字（QuadPoints）
+      result.push({
+        page: p + 1,
+        type: typeName,
+        contents,
+        rect,
+        color,
+        author,
+        creationDate,
+      })
+    }
+  }
+
+  return result
 }
