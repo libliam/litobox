@@ -194,6 +194,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, watch } from 'vue'
+import { useTabJump } from '@/composables/useTabJump'
 import { ElMessage } from 'element-plus'
 import { QuestionFilled, UploadFilled } from '@element-plus/icons-vue'
 import { useToolboxStore } from '@/store'
@@ -201,6 +202,7 @@ import { ASCII_FONT } from '@/utils/asciiFont'
 
 const store = useToolboxStore()
 const activeTab = ref('text')
+useTabJump(activeTab, 'asciiArt')
 
 const tabState = reactive<Record<string, { input: string; output: string; error: string }>>({
   text: { input: '', output: '', error: '' },

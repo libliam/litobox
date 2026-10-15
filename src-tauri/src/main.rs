@@ -417,6 +417,12 @@ fn main() {
                         if confirmed {
                             // 退出前兜底保存窗口状态（避免 resize 后 300ms 防抖未触发就关闭丢失状态）
                             let _ = window_state::save_window_state(window.clone());
+                            // 退出前合并 WAL：AppHandle::exit 不运行连接析构，不主动 checkpoint 会导致
+                            // -wal 持续累积（曾累积到 60MB）。best-effort，失败不阻断退出。
+                            let _ = db::with_conn(|conn| {
+                                conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")
+                                    .map_err(|e| e.to_string())
+                            });
                             // ponytail: 用优雅退出替代 std::process::exit，
                             // 给 WebView2 正常关闭的机会，避免数据目录损坏
                             exit_handle.exit(0);
@@ -442,9 +448,16 @@ fn main() {
                                 // 命令面板/快速启动：先唤起窗口到前台（最小化状态也能正确恢复）
                                 #[cfg(target_os = "windows")]
                                 if let Ok(hwnd) = window.hwnd() {
-                                    use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SetForegroundWindow, SW_RESTORE};
+                                    use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SetForegroundWindow, IsIconic, SW_RESTORE, SW_SHOW};
                                     unsafe {
-                                        let _ = ShowWindow(hwnd.0, SW_RESTORE);
+                                        // 仅最小化时 SW_RESTORE（最小化前是最大化则恢复为最大化）。
+                                        // 窗口最大化但仅失焦时 SW_RESTORE 会把最大化还原成普通尺寸，
+                                        // 表现为"窗口缩小到默认状态"，此时只前置不 restore。
+                                        if IsIconic(hwnd.0) != 0 {
+                                            let _ = ShowWindow(hwnd.0, SW_RESTORE);
+                                        } else {
+                                            let _ = ShowWindow(hwnd.0, SW_SHOW);
+                                        }
                                         let _ = SetForegroundWindow(hwnd.0);
                                     }
                                 }

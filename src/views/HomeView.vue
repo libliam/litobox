@@ -18,7 +18,7 @@
               v-model="searchQuery"
               type="text"
               class="search-input"
-              placeholder="输入关键词搜索工具..."
+              placeholder="输入关键词搜索工具、命令、状态码..."
               @input="handleSearch"
               @keydown="handleSearchKeydown"
             />
@@ -30,20 +30,23 @@
             </button>
           </div>
         </div>
-        <!-- 搜索结果 -->
+        <!-- 搜索结果（含速查表子项） -->
         <div v-if="searchResults.length > 0" class="search-results">
           <div
-            v-for="(tool, idx) in searchResults"
-            :key="tool.id"
+            v-for="(entry, idx) in searchResults"
+            :key="entry.id"
             class="search-result-item"
             :class="{ active: selectedIndex === idx }"
-            @click="handleSelectTool(tool.id)"
+            @click="openEntry(entry)"
             @mouseenter="selectedIndex = idx"
           >
-            <span class="result-icon" v-html="tool.iconSvg"></span>
+            <span class="result-icon" v-html="entry.iconSvg"></span>
             <div class="result-info">
-              <span class="result-name">{{ tool.name }}</span>
-              <span class="result-desc">{{ tool.description }}</span>
+              <span class="result-name">
+                {{ entry.name }}
+                <span v-if="entry.tab" class="result-tag">功能</span>
+              </span>
+              <span class="result-desc">{{ entry.description }}</span>
             </div>
           </div>
         </div>
@@ -119,6 +122,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
 import { useToolboxStore, TOOL_LIST } from '@/store'
+import { searchEntries, type SearchEntry } from '@/utils/cheatSearch'
 
 const props = defineProps<{
   onSelectTool: (toolId: string) => void
@@ -127,17 +131,10 @@ const props = defineProps<{
 const store = useToolboxStore()
 const searchQuery = ref('')
 
-const searchResults = computed(() => {
+// 工具 + 速查表子项的统一搜索结果（空词时首页不展示下拉）
+const searchResults = computed<SearchEntry[]>(() => {
   if (!searchQuery.value.trim()) return []
-  const query = searchQuery.value.toLowerCase().trim()
-  return TOOL_LIST.filter(tool => {
-    if (tool.id === 'home') return false
-    return (
-      tool.name.toLowerCase().includes(query) ||
-      tool.description.toLowerCase().includes(query) ||
-      tool.keywords.some(k => k.toLowerCase().includes(query))
-    )
-  })
+  return searchEntries(searchQuery.value, TOOL_LIST)
 })
 
 const recentToolItems = computed(() => {
@@ -189,8 +186,8 @@ function handleSearchKeydown(e: KeyboardEvent) {
   } else if (e.key === 'Enter') {
     e.preventDefault()
     const idx = selectedIndex.value === -1 ? 0 : selectedIndex.value
-    const tool = items[idx]
-    if (tool) handleSelectTool(tool.id)
+    const entry = items[idx]
+    if (entry) openEntry(entry)
   } else if (e.key === 'Escape') {
     e.preventDefault()
     searchQuery.value = ''
@@ -200,6 +197,16 @@ function handleSearchKeydown(e: KeyboardEvent) {
 
 const handleSelectTool = (toolId: string) => {
   props.onSelectTool(toolId)
+}
+
+// 子 tab 走带参跳转，普通工具走原来的首页回调（含最近使用记录）
+const openEntry = (entry: SearchEntry) => {
+  if (entry.tab) {
+    store.openToolTab(entry.tab.toolId, entry.tab.tabId)
+    store.addRecentTool(entry.toolId)
+  } else {
+    handleSelectTool(entry.toolId)
+  }
 }
 </script>
 
@@ -350,6 +357,19 @@ html.light .search-input {
   font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
+}
+
+.result-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 16px;
+  color: var(--accent-cyan);
+  border: 1px solid var(--accent-cyan);
+  border-radius: 3px;
+  vertical-align: 1px;
 }
 
 .result-desc {

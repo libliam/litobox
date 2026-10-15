@@ -309,6 +309,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { useTabJump } from '@/composables/useTabJump'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { QuestionFilled, Delete, Loading } from '@element-plus/icons-vue'
 import { invoke } from '@tauri-apps/api/core'
@@ -329,6 +330,7 @@ const loading = ref(false)
 
 // ============ 响应 ============
 const historyTab = ref('history')
+useTabJump(historyTab, 'http')
 const responseTab = ref('body')
 const responseStatus = ref(0)
 const responseStatusText = ref('')

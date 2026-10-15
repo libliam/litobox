@@ -261,12 +261,14 @@
 
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
+import { useTabJump } from '@/composables/useTabJump'
 import { ElMessage } from 'element-plus'
 import { QuestionFilled } from '@element-plus/icons-vue'
 import { invoke } from '@tauri-apps/api/core'
 import { formatJsCode, compressJsCode, generateJsonExtractCode } from '@/utils/jsUtils'
 
 const activeTab = ref('sandbox')
+useTabJump(activeTab, 'js')
 
 // Tab 1: 沙箱运行状态
 const sandboxState = reactive({

@@ -1222,6 +1222,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
+import { useTabJump } from '@/composables/useTabJump'
 import { ElMessage, ElLoading } from 'element-plus'
 import { QuestionFilled, Warning, UploadFilled, Document, CircleCheckFilled, InfoFilled } from '@element-plus/icons-vue'
 import {
@@ -1253,6 +1254,7 @@ import { invoke } from '@tauri-apps/api/core'
 
 const store = useToolboxStore()
 const activeTab = ref('pdfToImages')
+useTabJump(activeTab, 'pdf')
 const error = ref('')
 
 // ============ Tab 6: PDF压缩 ============

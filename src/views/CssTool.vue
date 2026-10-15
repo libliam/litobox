@@ -172,6 +172,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, watch } from 'vue'
+import { useTabJump } from '@/composables/useTabJump'
 import { ElMessage } from 'element-plus'
 import { QuestionFilled } from '@element-plus/icons-vue'
 import { useToolboxStore } from '@/store'
@@ -180,6 +181,7 @@ import { parseColor, convertUnit, compressCss, formatCss } from '@/utils/cssUtil
 const store = useToolboxStore()
 
 const activeTab = ref('color')
+useTabJump(activeTab, 'css')
 
 const tabState = reactive<Record<string, { input: string; output: string; error: string; isError: boolean }>>({
   color: { input: '', output: '', error: '', isError: false },

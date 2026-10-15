@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import * as db from '@/utils/dbClient'
+import { cheatSheets } from '@/utils/cheatSheets'
 
 export interface ToolboxConfig {
   theme: 'auto' | 'dark' | 'light'
@@ -33,6 +34,11 @@ export interface HistoryRestoreState {
   timestamp: string
 }
 
+export interface ToolTab {
+  id: string
+  label: string
+}
+
 export interface ToolItem {
   id: string
   name: string
@@ -41,6 +47,8 @@ export interface ToolItem {
   description: string
   keywords: string[]
   category?: string
+  /** 多 tab 工具的子 tab 声明，用于全局搜索直达对应 tab */
+  tabs?: ToolTab[]
 }
 
 export const TOOL_LIST: ToolItem[] = [
@@ -146,6 +154,138 @@ export const TOOL_LIST: ToolItem[] = [
   { id: 'asciiArt', name: 'ASCII艺术', icon: 'A#', iconSvg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>`, description: '文本转字符画、图片转 ASCII 艺术，自定义字符集/宽度/反转', keywords: ['ascii', '字符画', '艺术', '文本转ascii', '图片转ascii', '字符艺术', 'ascii art'], category: 'utility' },
 ]
 
+// 多 tab 工具的子 tab 声明（用于全局搜索直达对应 tab）。
+// 仅声明"独立子功能"型 tab；同内容不同视图型（如 Markdown 预览/HTML/统计、磁盘分析各视图、HTTP 的 request/body/headers）不声明。
+const TOOL_TABS: Record<string, ToolTab[]> = {
+  pdf: [
+    { id: 'pdfToImages', label: 'PDF转图片' },
+    { id: 'imagesToPdf', label: '图片转PDF' },
+    { id: 'textExtract', label: 'PDF文本提取' },
+    { id: 'pdfToMarkdown', label: 'PDF转Markdown' },
+    { id: 'mergeSplit', label: 'PDF合并/拆分' },
+    { id: 'compress', label: 'PDF压缩' },
+    { id: 'extractImages', label: '提取图片' },
+    { id: 'watermark', label: 'PDF加水印' },
+    { id: 'encrypt', label: '加密/解密' },
+    { id: 'pageOps', label: '页面操作' },
+    { id: 'headerFooter', label: '页眉页脚' },
+    { id: 'annotations', label: '注释提取' },
+  ],
+  audioTool: [
+    { id: 'crop', label: '音频裁剪' },
+    { id: 'convert', label: '格式转换' },
+    { id: 'compress', label: '音频压缩' },
+    { id: 'merge', label: '音频合并' },
+    { id: 'speed', label: '变速变调' },
+    { id: 'tts', label: '文字转语音' },
+  ],
+  image: [
+    { id: 'compress', label: '批量压缩/转换' },
+    { id: 'resize', label: '尺寸缩放' },
+    { id: 'base64', label: '图片转Base64' },
+    { id: 'watermark', label: '加水印' },
+    { id: 'merge', label: '图片拼图' },
+    { id: 'palette', label: '调色板提取' },
+  ],
+  color: [
+    { id: 'picker', label: '选择器' },
+    { id: 'convert', label: '转换' },
+    { id: 'palette', label: '色板' },
+    { id: 'contrast', label: '对比度' },
+    { id: 'gradient', label: '渐变' },
+  ],
+  hash: [
+    { id: 'hash', label: '哈希' },
+    { id: 'hmac', label: 'HMAC' },
+    { id: 'aes', label: 'AES' },
+    { id: 'rsa', label: 'RSA' },
+  ],
+  excelTool: [
+    { id: 'view', label: '表格浏览' },
+    { id: 'merge', label: '文件合并' },
+    { id: 'clean', label: '数据清洗' },
+    { id: 'export', label: '导出' },
+  ],
+  ipSubnet: [
+    { id: 'calc', label: '子网计算' },
+    { id: 'divide', label: '子网划分' },
+    { id: 'range', label: 'IP 范围合并' },
+    { id: 'int', label: 'IP↔整数' },
+  ],
+  js: [
+    { id: 'sandbox', label: 'JS 沙箱运行' },
+    { id: 'format', label: 'JS 格式化' },
+    { id: 'compress', label: 'JS 压缩混淆' },
+    { id: 'extract', label: 'JSON 提取代码' },
+  ],
+  css: [
+    { id: 'color', label: '颜色转换' },
+    { id: 'unit', label: '单位换算' },
+    { id: 'compress', label: 'CSS压缩' },
+  ],
+  fileprocessing: [
+    { id: 'batchText', label: '批量文本处理' },
+    { id: 'fileEncoding', label: '文件编码' },
+    { id: 'hexViewer', label: '十六进制查看' },
+  ],
+  hostsManager: [
+    { id: 'editor', label: 'Hosts 编辑' },
+    { id: 'profiles', label: 'Profile 管理' },
+    { id: 'backups', label: '备份恢复' },
+  ],
+  ocr: [
+    { id: 'text', label: '文字识别' },
+    { id: 'table', label: '表格识别' },
+    { id: 'markdown', label: 'Markdown转换' },
+  ],
+  ollama: [
+    { id: 'models', label: '模型管理' },
+    { id: 'running', label: '运行监控' },
+    { id: 'chat', label: '对话测试' },
+  ],
+  password: [
+    { id: 'generate', label: '密码生成' },
+    { id: 'apikey', label: 'API Key' },
+    { id: 'strength', label: '强度检测' },
+  ],
+  asciiArt: [
+    { id: 'text', label: '文本转 ASCII' },
+    { id: 'image', label: '图片转 ASCII' },
+  ],
+  barcode: [
+    { id: 'generate', label: '生成' },
+    { id: 'batch', label: '批量生成' },
+  ],
+  calculator: [
+    { id: 'calculator', label: '计算器' },
+    { id: 'date', label: '日期工具' },
+  ],
+  fileEncoding: [
+    { id: 'single', label: '单文件转换' },
+    { id: 'batch', label: '批量转换' },
+  ],
+  pinyin: [
+    { id: 'single', label: '拼音转换' },
+    { id: 'batch', label: '批量处理' },
+  ],
+  qr: [
+    { id: 'generate', label: '生成' },
+    { id: 'batch', label: '批量生成' },
+    { id: 'decode', label: '解码' },
+  ],
+  http: [
+    { id: 'history', label: '请求历史' },
+    { id: 'bookmarks', label: '收藏' },
+    { id: 'envs', label: '环境变量' },
+  ],
+}
+for (const t of TOOL_LIST) {
+  if (TOOL_TABS[t.id]) t.tabs = TOOL_TABS[t.id]
+}
+// 速查表 tabs 从数据动态生成
+const _cheatTool = TOOL_LIST.find(t => t.id === 'cheatSheet')
+if (_cheatTool) _cheatTool.tabs = cheatSheets.map(s => ({ id: s.id, label: s.name }))
+
 const MAX_HISTORY = 100
 const MAX_RECENT = 8
 
@@ -176,6 +316,14 @@ export const useToolboxStore = defineStore('toolbox', () => {
   const isQuickLaunchOpen = ref(false)
   const openQuickLaunch = () => { isQuickLaunchOpen.value = true }
   const closeQuickLaunch = () => { isQuickLaunchOpen.value = false }
+
+  // ============ 多 tab 工具带参跳转（全局搜索子 tab → 指定工具的指定 tab） ============
+  // 目标组件被 KeepAlive 缓存，消费方用 watch + onActivated 兜底读取，读完置 null
+  const tabJumpPending = ref<{ toolId: string; tabId: string } | null>(null)
+  const openToolTab = (toolId: string, tabId: string) => {
+    tabJumpPending.value = { toolId, tabId }
+    openTab(toolId)
+  }
 
   // ============ 后台采集状态 ============
   type CollectKind = 'system' | 'network' | 'process' | 'hardware' | 'software'
@@ -445,5 +593,8 @@ export const useToolboxStore = defineStore('toolbox', () => {
     isQuickLaunchOpen,
     openQuickLaunch,
     closeQuickLaunch,
+    // 速查表带参跳转
+    tabJumpPending,
+    openToolTab,
   }
 })

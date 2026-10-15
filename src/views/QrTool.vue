@@ -392,6 +392,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
+import { useTabJump } from '@/composables/useTabJump'
 import { ElMessage } from 'element-plus'
 import { QuestionFilled, Upload, MagicStick, Download, DocumentCopy, View, CircleCheck, CircleClose, CopyDocument } from '@element-plus/icons-vue'
 import QRCode from 'qrcode'
@@ -403,6 +404,7 @@ const store = useToolboxStore()
 
 // ============ Tab 状态 ============
 const activeTab = ref('generate')
+useTabJump(activeTab, 'qr')
 
 const tabState = reactive<Record<string, { input: string; output: string; error: string; isError: boolean }>>({
   generate: { input: '', output: '', error: '', isError: false },

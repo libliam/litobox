@@ -403,6 +403,7 @@
 
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
+import { useTabJump } from '@/composables/useTabJump'
 import { ElMessage } from 'element-plus'
 import { invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
@@ -411,6 +412,7 @@ import * as imageUtils from '@/utils/imageUtils'
 import { useClipboardImage, type ClipboardImage } from '@/composables/useClipboardImage'
 
 const activeTab = ref('compress')
+useTabJump(activeTab, 'image')
 const error = ref('')
 
 const { readImageWithToast, saveClipboardImageAsTemp, onPasteImage } = useClipboardImage()

@@ -179,6 +179,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import { useTabJump } from '@/composables/useTabJump'
 import { ElMessage } from 'element-plus'
 import { QuestionFilled } from '@element-plus/icons-vue'
 import { pinyin } from 'pinyin-pro'
@@ -198,6 +199,7 @@ const MODES = [
 
 // ============ Tab 状态 ============
 const activeTab = ref('single')
+useTabJump(activeTab, 'pinyin')
 
 // 还原期间禁止写历史
 let isRestoring = false

@@ -15,8 +15,43 @@ export interface ChangelogData {
 }
 
 export const changelogData: ChangelogData = {
-  versionRange: "从 v1.0 到 v8.16.0 更新内容",
+  versionRange: "从 v1.0 到 v8.16.5 更新内容",
   entries: [
+  {
+    "version": "8.16.5",
+    "date": "2026-10-15",
+    "content": "**全局搜索纳入多 tab 工具的子 tab**：解决\"工具里的子功能名字不直观，想用时想不起在哪个 Tab\"的问题。首页搜索框与命令面板（Ctrl+Alt+P）除工具本身外，现可按各多 tab 工具的子 tab 名称搜索——输入 `git`/`linux`/`PDF压缩`/`HMAC`/`响应状态码` 等即命中对应子 tab，点击直达该工具并自动切到对应 Tab。子项带\"功能\"标签区分工具入口，粒度为子功能不涉及具体内容，保持结果清爽；统一迁移到通用机制（store `tabJumpPending` + `openToolTab` + `useTabJump` composable + `TOOL_LIST[].tabs` 声明），已覆盖 22 个多 tab 工具（含速查表）；同内容不同视图型（Markdown 预览/HTML/统计、磁盘分析各视图、HTTP request/body/headers）不纳入",
+    "isEnhancement": true,
+    "isNewFeature": true
+  },
+  {
+    "version": "8.16.4",
+    "date": "2026-10-15",
+    "content": "修复文本编辑器（CodeMirror）Tab 行为：官方 `indentWithTab` 在光标无选区时一律缩进整行，导致\"在文字后面按 Tab，整行从行首被推开\"。改为 smartTab——光标在行首空白区时整行缩进；光标在文字中/行尾时就地插入缩进单位（默认 2 空格，跟随语言 indentUnit）；有选区时整块缩进、Shift+Tab 按行反缩进的行为不变，与全站 textarea 的 Tab 逻辑对齐",
+    "isEnhancement": true,
+    "isNewFeature": true
+  },
+  {
+    "version": "8.16.3",
+    "date": "2026-10-15",
+    "content": "修复文本编辑器报\"加载笔记失败: disk I/O error\"（且全站 SQLite 功能同时不可用）：根因是数据库连接初始化失败被 `OnceLock` 永久缓存，启动瞬间 -wal/-shm 被旧进程或杀毒软件短暂占用导致一次 IOERR 后，整个进程生命周期都无法恢复。连接管理改为 `Mutex<Option<Connection>>`——初始化失败不再毒化（下次调用自动重试）、运行期 disk I/O/malformed 致命错误自动丢弃连接重建并重试一次；新增 busy_timeout=5s；打开连接时 PASSIVE checkpoint、退出确认时 TRUNCATE checkpoint，解决 AppHandle::exit 不析构连接导致 WAL 跨月累积（现场曾达 60MB WAL / 639MB 主库，其中快速启动全盘索引 187 万行为主要体积来源）；已对现场数据库完成 WAL 合并，quick_check 校验完好",
+    "isEnhancement": true,
+    "isNewFeature": true
+  },
+  {
+    "version": "8.16.2",
+    "date": "2026-10-15",
+    "content": "修复全局快捷键（Ctrl+Alt+P 命令面板 / Alt+Space 快速启动）唤起窗口时，最大化窗口被还原成普通小窗口的问题：Windows `SW_RESTORE` 对最大化但仅失焦（未最小化）的窗口也会执行还原，改为仅在窗口最小化（IsIconic）时才 restore，其余状态只前置窗口（SW_SHOW + SetForegroundWindow），最大化状态保持不变",
+    "isEnhancement": true,
+    "isNewFeature": true
+  },
+  {
+    "version": "8.16.1",
+    "date": "2026-10-15",
+    "content": "输入体验修复：全站多行文本域（textarea）统一接管 Tab 键——Tab 插入 2 空格缩进、跨行选区整体缩进、Shift+Tab 反缩进，焦点不再跳出文本区，缩进可 Ctrl+Z 撤销；单行输入框保持原生 Tab 切换焦点不变；文本编辑器（CodeMirror）绑定 indentWithTab，修复编辑器内按 Tab 焦点跳出、无法缩进/反缩进的问题",
+    "isEnhancement": true,
+    "isNewFeature": true
+  },
   {
     "version": "8.16.0",
     "date": "2026-10-10",

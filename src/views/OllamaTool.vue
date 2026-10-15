@@ -353,12 +353,14 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
+import { useTabJump } from '@/composables/useTabJump'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { QuestionFilled, Tools } from '@element-plus/icons-vue'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 
 const activeTab = ref('models')
+useTabJump(activeTab, 'ollama')
 
 // ===== 工具管理 =====
 interface ToolDef {
