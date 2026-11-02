@@ -22,10 +22,23 @@ static DB_CONN: Mutex<Option<Connection>> = Mutex::new(None);
 
 fn open_conn() -> Result<Connection, String> {
     let db_path = get_db_path()?;
-    let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
-    conn.execute_batch("PRAGMA busy_timeout=5000").map_err(|e| e.to_string())?;
-    conn.execute_batch("PRAGMA journal_mode=WAL").map_err(|e| e.to_string())?;
-    init_tables(&conn).map_err(|e| e.to_string())?;
+    debug_log!("open_conn: path={:?}, exists={}", db_path, db_path.exists());
+    let conn = Connection::open(&db_path).map_err(|e| {
+        debug_log!("Connection::open 失败: {}", e);
+        e.to_string()
+    })?;
+    conn.execute_batch("PRAGMA busy_timeout=5000").map_err(|e| {
+        debug_log!("PRAGMA busy_timeout 失败: {}", e);
+        e.to_string()
+    })?;
+    conn.execute_batch("PRAGMA journal_mode=WAL").map_err(|e| {
+        debug_log!("PRAGMA journal_mode 失败: {}", e);
+        e.to_string()
+    })?;
+    init_tables(&conn).map_err(|e| {
+        debug_log!("init_tables 失败: {}", e);
+        e.to_string()
+    })?;
     // 启动阶段无其他本地连接，PASSIVE 基本可把历史 WAL 完整合并；失败不影响启动
     let _ = conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE)");
     Ok(conn)
@@ -39,26 +52,67 @@ fn is_fatal_conn_error(msg: &str) -> bool {
             || m.contains("file is not a database"))
 }
 
+/// 清理 WAL/SHM 临时文件：当连接反复 disk I/O error 时，通常是 -wal/-shm 被旧进程或杀软
+/// 占用/损坏。删除后 SQLite 会从主库重建（WAL 未 checkpoint 的数据会丢失，但主库完整）。
+/// 仅在 open_conn 多次失败后作为兜底调用。
+fn cleanup_wal_files() {
+    if let Ok(db_path) = get_db_path() {
+        let wal = db_path.with_extension("db-wal");
+        let shm = db_path.with_extension("db-shm");
+        let r1 = std::fs::remove_file(&wal);
+        let r2 = std::fs::remove_file(&shm);
+        debug_log!("清理 WAL/SHM 文件: wal={:?}, shm={:?}", r1, r2);
+    }
+}
+
 pub fn with_conn<T, F>(mut f: F) -> Result<T, String>
 where
     F: FnMut(&mut Connection) -> Result<T, String>,
 {
     let mut guard = DB_CONN.lock().map_err(|e| e.to_string())?;
-    if guard.is_none() {
-        *guard = Some(open_conn()?);
-    }
+    let mut last_err = String::new();
+    const MAX_ATTEMPTS: usize = 3;
 
-    let conn = guard.as_mut().unwrap();
-    match f(conn) {
-        Ok(v) => Ok(v),
-        Err(e) if is_fatal_conn_error(&e) => {
-            debug_log!("数据库连接致命错误({e})，丢弃连接并重建重试一次");
-            *guard = None;
-            *guard = Some(open_conn().map_err(|oe| format!("{e}；重建连接也失败: {oe}"))?);
-            f(guard.as_mut().unwrap())
+    for attempt in 0..MAX_ATTEMPTS {
+        // 确保有可用连接（open_conn 失败也重试，而非直接返回）
+        if guard.is_none() {
+            match open_conn() {
+                Ok(conn) => *guard = Some(conn),
+                Err(e) => {
+                    last_err = e;
+                    debug_log!("open_conn 失败(第{}/{}次): {}", attempt + 1, MAX_ATTEMPTS, last_err);
+                    // 最后一次尝试前清理 WAL/SHM，应对文件被占用/损坏的情况
+                    if attempt == MAX_ATTEMPTS - 2 {
+                        cleanup_wal_files();
+                    }
+                    if attempt < MAX_ATTEMPTS - 1 {
+                        std::thread::sleep(std::time::Duration::from_millis(200));
+                        continue;
+                    }
+                    return Err(last_err);
+                }
+            }
         }
-        Err(e) => Err(e),
+
+        let conn = guard.as_mut().unwrap();
+        match f(conn) {
+            Ok(v) => return Ok(v),
+            Err(e) if is_fatal_conn_error(&e) => {
+                last_err = e;
+                debug_log!("数据库连接致命错误(第{}/{}次): {}，丢弃连接重试", attempt + 1, MAX_ATTEMPTS, last_err);
+                *guard = None;
+                if attempt == MAX_ATTEMPTS - 2 {
+                    cleanup_wal_files();
+                }
+                if attempt < MAX_ATTEMPTS - 1 {
+                    std::thread::sleep(std::time::Duration::from_millis(200));
+                    continue;
+                }
+            }
+            Err(e) => return Err(e),
+        }
     }
+    Err(last_err)
 }
 
 pub fn get_db_path() -> Result<PathBuf, String> {
