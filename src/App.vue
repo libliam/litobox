@@ -260,6 +260,7 @@ store.openTab(store.config.lastTool || 'home')
 
 let unlistenShortcut: (() => void) | null = null
 let unlistenPalette: (() => void) | null = null
+let unlistenTrayHint: (() => void) | null = null
 let globalKeydownHandler: ((e: KeyboardEvent) => void) | null = null
 let windowResizeHandler: (() => void) | null = null
 let windowMoveHandler: (() => void) | null = null
@@ -345,6 +346,12 @@ onMounted(async () => {
     }
   })
 
+  // 后端首次隐藏到托盘的提示已写入 SQLite，这里同步内存配置，
+  // 避免后续 saveConfig 用旧值把 trayHintShown 覆盖回 false 导致重复提示
+  unlistenTrayHint = await listen('tray-hint-shown', () => {
+    store.config.trayHintShown = true
+  })
+
   // 应用内 Ctrl+P toggle 命令面板（仅应用激活时生效）
   globalKeydownHandler = (e: KeyboardEvent) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
@@ -366,6 +373,9 @@ onUnmounted(() => {
   }
   if (unlistenPalette) {
     unlistenPalette()
+  }
+  if (unlistenTrayHint) {
+    unlistenTrayHint()
   }
   if (globalKeydownHandler) {
     window.removeEventListener('keydown', globalKeydownHandler)

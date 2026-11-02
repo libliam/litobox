@@ -15,8 +15,22 @@ export interface ChangelogData {
 }
 
 export const changelogData: ChangelogData = {
-  versionRange: "从 v1.0 到 v8.16.5 更新内容",
+  versionRange: "从 v1.0 到 v8.18.0 更新内容",
   entries: [
+  {
+    "version": "8.18.0",
+    "date": "2026-11-02",
+    "content": "**单实例**：接入官方 `tauri-plugin-single-instance`（2.x，注册在所有其他 plugin 之前），再次双击 exe 不再多开进程，而是复用托盘唤醒逻辑把已有主窗口唤回前台——隐藏到托盘时自动 show 并置前、最小化时 restore、已可见时只置前，同时刷新托盘菜单文案保证右键菜单状态正确；启动参数与路径写入 debug 日志便于排查",
+    "isEnhancement": false,
+    "isNewFeature": false
+  },
+  {
+    "version": "8.17.0",
+    "date": "2026-11-02",
+    "content": "**系统托盘 + 关闭即隐藏**：点关闭按钮 / Alt+F4 不再退出，而是隐藏到系统托盘（最小化按钮保持任务栏行为）；托盘左键单击切换显示/隐藏、双击强制显示并聚焦、右键菜单「显示窗口/隐藏窗口」（文案随可见状态动态更新）+「退出」，tooltip「栗的百宝箱」；首次隐藏弹一次原生提示并把 `trayHintShown` 持久化到配置，避免重复打扰；托盘退出复用统一清理路径（保存窗口状态 + WAL checkpoint + 优雅退出），避免 WAL 跨会话累积；托盘图标复用已有 32x32 PNG（开启 `tray-icon` + `image-png`），零新增依赖；修复启动 3 秒兜底 show 会把用户刚隐藏的窗口重新弹出的问题",
+    "isEnhancement": true,
+    "isNewFeature": true
+  },
   {
     "version": "8.16.5",
     "date": "2026-10-15",

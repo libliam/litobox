@@ -447,6 +447,8 @@ Vibe Coding 不是一次性的对话，而是**持续进化的工程实践**：
 | V8.16.3 | ✅ | 修复文本编辑器报"加载笔记失败: disk I/O error"（且全站 SQLite 功能同时不可用）：根因是数据库连接初始化失败被 `OnceLock` 永久缓存，启动瞬间 -wal/-shm 被旧进程或杀毒软件短暂占用导致一次 IOERR 后，整个进程生命周期都无法恢复。连接管理改为 `Mutex<Option<Connection>>`——初始化失败不再毒化（下次调用自动重试）、运行期 disk I/O/malformed 致命错误自动丢弃连接重建并重试一次；新增 busy_timeout=5s；打开连接时 PASSIVE checkpoint、退出确认时 TRUNCATE checkpoint，解决 AppHandle::exit 不析构连接导致 WAL 跨月累积（现场曾达 60MB WAL / 639MB 主库，其中快速启动全盘索引 187 万行为主要体积来源）；已对现场数据库完成 WAL 合并，quick_check 校验完好 | 2026-10-15 |
 | V8.16.4 | ✅ | 修复文本编辑器（CodeMirror）Tab 行为：官方 `indentWithTab` 在光标无选区时一律缩进整行，导致"在文字后面按 Tab，整行从行首被推开"。改为 smartTab——光标在行首空白区时整行缩进；光标在文字中/行尾时就地插入缩进单位（默认 2 空格，跟随语言 indentUnit）；有选区时整块缩进、Shift+Tab 按行反缩进的行为不变，与全站 textarea 的 Tab 逻辑对齐 | 2026-10-15 |
 | V8.16.5 | ✅ | **全局搜索纳入多 tab 工具的子 tab**：解决"工具里的子功能名字不直观，想用时想不起在哪个 Tab"的问题。首页搜索框与命令面板（Ctrl+Alt+P）除工具本身外，现可按各多 tab 工具的子 tab 名称搜索——输入 `git`/`linux`/`PDF压缩`/`HMAC`/`响应状态码` 等即命中对应子 tab，点击直达该工具并自动切到对应 Tab。子项带"功能"标签区分工具入口，粒度为子功能不涉及具体内容，保持结果清爽；统一迁移到通用机制（store `tabJumpPending` + `openToolTab` + `useTabJump` composable + `TOOL_LIST[].tabs` 声明），已覆盖 22 个多 tab 工具（含速查表）；同内容不同视图型（Markdown 预览/HTML/统计、磁盘分析各视图、HTTP request/body/headers）不纳入 | 2026-10-15 |
+| V8.17.0 | ✅ | **系统托盘 + 关闭即隐藏**：点关闭按钮 / Alt+F4 不再退出，而是隐藏到系统托盘（最小化按钮保持任务栏行为）；托盘左键单击切换显示/隐藏、双击强制显示并聚焦、右键菜单「显示窗口/隐藏窗口」（文案随可见状态动态更新）+「退出」，tooltip「栗的百宝箱」；首次隐藏弹一次原生提示并把 `trayHintShown` 持久化到配置，避免重复打扰；托盘退出复用统一清理路径（保存窗口状态 + WAL checkpoint + 优雅退出），避免 WAL 跨会话累积；托盘图标复用已有 32x32 PNG（开启 `tray-icon` + `image-png`），零新增依赖；修复启动 3 秒兜底 show 会把用户刚隐藏的窗口重新弹出的问题 | 2026-11-02 |
+| V8.18.0 | ✅ | **单实例**：接入官方 `tauri-plugin-single-instance`（2.x，注册在所有其他 plugin 之前），再次双击 exe 不再多开进程，而是复用托盘唤醒逻辑把已有主窗口唤回前台——隐藏到托盘时自动 show 并置前、最小化时 restore、已可见时只置前，同时刷新托盘菜单文案保证右键菜单状态正确；启动参数与路径写入 debug 日志便于排查 | 2026-11-02 |
 
 ---
 

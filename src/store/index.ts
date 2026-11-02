@@ -11,6 +11,8 @@ export interface ToolboxConfig {
   lastTool: string
   favorites: string[]
   shortcuts: Record<string, string>
+  /** 首次隐藏到托盘的提示是否已展示过（后端关闭到托盘时写入，仅提示一次） */
+  trayHintShown: boolean
 }
 
 export interface HistoryRecord {
@@ -297,6 +299,7 @@ export const useToolboxStore = defineStore('toolbox', () => {
     hotkey: 'Ctrl+Alt+T',
     lastTool: 'home',
     favorites: ['note', 'pdf', 'ocr'],
+    trayHintShown: false,
     shortcuts: {
       json: 'CmdOrCtrl+Alt+J',
       string: 'CmdOrCtrl+Alt+S',

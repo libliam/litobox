@@ -69,9 +69,9 @@ litobox/
 │   ├── src/
 │   │   ├── main.rs
 │   │   ├── db.rs           # SQLite数据库操作
-│   │   ├── tray.rs
-│   │   ├── hotkey.rs
-│   │   └── window.rs
+│   │   ├── tray.rs         # 系统托盘（关闭=隐藏到托盘、显示/隐藏/退出菜单）
+│   │   ├── window_state.rs # 窗口尺寸/位置/最大化状态持久化与恢复
+│   │   └── ...             # 其余工具模块（system_info、image_tools、video_tools 等）
 │   ├── Cargo.toml
 │   └── tauri.conf.json
 ├── package.json
