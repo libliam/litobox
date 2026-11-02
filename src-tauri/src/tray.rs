@@ -1,14 +1,17 @@
-// 系统托盘：关闭按钮 / Alt+F4 隐藏到托盘，托盘左键切换显示，双击强制显示，右键菜单显示/隐藏 + 退出。
+// 系统托盘：关闭按钮 / Alt+F4 隐藏到托盘，托盘左键切换显示，双击强制显示。
+// 右键菜单：显示/隐藏窗口、分隔线、快捷唤回提示（读实际配置）、版本号、分隔线、退出。
 // ponytail: 复用 tauri 自带 tray/menu 能力 + 打包已有的 32x32 PNG，零新增依赖。
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{
-    menu::{Menu, MenuItem},
+    menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Manager,
 };
 
 const TRAY_ID: &str = "main";
 const MENU_TOGGLE: &str = "toggle";
+const MENU_SHORTCUT_HINT: &str = "shortcut_hint";
+const MENU_VERSION_HINT: &str = "version_hint";
 const MENU_QUIT: &str = "quit";
 
 /// 托盘是否创建成功。失败时关闭按钮回退为"确认退出"，避免窗口隐藏后无法唤回。
@@ -24,6 +27,23 @@ pub fn has_hidden_by_user() -> bool {
     HIDDEN_BY_USER.load(Ordering::Relaxed)
 }
 
+/// 读取用户实际配置的全局唤回快捷键（命令面板 / 快速启动），未配置时给出提示文案。
+/// ponytail: 每次重建菜单只查一次 SQLite 配置，菜单仅在显示/隐藏时重建，开销可忽略。
+fn shortcut_hint_label() -> String {
+    let shortcuts = crate::db::db_read_shortcuts();
+    let normalize = |s: &str| s.replace("CmdOrCtrl", "Ctrl");
+    let parts: Vec<String> = ["__palette__", "__quick_launch__"]
+        .iter()
+        .filter_map(|id| shortcuts.iter().find(|(k, _)| k == id).map(|(_, v)| normalize(v)))
+        .collect();
+    if parts.is_empty() {
+        debug_log!("[tray] no global wake shortcut configured");
+        "快捷唤回：未设置（可在「快捷键设置」中配置）".to_string()
+    } else {
+        format!("快捷唤回：{}", parts.join(" / "))
+    }
+}
+
 /// 菜单文案随窗口可见状态变化，每次显示/隐藏后重建菜单（菜单项句柄不可跨线程共享存储）。
 fn build_menu(app: &AppHandle) -> Result<Menu<tauri::Wry>, String> {
     let visible = app
@@ -33,9 +53,39 @@ fn build_menu(app: &AppHandle) -> Result<Menu<tauri::Wry>, String> {
     let toggle_label = if visible { "隐藏窗口" } else { "显示窗口" };
     let toggle = MenuItem::with_id(app, MENU_TOGGLE, toggle_label, true, None::<&str>)
         .map_err(|e| e.to_string())?;
+    let sep_top = PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?;
+    // 提示类条目：禁用态，避免看起来能点却没反应
+    let shortcut_hint = MenuItem::with_id(
+        app,
+        MENU_SHORTCUT_HINT,
+        shortcut_hint_label(),
+        false,
+        None::<&str>,
+    )
+    .map_err(|e| e.to_string())?;
+    let version_hint = MenuItem::with_id(
+        app,
+        MENU_VERSION_HINT,
+        format!("版本 v{}", app.package_info().version),
+        false,
+        None::<&str>,
+    )
+    .map_err(|e| e.to_string())?;
+    let sep_bottom = PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?;
     let quit = MenuItem::with_id(app, MENU_QUIT, "退出", true, None::<&str>)
         .map_err(|e| e.to_string())?;
-    Menu::with_items(app, &[&toggle, &quit]).map_err(|e| e.to_string())
+    Menu::with_items(
+        app,
+        &[
+            &toggle,
+            &sep_top,
+            &shortcut_hint,
+            &version_hint,
+            &sep_bottom,
+            &quit,
+        ],
+    )
+    .map_err(|e| e.to_string())
 }
 
 pub fn refresh_menu(app: &AppHandle) {
