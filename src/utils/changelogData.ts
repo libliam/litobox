@@ -15,14 +15,14 @@ export interface ChangelogData {
 }
 
 export const changelogData: ChangelogData = {
-  versionRange: "从 v1.0 到 v8.18.0 更新内容",
+  versionRange: "从 v1.0 到 v8.19.0 更新内容",
   entries: [
   {
-    "version": "8.18.0",
+    "version": "8.19.0",
     "date": "2026-11-02",
-    "content": "**单实例**：接入官方 `tauri-plugin-single-instance`（2.x，注册在所有其他 plugin 之前），再次双击 exe 不再多开进程，而是复用托盘唤醒逻辑把已有主窗口唤回前台——隐藏到托盘时自动 show 并置前、最小化时 restore、已可见时只置前，同时刷新托盘菜单文案保证右键菜单状态正确；启动参数与路径写入 debug 日志便于排查",
-    "isEnhancement": false,
-    "isNewFeature": false
+    "content": "**文本编辑器侧栏折叠体验修复**：折叠后展开按钮会压住工具栏左侧文件名（文档图标与标题被挤在一起），改为折叠态给工具栏预留按钮宽度（`padding-left`），展开按钮与文件名之间保持 8px 间距，展开态视觉不变；**托盘右键菜单扩展**：在「显示/隐藏窗口」与「退出」之间增加分隔线分组，新增「快捷唤回」提示项（动态读取用户实际配置的命令面板/快速启动快捷键，未配置时给出引导文案）与「版本」信息项，两者均为禁用态避免误点；显示/隐藏切换后菜单重建，新增项随状态同步刷新",
+    "isEnhancement": true,
+    "isNewFeature": true
   },
   {
     "version": "8.17.0",
