@@ -325,6 +325,8 @@ onUnmounted(() => {
   if (shortcutKeyHandler) {
     document.removeEventListener('keydown', shortcutKeyHandler)
   }
+  window.removeEventListener('always-on-top-changed', syncPinFromTray)
+  window.removeEventListener('open-shortcut-settings', openShortcutSettingsFromTray)
 })
 
 const togglePin = async () => {
@@ -339,6 +341,8 @@ const togglePin = async () => {
 }
 
 onMounted(async () => {
+  window.addEventListener('always-on-top-changed', syncPinFromTray)
+  window.addEventListener('open-shortcut-settings', openShortcutSettingsFromTray)
   try {
     const { getCurrentWindow } = await import('@tauri-apps/api/window')
     const currentWindow = getCurrentWindow()
@@ -433,6 +437,19 @@ watch(currentTheme, (newTheme) => {
   store.saveConfig({ theme: newTheme as 'auto' | 'dark' | 'light' })
   applyTheme(newTheme)
 })
+
+// 托盘切换主题后同步底部下拉，保证两处状态一致
+watch(() => store.config.theme, (val) => {
+  if (val && val !== currentTheme.value) currentTheme.value = val
+})
+
+// 托盘置顶勾选切换后同步底部按钮高亮
+const syncPinFromTray = (e: Event) => {
+  isPinned.value = (e as CustomEvent<boolean>).detail
+}
+const openShortcutSettingsFromTray = () => {
+  showShortcutSettings.value = true
+}
 
 const applyTheme = (theme: string) => {
   const html = document.documentElement

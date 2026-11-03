@@ -1,17 +1,23 @@
 // 系统托盘：关闭按钮 / Alt+F4 隐藏到托盘，托盘左键切换显示，双击强制显示。
-// 右键菜单：显示/隐藏窗口、分隔线、快捷唤回提示（读实际配置）、版本号、分隔线、退出。
+// 右键菜单复用侧边栏底部那排设置：显示/隐藏、置顶、主题、打开搜索、快捷键设置、查看更新、退出。
+// 菜单点击只负责唤回窗口 + 发事件，具体动作由前端复用底部按钮的同一套逻辑执行。
 // ponytail: 复用 tauri 自带 tray/menu 能力 + 打包已有的 32x32 PNG，零新增依赖。
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{
-    menu::{Menu, MenuItem, PredefinedMenuItem},
+    menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager,
+    AppHandle, Emitter, Manager,
 };
 
 const TRAY_ID: &str = "main";
 const MENU_TOGGLE: &str = "toggle";
-const MENU_SHORTCUT_HINT: &str = "shortcut_hint";
-const MENU_VERSION_HINT: &str = "version_hint";
+const MENU_TOPMOST: &str = "topmost";
+const MENU_THEME_AUTO: &str = "theme_auto";
+const MENU_THEME_DARK: &str = "theme_dark";
+const MENU_THEME_LIGHT: &str = "theme_light";
+const MENU_SEARCH: &str = "search";
+const MENU_SHORTCUTS: &str = "shortcuts";
+const MENU_CHANGELOG: &str = "changelog";
 const MENU_QUIT: &str = "quit";
 
 /// 托盘是否创建成功。失败时关闭按钮回退为"确认退出"，避免窗口隐藏后无法唤回。
@@ -27,50 +33,109 @@ pub fn has_hidden_by_user() -> bool {
     HIDDEN_BY_USER.load(Ordering::Relaxed)
 }
 
-/// 读取用户实际配置的全局唤回快捷键（命令面板 / 快速启动），未配置时给出提示文案。
-/// ponytail: 每次重建菜单只查一次 SQLite 配置，菜单仅在显示/隐藏时重建，开销可忽略。
-fn shortcut_hint_label() -> String {
+/// 读取用户当前配置的主题（与前端 ToolboxConfig 同一份 JSON）。
+fn current_theme() -> String {
+    let raw = crate::db::db_get_config("main".to_string()).unwrap_or_default();
+    serde_json::from_str::<serde_json::Value>(&raw)
+        .ok()
+        .and_then(|v| v.get("theme").and_then(|t| t.as_str()).map(str::to_string))
+        .unwrap_or_else(|| "auto".to_string())
+}
+
+/// 命令面板的全局快捷键，用于「打开搜索」菜单文案；未配置时回退到应用内 Ctrl+P。
+fn search_shortcut_label() -> String {
     let shortcuts = crate::db::db_read_shortcuts();
-    let normalize = |s: &str| s.replace("CmdOrCtrl", "Ctrl");
-    let parts: Vec<String> = ["__palette__", "__quick_launch__"]
-        .iter()
-        .filter_map(|id| shortcuts.iter().find(|(k, _)| k == id).map(|(_, v)| normalize(v)))
-        .collect();
-    if parts.is_empty() {
-        debug_log!("[tray] no global wake shortcut configured");
-        "快捷唤回：未设置（可在「快捷键设置」中配置）".to_string()
-    } else {
-        format!("快捷唤回：{}", parts.join(" / "))
+    match shortcuts.iter().find(|(k, _)| k == "__palette__") {
+        Some((_, v)) => v.replace("CmdOrCtrl", "Ctrl"),
+        None => "Ctrl+P".to_string(),
     }
 }
 
-/// 菜单文案随窗口可见状态变化，每次显示/隐藏后重建菜单（菜单项句柄不可跨线程共享存储）。
+/// 菜单动作：先唤回窗口，再通知前端执行（前端复用底部按钮同一套 store/composable）。
+fn dispatch_action(app: &AppHandle, action: &str) {
+    show_main_window(app);
+    if let Err(e) = app.emit("tray-action", action) {
+        debug_log!("[tray] emit tray-action '{}' failed: {}", action, e);
+    }
+}
+
+/// 菜单文案/勾选状态随窗口可见、置顶、主题变化，每次状态变化后重建菜单。
 fn build_menu(app: &AppHandle) -> Result<Menu<tauri::Wry>, String> {
-    let visible = app
-        .get_webview_window("main")
+    let window = app.get_webview_window("main");
+    let visible = window
+        .as_ref()
         .and_then(|w| w.is_visible().ok())
         .unwrap_or(false);
+    let always_on_top = match window.as_ref().map(|w| w.is_always_on_top()) {
+        Some(Ok(v)) => v,
+        Some(Err(e)) => {
+            debug_log!("[tray] read always-on-top failed: {}", e);
+            false
+        }
+        None => false,
+    };
+    let theme = current_theme();
+
     let toggle_label = if visible { "隐藏窗口" } else { "显示窗口" };
     let toggle = MenuItem::with_id(app, MENU_TOGGLE, toggle_label, true, None::<&str>)
         .map_err(|e| e.to_string())?;
+    let topmost = CheckMenuItem::with_id(
+        app,
+        MENU_TOPMOST,
+        "窗口置顶",
+        true,
+        always_on_top,
+        None::<&str>,
+    )
+    .map_err(|e| e.to_string())?;
+    // 主题用三选一子菜单，与底部主题下拉保持一致的三种状态
+    let theme_auto = CheckMenuItem::with_id(
+        app,
+        MENU_THEME_AUTO,
+        "跟随系统",
+        true,
+        theme == "auto",
+        None::<&str>,
+    )
+    .map_err(|e| e.to_string())?;
+    let theme_dark = CheckMenuItem::with_id(
+        app,
+        MENU_THEME_DARK,
+        "深色模式",
+        true,
+        theme == "dark",
+        None::<&str>,
+    )
+    .map_err(|e| e.to_string())?;
+    let theme_light = CheckMenuItem::with_id(
+        app,
+        MENU_THEME_LIGHT,
+        "浅色模式",
+        true,
+        theme == "light",
+        None::<&str>,
+    )
+    .map_err(|e| e.to_string())?;
+    let theme_menu = Submenu::with_items(
+        app,
+        "切换主题",
+        true,
+        &[&theme_auto, &theme_dark, &theme_light],
+    )
+    .map_err(|e| e.to_string())?;
     let sep_top = PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?;
-    // 提示类条目：禁用态，避免看起来能点却没反应
-    let shortcut_hint = MenuItem::with_id(
+    let search = MenuItem::with_id(
         app,
-        MENU_SHORTCUT_HINT,
-        shortcut_hint_label(),
-        false,
+        MENU_SEARCH,
+        format!("打开搜索 ({})", search_shortcut_label()),
+        true,
         None::<&str>,
     )
     .map_err(|e| e.to_string())?;
-    let version_hint = MenuItem::with_id(
-        app,
-        MENU_VERSION_HINT,
-        format!("版本 v{}", app.package_info().version),
-        false,
-        None::<&str>,
-    )
-    .map_err(|e| e.to_string())?;
+    let shortcuts = MenuItem::with_id(app, MENU_SHORTCUTS, "设置快捷键", true, None::<&str>)
+        .map_err(|e| e.to_string())?;
+    let changelog = MenuItem::with_id(app, MENU_CHANGELOG, "查看更新", true, None::<&str>)
+        .map_err(|e| e.to_string())?;
     let sep_bottom = PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?;
     let quit = MenuItem::with_id(app, MENU_QUIT, "退出", true, None::<&str>)
         .map_err(|e| e.to_string())?;
@@ -78,14 +143,26 @@ fn build_menu(app: &AppHandle) -> Result<Menu<tauri::Wry>, String> {
         app,
         &[
             &toggle,
+            &topmost,
+            &theme_menu,
             &sep_top,
-            &shortcut_hint,
-            &version_hint,
+            &search,
+            &shortcuts,
+            &changelog,
             &sep_bottom,
             &quit,
         ],
     )
     .map_err(|e| e.to_string())
+}
+
+/// 前端执行完置顶/主题等动作后调用，刷新勾选与文案（命令来自 IPC 线程，切回主线程再改菜单）。
+#[tauri::command]
+pub fn refresh_tray_menu(app: AppHandle) {
+    let handle = app.clone();
+    if let Err(e) = app.run_on_main_thread(move || refresh_menu(&handle)) {
+        debug_log!("[tray] schedule refresh menu failed: {}", e);
+    }
 }
 
 pub fn refresh_menu(app: &AppHandle) {
@@ -123,6 +200,13 @@ pub fn setup(app: &AppHandle) -> Result<(), String> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
             MENU_TOGGLE => toggle_main_window(app),
+            MENU_TOPMOST => dispatch_action(app, "toggle-top"),
+            MENU_THEME_AUTO => dispatch_action(app, "theme:auto"),
+            MENU_THEME_DARK => dispatch_action(app, "theme:dark"),
+            MENU_THEME_LIGHT => dispatch_action(app, "theme:light"),
+            MENU_SEARCH => dispatch_action(app, "open-search"),
+            MENU_SHORTCUTS => dispatch_action(app, "open-shortcuts"),
+            MENU_CHANGELOG => dispatch_action(app, "open-changelog"),
             MENU_QUIT => {
                 debug_log!("[tray] quit from menu");
                 crate::shutdown_app(app);

@@ -387,6 +387,8 @@ fn main() {
             // 窗口状态命令
             window_state::save_window_state,
             window_state::app_ready,
+            // 托盘菜单刷新（前端执行置顶/主题后同步勾选状态）
+            tray::refresh_tray_menu,
             // Ollama 本地大模型管理命令
             ollama::ollama_check,
             ollama::ollama_list,
