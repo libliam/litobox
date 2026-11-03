@@ -87,6 +87,7 @@ import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
 import { cheatSheets, type CheatSheetData, type CheatSheetRow } from '@/utils/cheatSheets'
+import { useTabJump } from '@/composables/useTabJump'
 
 const activeTab = ref(cheatSheets[0]?.id || '')
 
@@ -96,10 +97,15 @@ cheatSheets.forEach(s => { searchMap[s.id] = '' })
 const filteredRows = (sheet: CheatSheetData) => {
   const kw = (searchMap[sheet.id] || '').trim().toLowerCase()
   if (!kw) return sheet.rows
-  return sheet.rows.filter(row =>
-    sheet.columns.some(col => String(row[col.key] || '').toLowerCase().includes(kw))
-  )
+  return sheet.rows.filter(row => {
+    // 列内容 + 展开示例都可搜（示例在表格里默认折叠，不搜就永远找不到）
+    if (sheet.columns.some(col => String(row[col.key] || '').toLowerCase().includes(kw))) return true
+    return (row.examples || []).some(ex => ex.toLowerCase().includes(kw))
+  })
 }
+
+// 消费全局搜索的带参跳转：切到指定子表（统一走 useTabJump）
+useTabJump(activeTab, 'cheatSheet')
 
 const hasAnyExamples = (sheet: CheatSheetData): boolean => {
   return sheet.rows.some((row: CheatSheetRow) => !!row.examples?.length)

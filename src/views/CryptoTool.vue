@@ -243,6 +243,7 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
+import { useTabJump } from '@/composables/useTabJump'
 import { ElMessage } from 'element-plus'
 import { QuestionFilled } from '@element-plus/icons-vue'
 import * as crypto from '@/utils/cryptoUtils'
@@ -251,6 +252,7 @@ import VariablePicker from '@/components/VariablePicker.vue'
 
 const store = useToolboxStore()
 const activeTab = ref('hash')
+useTabJump(activeTab, 'hash')
 
 // Hash
 const hashInput = ref('')

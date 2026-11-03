@@ -1,6 +1,6 @@
 use rusqlite::{Connection, Result, params, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use std::sync::{Mutex, OnceLock};
+use std::sync::Mutex;
 use std::path::PathBuf;
 
 // ponytail: debug 模式输出日志到 stderr，release 模式编译时移除（零开销），沿用项目惯例
@@ -12,29 +12,107 @@ macro_rules! debug_log {
     };
 }
 
-static DB_CONN: OnceLock<Result<Mutex<Connection>, String>> = OnceLock::new();
+// 连接池为全局 Mutex<Option<Connection>>：
+// - 初始化失败（如启动瞬间 -shm 句柄被旧进程/杀软占用导致 disk I/O error）只返回错误，
+//   不毒化全局，下次调用自动重试初始化；
+// - 运行期撞上连接级致命错误时，with_conn 会丢弃坏连接并重建重试一次；
+// - AppHandle::exit(0) 不运行析构、不做 WAL checkpoint，故每次打开连接时先做一次
+//   PASSIVE checkpoint，避免 WAL 跨月累积（曾出现 60MB WAL + 主库 checkpoint 停滞）。
+static DB_CONN: Mutex<Option<Connection>> = Mutex::new(None);
 
-fn get_conn() -> Result<&'static Mutex<Connection>, String> {
-    DB_CONN.get_or_init(|| {
-        match do_init() {
-            Ok(conn) => Ok(Mutex::new(conn)),
-            Err(e) => Err(e),
-        }
-    }).as_ref().map_err(|e| e.clone())
-}
-
-fn do_init() -> Result<Connection, String> {
+fn open_conn() -> Result<Connection, String> {
     let db_path = get_db_path()?;
-    let conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
-    conn.execute_batch("PRAGMA journal_mode=WAL").map_err(|e| e.to_string())?;
-    init_tables(&conn).map_err(|e| e.to_string())?;
+    debug_log!("open_conn: path={:?}, exists={}", db_path, db_path.exists());
+    let conn = Connection::open(&db_path).map_err(|e| {
+        debug_log!("Connection::open 失败: {}", e);
+        e.to_string()
+    })?;
+    conn.execute_batch("PRAGMA busy_timeout=5000").map_err(|e| {
+        debug_log!("PRAGMA busy_timeout 失败: {}", e);
+        e.to_string()
+    })?;
+    conn.execute_batch("PRAGMA journal_mode=WAL").map_err(|e| {
+        debug_log!("PRAGMA journal_mode 失败: {}", e);
+        e.to_string()
+    })?;
+    init_tables(&conn).map_err(|e| {
+        debug_log!("init_tables 失败: {}", e);
+        e.to_string()
+    })?;
+    // 启动阶段无其他本地连接，PASSIVE 基本可把历史 WAL 完整合并；失败不影响启动
+    let _ = conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE)");
     Ok(conn)
 }
 
-pub fn with_conn<T, F: FnOnce(&mut Connection) -> Result<T, String>>(f: F) -> Result<T, String> {
-    let lock = get_conn()?;
-    let mut conn = lock.lock().map_err(|e| e.to_string())?;
-    f(&mut conn)
+/// 连接级致命错误：数据库/连接本身已不可用，需要丢弃重建（普通约束错误不在此列）
+fn is_fatal_conn_error(msg: &str) -> bool {
+    matches!(msg,
+        m if m.contains("disk I/O error")
+            || m.contains("database disk image is malformed")
+            || m.contains("file is not a database"))
+}
+
+/// 清理 WAL/SHM 临时文件：当连接反复 disk I/O error 时，通常是 -wal/-shm 被旧进程或杀软
+/// 占用/损坏。删除后 SQLite 会从主库重建（WAL 未 checkpoint 的数据会丢失，但主库完整）。
+/// 仅在 open_conn 多次失败后作为兜底调用。
+fn cleanup_wal_files() {
+    if let Ok(db_path) = get_db_path() {
+        let wal = db_path.with_extension("db-wal");
+        let shm = db_path.with_extension("db-shm");
+        let r1 = std::fs::remove_file(&wal);
+        let r2 = std::fs::remove_file(&shm);
+        debug_log!("清理 WAL/SHM 文件: wal={:?}, shm={:?}", r1, r2);
+    }
+}
+
+pub fn with_conn<T, F>(mut f: F) -> Result<T, String>
+where
+    F: FnMut(&mut Connection) -> Result<T, String>,
+{
+    let mut guard = DB_CONN.lock().map_err(|e| e.to_string())?;
+    let mut last_err = String::new();
+    const MAX_ATTEMPTS: usize = 3;
+
+    for attempt in 0..MAX_ATTEMPTS {
+        // 确保有可用连接（open_conn 失败也重试，而非直接返回）
+        if guard.is_none() {
+            match open_conn() {
+                Ok(conn) => *guard = Some(conn),
+                Err(e) => {
+                    last_err = e;
+                    debug_log!("open_conn 失败(第{}/{}次): {}", attempt + 1, MAX_ATTEMPTS, last_err);
+                    // 最后一次尝试前清理 WAL/SHM，应对文件被占用/损坏的情况
+                    if attempt == MAX_ATTEMPTS - 2 {
+                        cleanup_wal_files();
+                    }
+                    if attempt < MAX_ATTEMPTS - 1 {
+                        std::thread::sleep(std::time::Duration::from_millis(200));
+                        continue;
+                    }
+                    return Err(last_err);
+                }
+            }
+        }
+
+        let conn = guard.as_mut().unwrap();
+        match f(conn) {
+            Ok(v) => return Ok(v),
+            Err(e) if is_fatal_conn_error(&e) => {
+                last_err = e;
+                debug_log!("数据库连接致命错误(第{}/{}次): {}，丢弃连接重试", attempt + 1, MAX_ATTEMPTS, last_err);
+                *guard = None;
+                if attempt == MAX_ATTEMPTS - 2 {
+                    cleanup_wal_files();
+                }
+                if attempt < MAX_ATTEMPTS - 1 {
+                    std::thread::sleep(std::time::Duration::from_millis(200));
+                    continue;
+                }
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Err(last_err)
 }
 
 pub fn get_db_path() -> Result<PathBuf, String> {

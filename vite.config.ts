@@ -15,6 +15,9 @@ export default defineConfig({
   },
   clearScreen: false,
   server: {
+    // 固定 IPv4：部分环境（Node 新版本）localhost 只解析到 ::1，
+    // 而 WebView2 走 127.0.0.1 会连不上，表现为白屏、窗口停在 16×16
+    host: '127.0.0.1',
     port: 1420,
     strictPort: true,
     watch: {

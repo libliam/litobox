@@ -749,6 +749,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, onActivated, nextTick, reactive } from 'vue'
+import { useTabJump } from '@/composables/useTabJump'
 import { invoke } from '@tauri-apps/api/core'
 import { open, save } from '@tauri-apps/plugin-dialog'
 import { listen } from '@tauri-apps/api/event'
@@ -821,6 +822,7 @@ interface TtsResult {
 
 // ============ Tab 状态 ============
 const activeTab = ref('crop')
+useTabJump(activeTab, 'audioTool')
 
 // ============ 格式转换状态 ============
 const convertState = reactive({

@@ -50,10 +50,34 @@ mod window_state;
 mod ollama;
 mod ping_tools;
 mod context_menu;
+mod tray;
 
 use tauri::{Manager, Emitter};
 use tauri_plugin_dialog::{DialogExt, MessageDialogBuilder, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
+
+/// 统一退出路径：保存窗口状态 + WAL checkpoint + 优雅退出。
+/// 托盘「退出」菜单与托盘不可用时的关闭确认兜底都走这里，避免 WAL 跨会话累积。
+pub fn shutdown_app(app: &tauri::AppHandle) {
+    match app.get_webview_window("main") {
+        Some(window) => {
+            if let Err(e) = window_state::save_window_state(window.clone()) {
+                debug_log!("[exit] save window state failed: {}", e);
+            }
+        }
+        None => debug_log!("[exit] main window not found, skip window state save"),
+    }
+    // AppHandle::exit 不运行连接析构，不主动 checkpoint 会导致 -wal 持续累积
+    if let Err(e) = db::with_conn(|conn| {
+        conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")
+            .map_err(|e| e.to_string())
+    }) {
+        debug_log!("[exit] wal checkpoint failed: {}", e);
+    }
+    debug_log!("[exit] exiting");
+    // ponytail: 用优雅退出替代 std::process::exit，给 WebView2 正常关闭的机会，避免数据目录损坏
+    app.exit(0);
+}
 
 fn main() {
     // WebView2 用户数据目录兜底：固定使用专用目录，避免默认 EBWebView 目录损坏后
@@ -70,6 +94,12 @@ fn main() {
         }
     }
     tauri::Builder::default()
+        // 单实例插件必须最先注册（插件要求），第二个实例启动时唤回已有窗口而不是新开进程。
+        // show_main_window 内部已处理：隐藏时 show() + 置前，最小化时 SW_RESTORE，可见时只置前，并刷新托盘菜单文案。
+        .plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
+            debug_log!("[single-instance] second instance detected: argv={:?}, cwd={}", argv, cwd);
+            tray::show_main_window(app);
+        }))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
@@ -357,6 +387,8 @@ fn main() {
             // 窗口状态命令
             window_state::save_window_state,
             window_state::app_ready,
+            // 托盘菜单刷新（前端执行置顶/主题后同步勾选状态）
+            tray::refresh_tray_menu,
             // Ollama 本地大模型管理命令
             ollama::ollama_check,
             ollama::ollama_list,
@@ -390,20 +422,41 @@ fn main() {
             let main_window = app.get_webview_window("main").unwrap();
             window_state::restore_window(&main_window);
 
-            // 兜底：前端就绪通知（app_ready）迟迟未到时强制显示，避免 JS 异常导致窗口永久隐藏
+            // 兜底：前端就绪通知（app_ready）迟迟未到时强制显示，避免 JS 异常导致窗口永久隐藏。
+            // 但用户已主动隐藏到托盘时不能再弹出，否则关闭到托盘会被这个兜底破坏。
             {
                 let fallback = main_window.clone();
                 std::thread::spawn(move || {
                     std::thread::sleep(std::time::Duration::from_secs(3));
+                    if tray::has_hidden_by_user() {
+                        debug_log!("[main] fallback show skipped: hidden by user");
+                        return;
+                    }
+                    if fallback.is_visible().unwrap_or(false) {
+                        return;
+                    }
                     let _ = fallback.show();
+                    tray::refresh_menu(fallback.app_handle());
                 });
             }
 
-            // 关闭按钮二次确认
+            // 系统托盘：必须在关闭拦截生效前创建成功，否则隐藏后无法唤回
+            if let Err(e) = tray::setup(app.handle()) {
+                debug_log!("[main] tray setup failed: {} (关闭按钮回退为退出确认)", e);
+            }
+
+            // 关闭按钮 / Alt+F4 → 隐藏到托盘；托盘不可用时回退旧的退出确认
             let exit_handle = handle.clone();
             main_window.clone().on_window_event(move |event| {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
+                    if tray::is_ready() {
+                        debug_log!("[main] close requested -> hide to tray");
+                        tray::hide_main_window(main_window.app_handle());
+                        tray::maybe_show_hint(main_window.app_handle());
+                        return;
+                    }
+                    debug_log!("[main] tray not ready, fallback to exit confirm");
                     let window = main_window.clone();
                     let exit_handle = exit_handle.clone();
                     MessageDialogBuilder::new(
@@ -415,11 +468,7 @@ fn main() {
                     .kind(MessageDialogKind::Warning)
                     .show(move |confirmed| {
                         if confirmed {
-                            // 退出前兜底保存窗口状态（避免 resize 后 300ms 防抖未触发就关闭丢失状态）
-                            let _ = window_state::save_window_state(window.clone());
-                            // ponytail: 用优雅退出替代 std::process::exit，
-                            // 给 WebView2 正常关闭的机会，避免数据目录损坏
-                            exit_handle.exit(0);
+                            shutdown_app(&exit_handle);
                         }
                     });
                 }
@@ -437,27 +486,16 @@ fn main() {
                 
                 manager.on_shortcut(shortcut, move |app_handle, _sc, event| {
                     if let tauri_plugin_global_shortcut::ShortcutState::Pressed = event.state {
-                        if let Some(window) = app_handle.get_webview_window("main") {
-                            if tool == "__palette__" || tool == "__quick_launch__" {
-                                // 命令面板/快速启动：先唤起窗口到前台（最小化状态也能正确恢复）
-                                #[cfg(target_os = "windows")]
-                                if let Ok(hwnd) = window.hwnd() {
-                                    use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SetForegroundWindow, SW_RESTORE};
-                                    unsafe {
-                                        let _ = ShowWindow(hwnd.0, SW_RESTORE);
-                                        let _ = SetForegroundWindow(hwnd.0);
-                                    }
-                                }
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                                if tool == "__palette__" {
-                                    let _ = window.emit("command-palette-triggered", ());
-                                } else {
-                                    let _ = window.emit("global-shortcut-triggered", &tool);
-                                }
+                        if tool == "__palette__" || tool == "__quick_launch__" {
+                            // 命令面板/快速启动：先唤起窗口到前台（最小化/隐藏到托盘都能正确恢复）
+                            tray::show_main_window(app_handle);
+                            let _ = if tool == "__palette__" {
+                                app_handle.emit("command-palette-triggered", ())
                             } else {
-                                let _ = window.emit("global-shortcut-triggered", &tool);
-                            }
+                                app_handle.emit("global-shortcut-triggered", &tool)
+                            };
+                        } else if let Some(window) = app_handle.get_webview_window("main") {
+                            let _ = window.emit("global-shortcut-triggered", &tool);
                         }
                     }
                 }).unwrap_or_else(|e| {

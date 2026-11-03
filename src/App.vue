@@ -260,6 +260,8 @@ store.openTab(store.config.lastTool || 'home')
 
 let unlistenShortcut: (() => void) | null = null
 let unlistenPalette: (() => void) | null = null
+let unlistenTrayHint: (() => void) | null = null
+let unlistenTrayAction: (() => void) | null = null
 let globalKeydownHandler: ((e: KeyboardEvent) => void) | null = null
 let windowResizeHandler: (() => void) | null = null
 let windowMoveHandler: (() => void) | null = null
@@ -345,6 +347,43 @@ onMounted(async () => {
     }
   })
 
+  // 后端首次隐藏到托盘的提示已写入 SQLite，这里同步内存配置，
+  // 避免后续 saveConfig 用旧值把 trayHintShown 覆盖回 false 导致重复提示
+  unlistenTrayHint = await listen('tray-hint-shown', () => {
+    store.config.trayHintShown = true
+  })
+
+  // 托盘右键菜单动作：复用底部那排设置的同一套逻辑，执行后刷新菜单勾选/文案
+  unlistenTrayAction = await listen('tray-action', async (event) => {
+    const action = event.payload as string
+    try {
+      if (action === 'toggle-top') {
+        const win = getCurrentWindow()
+        const next = !(await win.isAlwaysOnTop())
+        await win.setAlwaysOnTop(next)
+        // 同步侧边栏底部置顶按钮的高亮状态
+        window.dispatchEvent(new CustomEvent('always-on-top-changed', { detail: next }))
+      } else if (action.startsWith('theme:')) {
+        const theme = action.slice('theme:'.length) as 'auto' | 'dark' | 'light'
+        applyTheme(theme)
+        await store.saveConfig({ theme })
+      } else if (action === 'open-search') {
+        store.openCommandPalette()
+      } else if (action === 'open-shortcuts') {
+        window.dispatchEvent(new Event('open-shortcut-settings'))
+      } else if (action === 'open-changelog') {
+        store.openTab('changelog')
+        store.addRecentTool('changelog')
+      } else {
+        console.warn('[tray] unknown action:', action)
+        return
+      }
+      await invoke('refresh_tray_menu')
+    } catch (e) {
+      console.error('[tray] action failed:', action, e)
+    }
+  })
+
   // 应用内 Ctrl+P toggle 命令面板（仅应用激活时生效）
   globalKeydownHandler = (e: KeyboardEvent) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
@@ -366,6 +405,12 @@ onUnmounted(() => {
   }
   if (unlistenPalette) {
     unlistenPalette()
+  }
+  if (unlistenTrayHint) {
+    unlistenTrayHint()
+  }
+  if (unlistenTrayAction) {
+    unlistenTrayAction()
   }
   if (globalKeydownHandler) {
     window.removeEventListener('keydown', globalKeydownHandler)

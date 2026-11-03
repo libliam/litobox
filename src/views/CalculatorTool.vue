@@ -247,6 +247,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import { useTabJump } from '@/composables/useTabJump'
 import { ElMessage } from 'element-plus'
 import { QuestionFilled } from '@element-plus/icons-vue'
 import VariablePicker from '@/components/VariablePicker.vue'
@@ -258,6 +259,7 @@ const store = useToolboxStore()
 
 // ============ Tab 状态 ============
 const activeTab = ref('calculator')
+useTabJump(activeTab, 'calculator')
 const handleTabClick = () => {}
 
 // ============ 表达式计算 ============

@@ -7,7 +7,7 @@
           v-model="query"
           class="palette-input"
           type="text"
-          placeholder="搜索工具…"
+          placeholder="搜索工具、命令、状态码…"
           autocomplete="off"
           spellcheck="false"
           @keydown="handleKeydown"
@@ -17,16 +17,19 @@
             <div class="palette-group-title">{{ categoryLabel(group.category) }}</div>
             <div
               v-for="item in group.items"
-              :key="item.tool.id"
+              :key="item.id"
               class="palette-item"
               :class="{ active: item.flatIndex === selectedIndex }"
-              @click="openTool(item.tool.id)"
+              @click="openEntry(item)"
               @mouseenter="selectedIndex = item.flatIndex"
             >
-              <span class="palette-item-icon" v-html="item.tool.iconSvg || item.tool.icon"></span>
+              <span class="palette-item-icon" v-html="item.iconSvg || item.icon"></span>
               <div class="palette-item-text">
-                <div class="palette-item-name">{{ item.tool.name }}</div>
-                <div class="palette-item-desc">{{ item.tool.description }}</div>
+                <div class="palette-item-name">
+                  {{ item.name }}
+                  <span v-if="item.tab" class="palette-item-tag">功能</span>
+                </div>
+                <div class="palette-item-desc">{{ item.description }}</div>
               </div>
             </div>
           </div>
@@ -46,9 +49,9 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useToolboxStore, TOOL_LIST } from '@/store'
-import { filterTools, type RankedTool } from '@/utils/commandPalette'
+import { searchEntries, type SearchEntry } from '@/utils/cheatSearch'
 
-interface FlatItem extends RankedTool {
+interface FlatItem extends SearchEntry {
   flatIndex: number
 }
 
@@ -60,14 +63,14 @@ const selectedIndex = ref(0)
 const inputRef = ref<HTMLInputElement | null>(null)
 
 const flatList = computed<FlatItem[]>(() => {
-  const results = filterTools(query.value, TOOL_LIST)
+  const results = searchEntries(query.value, TOOL_LIST)
   return results.map((r, i) => ({ ...r, flatIndex: i }))
 })
 
 const grouped = computed(() => {
   const map = new Map<string, FlatItem[]>()
   for (const item of flatList.value) {
-    const cat = item.tool.category || '其他'
+    const cat = item.category || '其他'
     if (!map.has(cat)) map.set(cat, [])
     map.get(cat)!.push(item)
   }
@@ -85,9 +88,13 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 const categoryLabel = (cat: string) => CATEGORY_LABELS[cat] || cat
 
-const openTool = (toolId: string) => {
-  store.openTab(toolId)
-  store.addRecentTool(toolId)
+const openEntry = (entry: SearchEntry) => {
+  if (entry.tab) {
+    store.openToolTab(entry.tab.toolId, entry.tab.tabId)
+  } else {
+    store.openTab(entry.toolId)
+  }
+  store.addRecentTool(entry.toolId)
   closePalette()
 }
 
@@ -114,7 +121,7 @@ const handleKeydown = (e: KeyboardEvent) => {
   } else if (e.key === 'Enter') {
     e.preventDefault()
     const item = flatList.value[selectedIndex.value]
-    if (item) openTool(item.tool.id)
+    if (item) openEntry(item)
   } else if (e.key === 'Escape') {
     e.preventDefault()
     closePalette()
@@ -231,6 +238,18 @@ watch(query, () => {
   font-size: 14px;
   color: var(--text-primary);
   line-height: 1.3;
+}
+
+.palette-item-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  font-size: 10px;
+  line-height: 16px;
+  color: var(--accent-cyan);
+  border: 1px solid var(--accent-cyan);
+  border-radius: 3px;
+  vertical-align: 1px;
 }
 
 .palette-item-desc {

@@ -14,11 +14,13 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useTabJump } from '@/composables/useTabJump'
 import BatchTextTool from './BatchTextTool.vue'
 import FileEncodingTool from './FileEncodingTool.vue'
 import HexViewerTool from './HexViewerTool.vue'
 
 const activeTab = ref('batchText')
+useTabJump(activeTab, 'fileprocessing')
 
 const handleTabClick = () => {
   // ponytail: 预留扩展，后续添加更多文件处理子功能

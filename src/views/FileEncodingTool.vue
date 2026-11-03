@@ -166,12 +166,14 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useTabJump } from '@/composables/useTabJump'
 import { ElMessage } from 'element-plus'
 import { invoke } from '@tauri-apps/api/core'
 import { useToolboxStore } from '@/store'
 
 const store = useToolboxStore()
 const activeTab = ref('single')
+useTabJump(activeTab, 'fileEncoding')
 
 // 单文件
 const filePath = ref('')

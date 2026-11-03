@@ -15,8 +15,78 @@ export interface ChangelogData {
 }
 
 export const changelogData: ChangelogData = {
-  versionRange: "从 v1.0 到 v8.15.0 更新内容",
+  versionRange: "从 v1.0 到 v8.20.0 更新内容",
   entries: [
+  {
+    "version": "8.20.0",
+    "date": "2026-11-03",
+    "content": "**托盘右键菜单重构**：移除无实际作用的「快捷唤回提示」「版本信息」两个禁用项，改为复用侧边栏底部设置的实用菜单——显示/隐藏窗口（动态文案）、窗口置顶（勾选反映真实状态）、切换主题（跟随系统/深色/浅色三选一子菜单，与底部下拉一致）、打开搜索（文案带实际配置的命令面板快捷键，点击显示窗口并打开面板）、设置快捷键（显示窗口并打开快捷键设置对话框）、查看更新（显示窗口并跳转更新日志页）、分隔线 + 退出；隐藏状态下点击任一功能项先唤回窗口再执行，前端动作完成后回刷菜单勾选与文案，置顶与主题状态同步侧边栏底部按钮",
+    "isEnhancement": true,
+    "isNewFeature": true
+  },
+  {
+    "version": "8.19.0",
+    "date": "2026-11-02",
+    "content": "**文本编辑器侧栏折叠体验修复**：折叠后展开按钮会压住工具栏左侧文件名（文档图标与标题被挤在一起），改为折叠态给工具栏预留按钮宽度（`padding-left`），展开按钮与文件名之间保持 8px 间距，展开态视觉不变；**托盘右键菜单扩展**：在「显示/隐藏窗口」与「退出」之间增加分隔线分组，新增「快捷唤回」提示项（动态读取用户实际配置的命令面板/快速启动快捷键，未配置时给出引导文案）与「版本」信息项，两者均为禁用态避免误点；显示/隐藏切换后菜单重建，新增项随状态同步刷新",
+    "isEnhancement": true,
+    "isNewFeature": true
+  },
+  {
+    "version": "8.18.0",
+    "date": "2026-11-02",
+    "content": "**单实例**：接入官方 `tauri-plugin-single-instance`（2.x，注册在所有其他 plugin 之前），再次双击 exe 不再多开进程，而是复用托盘唤醒逻辑把已有主窗口唤回前台——隐藏到托盘时自动 show 并置前、最小化时 restore、已可见时只置前，同时刷新托盘菜单文案保证右键菜单状态正确；启动参数与路径写入 debug 日志便于排查",
+    "isEnhancement": false,
+    "isNewFeature": false
+  },
+  {
+    "version": "8.17.0",
+    "date": "2026-11-02",
+    "content": "**系统托盘 + 关闭即隐藏**：点关闭按钮 / Alt+F4 不再退出，而是隐藏到系统托盘（最小化按钮保持任务栏行为）；托盘左键单击切换显示/隐藏、双击强制显示并聚焦、右键菜单「显示窗口/隐藏窗口」（文案随可见状态动态更新）+「退出」，tooltip「栗的百宝箱」；首次隐藏弹一次原生提示并把 `trayHintShown` 持久化到配置，避免重复打扰；托盘退出复用统一清理路径（保存窗口状态 + WAL checkpoint + 优雅退出），避免 WAL 跨会话累积；托盘图标复用已有 32x32 PNG（开启 `tray-icon` + `image-png`），零新增依赖；修复启动 3 秒兜底 show 会把用户刚隐藏的窗口重新弹出的问题",
+    "isEnhancement": true,
+    "isNewFeature": true
+  },
+  {
+    "version": "8.16.5",
+    "date": "2026-10-15",
+    "content": "**全局搜索纳入多 tab 工具的子 tab**：解决\"工具里的子功能名字不直观，想用时想不起在哪个 Tab\"的问题。首页搜索框与命令面板（Ctrl+Alt+P）除工具本身外，现可按各多 tab 工具的子 tab 名称搜索——输入 `git`/`linux`/`PDF压缩`/`HMAC`/`响应状态码` 等即命中对应子 tab，点击直达该工具并自动切到对应 Tab。子项带\"功能\"标签区分工具入口，粒度为子功能不涉及具体内容，保持结果清爽；统一迁移到通用机制（store `tabJumpPending` + `openToolTab` + `useTabJump` composable + `TOOL_LIST[].tabs` 声明），已覆盖 22 个多 tab 工具（含速查表）；同内容不同视图型（Markdown 预览/HTML/统计、磁盘分析各视图、HTTP request/body/headers）不纳入",
+    "isEnhancement": true,
+    "isNewFeature": true
+  },
+  {
+    "version": "8.16.4",
+    "date": "2026-10-15",
+    "content": "修复文本编辑器（CodeMirror）Tab 行为：官方 `indentWithTab` 在光标无选区时一律缩进整行，导致\"在文字后面按 Tab，整行从行首被推开\"。改为 smartTab——光标在行首空白区时整行缩进；光标在文字中/行尾时就地插入缩进单位（默认 2 空格，跟随语言 indentUnit）；有选区时整块缩进、Shift+Tab 按行反缩进的行为不变，与全站 textarea 的 Tab 逻辑对齐",
+    "isEnhancement": true,
+    "isNewFeature": true
+  },
+  {
+    "version": "8.16.3",
+    "date": "2026-10-15",
+    "content": "修复文本编辑器报\"加载笔记失败: disk I/O error\"（且全站 SQLite 功能同时不可用）：根因是数据库连接初始化失败被 `OnceLock` 永久缓存，启动瞬间 -wal/-shm 被旧进程或杀毒软件短暂占用导致一次 IOERR 后，整个进程生命周期都无法恢复。连接管理改为 `Mutex<Option<Connection>>`——初始化失败不再毒化（下次调用自动重试）、运行期 disk I/O/malformed 致命错误自动丢弃连接重建并重试一次；新增 busy_timeout=5s；打开连接时 PASSIVE checkpoint、退出确认时 TRUNCATE checkpoint，解决 AppHandle::exit 不析构连接导致 WAL 跨月累积（现场曾达 60MB WAL / 639MB 主库，其中快速启动全盘索引 187 万行为主要体积来源）；已对现场数据库完成 WAL 合并，quick_check 校验完好",
+    "isEnhancement": true,
+    "isNewFeature": true
+  },
+  {
+    "version": "8.16.2",
+    "date": "2026-10-15",
+    "content": "修复全局快捷键（Ctrl+Alt+P 命令面板 / Alt+Space 快速启动）唤起窗口时，最大化窗口被还原成普通小窗口的问题：Windows `SW_RESTORE` 对最大化但仅失焦（未最小化）的窗口也会执行还原，改为仅在窗口最小化（IsIconic）时才 restore，其余状态只前置窗口（SW_SHOW + SetForegroundWindow），最大化状态保持不变",
+    "isEnhancement": true,
+    "isNewFeature": true
+  },
+  {
+    "version": "8.16.1",
+    "date": "2026-10-15",
+    "content": "输入体验修复：全站多行文本域（textarea）统一接管 Tab 键——Tab 插入 2 空格缩进、跨行选区整体缩进、Shift+Tab 反缩进，焦点不再跳出文本区，缩进可 Ctrl+Z 撤销；单行输入框保持原生 Tab 切换焦点不变；文本编辑器（CodeMirror）绑定 indentWithTab，修复编辑器内按 Tab 焦点跳出、无法缩进/反缩进的问题",
+    "isEnhancement": true,
+    "isNewFeature": true
+  },
+  {
+    "version": "8.16.0",
+    "date": "2026-10-10",
+    "content": "**PDF 增强四件套**（纯前端 pdf-lib，零新增依赖）：① **加密/解密**：设置打开密码与权限密码，控制打印/修改/复制/批注权限，一键解密移除密码；② **页面旋转/删除**：按页码范围（支持 all/odd/even/1-3,5）旋转 90°/180°/270° 或删除指定页；③ **页眉页脚添加**：每页添加居中页眉/页脚文字，支持 `{n}` 当前页/`{total}` 总页数变量，页码可独立设置 6 种位置与格式，字体大小/颜色/边距可调；④ **注释提取**：提取 PDF 中高亮/下划线/删除线/批注等注释，展示类型/页码/颜色/作者/内容，支持复制全部与导出 TXT；**正则可视化**：正则工具新增可视化 Tab，将正则表达式解析为结构流程图与语法树，支持字面量/字符类/转义/分组/断言/量词等节点类型，颜色区分便于理解",
+    "isEnhancement": true,
+    "isNewFeature": true
+  },
   {
     "version": "8.15.0",
     "date": "2026-09-20",

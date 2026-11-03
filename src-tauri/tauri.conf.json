@@ -1,12 +1,12 @@
 {
   "productName": "LitoBox",
-  "version": "8.15.0",
+  "version": "8.20.0",
   "identifier": "com.dev.toolbox",
   "build": {
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist",
-    "devUrl": "http://localhost:1420"
+    "devUrl": "http://127.0.0.1:1420"
   },
   "app": {
     "withGlobalTauri": false,

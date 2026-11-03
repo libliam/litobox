@@ -216,6 +216,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useTabJump } from '@/composables/useTabJump'
 import { ElMessage } from 'element-plus'
 import { QuestionFilled } from '@element-plus/icons-vue'
 import {
@@ -229,6 +230,7 @@ const store = useToolboxStore()
 
 // ============ 浏览状态 ============
 const activeTab = ref('view')
+useTabJump(activeTab, 'excelTool')
 const excelInput = ref<HTMLInputElement>()
 const mergeInput = ref<HTMLInputElement>()
 const currentFileName = ref('')

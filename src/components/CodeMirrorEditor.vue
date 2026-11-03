@@ -6,11 +6,11 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, shallowRef, nextTick } from 'vue'
-import { EditorState, Compartment } from '@codemirror/state'
+import { EditorState, EditorSelection, Compartment } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirror/view'
-import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
+import { defaultKeymap, history, historyKeymap, indentMore, indentLess } from '@codemirror/commands'
 import { search, searchKeymap, highlightSelectionMatches, openSearchPanel } from '@codemirror/search'
-import { bracketMatching, syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
+import { bracketMatching, syntaxHighlighting, defaultHighlightStyle, indentUnit } from '@codemirror/language'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { dracula } from '@uiw/codemirror-theme-dracula'
 import { monokai } from '@uiw/codemirror-theme-monokai'
@@ -146,6 +146,31 @@ const baseFontStyle = {
   lineHeight: '1.6',
 }
 
+// Tab 智能缩进（替换官方 indentWithTab：它无选区时也缩进整行，
+// 导致"在文字后面按 Tab，整行从行首被推开"）：
+// - 有选区：整块涉及行缩进（indentMore，官方行为，支持多行/多光标）
+// - 光标停在行首空白区：整行缩进一层
+// - 光标在文字中/行尾：就地插入缩进单位（默认两空格，跟随语言 indentUnit）
+// Shift+Tab 始终按行反缩进（indentLess）。
+const smartTab = (view: EditorView): boolean => {
+  const { state } = view
+  if (!state.facet(EditorView.editable)) return false
+  const { ranges } = state.selection
+  if (ranges.some((r) => !r.empty)) return indentMore(view)
+  const atLineHead = ranges.some((r) => {
+    const line = state.doc.lineAt(r.head)
+    return /^[ \t]*$/.test(state.sliceDoc(line.from, r.head))
+  })
+  if (atLineHead) return indentMore(view)
+  const unit = state.facet(indentUnit)
+  const changes = state.changeByRange((range) => ({
+    changes: { from: range.head, insert: unit },
+    range: EditorSelection.range(range.head + unit.length, range.head + unit.length),
+  }))
+  view.dispatch({ ...changes, userEvent: 'input.indent', scrollIntoView: true })
+  return true
+}
+
 // 创建编辑器
 const createEditor = () => {
   if (!editorRef.value || !wrapperRef.value) return
@@ -169,6 +194,7 @@ const createEditor = () => {
         // 自定义快捷键优先于 searchKeymap（拦截 Ctrl+G 的"查找下一个"）
         { key: 'Mod-g', run: () => { emit('goto-line'); return true } },
         { key: 'Mod-s', run: () => { emit('save'); return true } },
+        { key: 'Tab', run: smartTab, shift: indentLess },
         ...defaultKeymap,
         ...historyKeymap,
         ...searchKeymap,

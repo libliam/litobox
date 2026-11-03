@@ -5,7 +5,7 @@
 // 关键设计：恢复必须在 Rust setup 阶段（窗口首次显示前）完成，
 // 不能等前端 onMounted —— 前端加载完再 setSize 会先显示默认尺寸再跳变（闪烁）。
 use serde::{Deserialize, Serialize};
-use tauri::WebviewWindow;
+use tauri::{Manager, WebviewWindow};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct WindowState {
@@ -117,4 +117,6 @@ pub fn restore_window(window: &WebviewWindow) {
 pub fn app_ready(window: WebviewWindow) {
     let _ = window.show();
     let _ = window.set_focus();
+    // 启动时托盘菜单按"窗口隐藏"构建，显示后同步菜单文案（显示窗口 → 隐藏窗口）
+    crate::tray::refresh_menu(window.app_handle());
 }

@@ -215,6 +215,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import { useTabJump } from '@/composables/useTabJump'
 import { ElMessage } from 'element-plus'
 import { QuestionFilled } from '@element-plus/icons-vue'
 import { useToolboxStore } from '@/store'
@@ -230,6 +231,7 @@ const store = useToolboxStore()
 
 // ============ Tab 状态 ============
 const activeTab = ref('calc')
+useTabJump(activeTab, 'ipSubnet')
 
 // 还原期间禁止写历史（避免从历史跳转回来时自动计算产生重复记录）
 let isRestoring = false

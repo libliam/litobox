@@ -210,6 +210,7 @@
 
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
+import { useTabJump } from '@/composables/useTabJump'
 import { ElMessage } from 'element-plus'
 import { QuestionFilled } from '@element-plus/icons-vue'
 import { useToolboxStore } from '@/store'
@@ -218,6 +219,7 @@ const store = useToolboxStore()
 
 // ============ Tab 状态 ============
 const activeTab = ref('generate')
+useTabJump(activeTab, 'password')
 
 const tabState = reactive<Record<string, { input: string; output: string; error: string; isError: boolean }>>({
   generate: { input: '', output: '', error: '', isError: false },

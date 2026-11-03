@@ -179,6 +179,89 @@
         </div>
       </el-tab-pane>
 
+      <!-- Tab 3: 正则可视化 -->
+      <el-tab-pane label="可视化" name="visualize">
+        <div class="tool-card sticky-card">
+          <div class="card-header">
+            <div class="header-left">
+              <span class="card-title">正则表达式可视化</span>
+              <el-tooltip placement="top" effect="dark">
+                <template #content>
+                  <div class="tooltip-content">
+                    <p>输入正则表达式，生成结构流程图</p>
+                    <p>支持字符类、量词、分组、断言等</p>
+                  </div>
+                </template>
+                <el-icon class="hint-icon"><QuestionFilled /></el-icon>
+              </el-tooltip>
+            </div>
+            <div class="card-actions">
+              <el-button size="small" type="primary" @click="handleVisualize">生成可视化</el-button>
+            </div>
+          </div>
+          <div class="card-body">
+            <el-input
+              v-model="visPattern"
+              placeholder="输入正则表达式，如: (\d{4})-(\d{2})-(\d{2})"
+              size="default"
+            >
+              <template #prepend>/</template>
+              <template #append>/</template>
+            </el-input>
+          </div>
+        </div>
+
+        <div v-if="visError" class="error-message" style="margin: 12px 0">{{ visError }}</div>
+
+        <div v-if="visNodes.length" class="tool-card">
+          <div class="card-header">
+            <span class="card-title">结构图</span>
+          </div>
+          <div class="card-body">
+            <div class="regex-flow">
+              <template v-for="(node, idx) in visNodes" :key="idx">
+                <div v-if="idx > 0 && node.type !== 'alt'" class="flow-arrow">→</div>
+                <div v-if="node.type === 'alt'" class="flow-alt-sep">|</div>
+                <div class="flow-node" :class="'node-' + node.type">
+                  <div class="node-label">{{ node.label }}</div>
+                  <div v-if="node.detail" class="node-detail">{{ node.detail }}</div>
+                  <div v-if="node.quantifier" class="node-quantifier">{{ node.quantifier }}</div>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="visTree" class="tool-card">
+          <div class="card-header">
+            <span class="card-title">语法树</span>
+          </div>
+          <div class="card-body">
+            <div class="regex-tree">
+              <div class="tree-node tree-root">
+                <span class="tree-label">Expression</span>
+                <div class="tree-children">
+                  <template v-for="child in visTree" :key="child.label + child.detail">
+                    <div class="tree-branch">
+                      <span class="tree-label" :class="'tree-' + child.type">{{ child.label }}</span>
+                      <span v-if="child.detail" class="tree-detail">{{ child.detail }}</span>
+                      <span v-if="child.quantifier" class="tree-quantifier">{{ child.quantifier }}</span>
+                      <div v-if="child.children && child.children.length" class="tree-children">
+                        <div v-for="(sub, si) in child.children" :key="si" class="tree-leaf">
+                          <span class="tree-label" :class="'tree-' + sub.type">{{ sub.label }}</span>
+                          <span v-if="sub.detail" class="tree-detail">{{ sub.detail }}</span>
+                          <span v-if="sub.quantifier" class="tree-quantifier">{{ sub.quantifier }}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </el-tab-pane>
+
     </el-tabs>
   </div>
 </template>
@@ -365,6 +448,208 @@ const useTemplate = (tpl: { name: string; pattern: string; desc: string }) => {
   pattern.value = tpl.pattern
   activeTab.value = 'test'
   ElMessage.success(`已填入「${tpl.name}」正则表达式`)
+}
+
+// ============ 正则可视化 ============
+interface VisNode {
+  type: string
+  label: string
+  detail?: string
+  quantifier?: string
+  children?: VisNode[]
+}
+
+const visPattern = ref('')
+const visError = ref('')
+const visNodes = ref<VisNode[]>([])
+const visTree = ref<VisNode[]>([])
+
+const ESCAPE_MAP: Record<string, string> = {
+  'd': '数字 [0-9]',
+  'D': '非数字',
+  'w': '单词字符 [a-zA-Z0-9_]',
+  'W': '非单词字符',
+  's': '空白字符',
+  'S': '非空白字符',
+  'b': '单词边界',
+  'B': '非单词边界',
+  'n': '换行符',
+  't': '制表符',
+  'r': '回车符',
+  '.': '点号',
+}
+
+function parseQuantifier(str: string, pos: number): { q: string; next: number } {
+  if (pos >= str.length) return { q: '', next: pos }
+  const ch = str[pos]
+  if (ch === '*') return { q: '0次或多次 (*)', next: pos + 1 }
+  if (ch === '+') return { q: '1次或多次 (+)', next: pos + 1 }
+  if (ch === '?') return { q: '0或1次 (?)', next: pos + 1 }
+  if (ch === '{') {
+    const end = str.indexOf('}', pos)
+    if (end !== -1) {
+      const inner = str.substring(pos + 1, end)
+      return { q: `重复 ${inner} 次`, next: end + 1 }
+    }
+  }
+  return { q: '', next: pos }
+}
+
+function parseCharClass(str: string, pos: number): { node: VisNode; next: number } {
+  let i = pos + 1 // skip '['
+  let negated = false
+  if (str[i] === '^') { negated = true; i++ }
+  let content = ''
+  while (i < str.length && str[i] !== ']') {
+    content += str[i]
+    i++
+  }
+  const label = negated ? '排除字符类' : '字符类'
+  const detail = `[${negated ? '^' : ''}${content}]`
+  return { node: { type: 'charclass', label, detail }, next: i + 1 }
+}
+
+function parseGroup(str: string, pos: number): { node: VisNode; next: number } {
+  let i = pos + 1 // skip '('
+  let type = 'group'
+  let label = '捕获分组'
+  let detail = '(...)'
+
+  if (str[i] === '?') {
+    i++
+    if (str[i] === ':') { type = 'noncap'; label = '非捕获分组'; detail = '(?:...)'; i++ }
+    else if (str[i] === '=') { type = 'lookahead'; label = '正向先行断言'; detail = '(?=...)'; i++ }
+    else if (str[i] === '!') { type = 'lookahead'; label = '负向先行断言'; detail = '(?!...)'; i++ }
+    else if (str[i] === '<' && str[i + 1] === '=') { type = 'lookbehind'; label = '正向后行断言'; detail = '(?<=...)'; i += 2 }
+    else if (str[i] === '<' && str[i + 1] === '!') { type = 'lookbehind'; label = '负向后行断言'; detail = '(?<!...)'; i += 2 }
+    else if (str[i] === '<') {
+      // named group (?<name>...)
+      const end = str.indexOf('>', i)
+      const name = str.substring(i + 1, end)
+      type = 'namedgroup'; label = `命名分组 "${name}"`; detail = `(?<${name}>...)`
+      i = end + 1
+    }
+  }
+
+  // parse children until matching ')'
+  const children: VisNode[] = []
+  let depth = 1
+  while (i < str.length && depth > 0) {
+    if (str[i] === '(') depth++
+    if (str[i] === ')') { depth--; if (depth === 0) break }
+    if (str[i] === '|') {
+      children.push({ type: 'alt', label: '或', detail: '|' })
+      i++
+      continue
+    }
+    const { node, next } = parseToken(str, i)
+    children.push(node)
+    i = next
+  }
+
+  return { node: { type, label, detail, children }, next: i + 1 }
+}
+
+function parseToken(str: string, pos: number): { node: VisNode; next: number } {
+  if (pos >= str.length) return { node: { type: 'end', label: '' }, next: pos }
+  const ch = str[pos]
+
+  // character class
+  if (ch === '[') {
+    const { node, next } = parseCharClass(str, pos)
+    const { q, next: n2 } = parseQuantifier(str, next)
+    if (q) node.quantifier = q
+    return { node, next: n2 }
+  }
+
+  // group
+  if (ch === '(') {
+    const { node, next } = parseGroup(str, pos)
+    const { q, next: n2 } = parseQuantifier(str, next)
+    if (q) node.quantifier = q
+    return { node, next: n2 }
+  }
+
+  // escape
+  if (ch === '\\' && pos + 1 < str.length) {
+    const nextCh = str[pos + 1]
+    const desc = ESCAPE_MAP[nextCh]
+    const node: VisNode = {
+      type: 'escape',
+      label: desc ? desc : `转义字符`,
+      detail: `\\${nextCh}`,
+    }
+    const { q, next: n2 } = parseQuantifier(str, pos + 2)
+    if (q) node.quantifier = q
+    return { node, next: n2 }
+  }
+
+  // dot
+  if (ch === '.') {
+    const node: VisNode = { type: 'dot', label: '任意字符', detail: '.' }
+    const { q, next: n2 } = parseQuantifier(str, pos + 1)
+    if (q) node.quantifier = q
+    return { node, next: n2 }
+  }
+
+  // anchors
+  if (ch === '^') {
+    return { node: { type: 'anchor', label: '行首', detail: '^' }, next: pos + 1 }
+  }
+  if (ch === '$') {
+    return { node: { type: 'anchor', label: '行尾', detail: '$' }, next: pos + 1 }
+  }
+
+  // literal
+  const node: VisNode = { type: 'literal', label: '字面量', detail: ch }
+  const { q, next: n2 } = parseQuantifier(str, pos + 1)
+  if (q) node.quantifier = q
+  return { node, next: n2 }
+}
+
+function parseRegex(pattern: string): VisNode[] {
+  const nodes: VisNode[] = []
+  let pos = 0
+  while (pos < pattern.length) {
+    if (pattern[pos] === '|') {
+      nodes.push({ type: 'alt', label: '或', detail: '|' })
+      pos++
+      continue
+    }
+    const { node, next } = parseToken(pattern, pos)
+    nodes.push(node)
+    pos = next
+  }
+  return nodes
+}
+
+const handleVisualize = () => {
+  visError.value = ''
+  visNodes.value = []
+  visTree.value = []
+  if (!visPattern.value.trim()) {
+    visError.value = '请输入正则表达式'
+    return
+  }
+  try {
+    // 验证正则是否合法
+    new RegExp(visPattern.value)
+    const tree = parseRegex(visPattern.value)
+    visTree.value = tree
+    // 扁平化用于流程图（展开分组的子节点）
+    const flat: VisNode[] = []
+    for (const node of tree) {
+      flat.push(node)
+      if (node.children && node.children.length) {
+        for (const child of node.children) {
+          flat.push(child)
+        }
+      }
+    }
+    visNodes.value = flat
+  } catch (e: any) {
+    visError.value = `正则表达式语法错误: ${e.message}`
+  }
 }
 </script>
 
@@ -696,5 +981,99 @@ html.light .regex-tool-tabs :deep(.el-tabs__header) {
 .template-desc {
   font-size: 12px;
   color: var(--text-secondary);
+}
+
+/* ===== 正则可视化 ===== */
+.regex-flow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 16px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  min-height: 80px;
+}
+.flow-node {
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  text-align: center;
+  min-width: 60px;
+}
+.node-label {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.node-detail {
+  font-size: 11px;
+  color: var(--accent-cyan);
+  font-family: 'Consolas', monospace;
+  margin-top: 2px;
+}
+.node-quantifier {
+  font-size: 10px;
+  color: var(--accent-orange);
+  margin-top: 2px;
+}
+.node-literal { border-color: var(--accent-green); }
+.node-charclass { border-color: var(--accent-blue); }
+.node-dot { border-color: var(--accent-cyan); }
+.node-escape { border-color: var(--accent-cyan); }
+.node-anchor { border-color: var(--accent-orange); background: rgba(245, 158, 11, 0.1); }
+.node-group { border-color: var(--accent-cyan); background: rgba(0, 212, 255, 0.08); }
+.node-noncap { border-color: var(--text-secondary); }
+.node-lookahead, .node-lookbehind { border-color: var(--accent-red); background: rgba(239, 68, 68, 0.08); }
+.node-namedgroup { border-color: var(--accent-cyan); }
+.node-alt { border: none; background: transparent; color: var(--accent-orange); font-weight: 700; font-size: 18px; }
+.flow-arrow { color: var(--text-secondary); font-size: 16px; }
+.flow-alt-sep { color: var(--accent-orange); font-weight: 700; font-size: 18px; }
+
+.regex-tree {
+  padding: 16px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+.tree-node { margin-bottom: 8px; }
+.tree-root > .tree-label {
+  font-weight: 700;
+  color: var(--accent-cyan);
+  font-size: 15px;
+}
+.tree-children {
+  margin-left: 24px;
+  border-left: 2px dashed var(--border-color);
+  padding-left: 16px;
+  margin-top: 6px;
+}
+.tree-branch { margin: 6px 0; }
+.tree-leaf { margin: 4px 0; }
+.tree-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.tree-literal { color: var(--accent-green); }
+.tree-charclass { color: var(--accent-blue); }
+.tree-dot, .tree-escape { color: var(--accent-cyan); }
+.tree-anchor { color: var(--accent-orange); }
+.tree-group, .tree-namedgroup { color: var(--accent-cyan); }
+.tree-noncap { color: var(--text-secondary); }
+.tree-lookahead, .tree-lookbehind { color: var(--accent-red); }
+.tree-alt { color: var(--accent-orange); font-weight: 700; }
+.tree-detail {
+  font-size: 11px;
+  color: var(--accent-cyan);
+  font-family: 'Consolas', monospace;
+  margin-left: 8px;
+}
+.tree-quantifier {
+  font-size: 10px;
+  color: var(--accent-orange);
+  margin-left: 8px;
 }
 </style>

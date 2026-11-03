@@ -450,6 +450,7 @@
 
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
+import { useTabJump } from '@/composables/useTabJump'
 import { ElMessage } from 'element-plus'
 import { QuestionFilled } from '@element-plus/icons-vue'
 import { colord, extend } from 'colord'
@@ -461,6 +462,7 @@ extend([mixPlugin, namesPlugin, a11yPlugin])
 
 // ============ Tab 状态 ============
 const activeTab = ref('picker')
+useTabJump(activeTab, 'color')
 
 const tabState = reactive<Record<string, { input: string; output: string; error: string; isError: boolean }>>({
   picker: { input: '#00d4ff', output: '', error: '', isError: false },

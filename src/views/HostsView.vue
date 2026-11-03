@@ -140,11 +140,13 @@
 
 <script setup lang="ts">
 import { ref, computed, onActivated, watch } from 'vue'
+import { useTabJump } from '@/composables/useTabJump'
 import { invoke } from '@tauri-apps/api/core'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 // ============ Tab 状态 ============
 const activeTab = ref('editor')
+useTabJump(activeTab, 'hostsManager')
 
 // ============ 数据 ============
 interface HostsEntry {

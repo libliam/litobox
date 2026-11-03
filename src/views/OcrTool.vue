@@ -444,6 +444,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onActivated, onUnmounted } from 'vue'
+import { useTabJump } from '@/composables/useTabJump'
 import { ElMessage } from 'element-plus'
 import { QuestionFilled, Close } from '@element-plus/icons-vue'
 import { recognizeImage, cleanText, exportAsTxt, destroyOcr, batchRecognize, getMergedResult, type BatchImage, recognizeTable, toCsv, recognizeMarkdown, exportAsMd } from '@/utils/ocrUtils'
@@ -460,6 +461,7 @@ interface OcrHistoryRecord {
 
 const store = useToolboxStore()
 const activeTab = ref('text')
+useTabJump(activeTab, 'ocr')
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const imagePreview = ref<string>('')
 const originalImageUrl = ref<string>('')

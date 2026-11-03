@@ -1,8 +1,11 @@
 <template>
   <div class="note-editor-container">
-    <NoteSidebar @select="handleSelectFile" />
+    <NoteSidebar v-if="!sidebarCollapsed" @select="handleSelectFile" @collapse="toggleSidebar" />
 
-    <div class="editor-main">
+    <div class="editor-main" :class="{ 'sidebar-collapsed': sidebarCollapsed }">
+      <button v-if="sidebarCollapsed" class="sidebar-expand-btn" @click="toggleSidebar" title="展开侧边栏 (Ctrl+B)">
+        <el-icon><Expand /></el-icon>
+      </button>
       <NoteToolbar
         v-if="activeDoc"
         :language="activeDoc.language"
@@ -132,7 +135,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, onDeactivated } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document, Warning, CircleCheck, FolderOpened, Close } from '@element-plus/icons-vue'
+import { Document, Warning, CircleCheck, FolderOpened, Close, Expand } from '@element-plus/icons-vue'
 import * as noteClient from '@/utils/noteClient'
 import type { NoteItem } from '@/utils/noteClient'
 import NoteSidebar from '@/components/NoteSidebar.vue'
@@ -157,6 +160,19 @@ const docs = ref<EditorDoc[]>([])
 const activeKey = ref<string | null>(null)
 const editorRef = ref()
 let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
+
+// ===================== 侧边栏收起/展开 =====================
+const sidebarCollapsed = ref(localStorage.getItem('note-sidebar-collapsed') === '1')
+const toggleSidebar = () => {
+  sidebarCollapsed.value = !sidebarCollapsed.value
+  localStorage.setItem('note-sidebar-collapsed', sidebarCollapsed.value ? '1' : '0')
+}
+const handleSidebarKey = (e: KeyboardEvent) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+    e.preventDefault()
+    toggleSidebar()
+  }
+}
 
 const activeDoc = computed<EditorDoc | null>(
   () => docs.value.find(d => d.key === activeKey.value) ?? null
@@ -526,8 +542,14 @@ const ctxCloseAll = () => {
   closeDocs([...docs.value])
 }
 
-onMounted(() => document.addEventListener('click', closeTabCtx))
-onUnmounted(() => document.removeEventListener('click', closeTabCtx))
+onMounted(() => {
+  document.addEventListener('click', closeTabCtx)
+  window.addEventListener('keydown', handleSidebarKey)
+})
+onUnmounted(() => {
+  document.removeEventListener('click', closeTabCtx)
+  window.removeEventListener('keydown', handleSidebarKey)
+})
 
 // ===================== 编辑器操作 =====================
 
@@ -617,6 +639,37 @@ onUnmounted(() => {
   flex-direction: column;
   overflow: hidden;
   min-height: 0;
+  position: relative;
+}
+
+/* 侧边栏收起后，给工具栏留出展开按钮的宽度，避免按钮压住文件名 */
+.editor-main.sidebar-collapsed :deep(.note-toolbar) {
+  padding-left: 46px;
+}
+
+/* 侧边栏收起后的展开按钮 */
+.sidebar-expand-btn {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 20;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  padding: 0;
+}
+
+.sidebar-expand-btn:hover {
+  color: var(--accent-cyan);
+  border-color: var(--accent-cyan);
 }
 
 .editor-empty {

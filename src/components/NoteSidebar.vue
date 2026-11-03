@@ -2,24 +2,29 @@
   <div class="note-sidebar" @click="closeContextMenu">
     <div class="sidebar-header">
       <span class="sidebar-title">笔记</span>
-      <el-dropdown trigger="click" placement="bottom-end" @command="handleCommand">
-        <el-button size="small" text>
-          <el-icon><Plus /></el-icon>
+      <div class="sidebar-actions">
+        <el-button size="small" text class="collapse-btn" @click="$emit('collapse')" title="收起侧边栏 (Ctrl+B)">
+          <el-icon><Fold /></el-icon>
         </el-button>
-        <template #dropdown>
-          <el-dropdown-menu>
-            <el-dropdown-item command="create-file">
-              <el-icon><DocumentAdd /></el-icon> 新建文件
-            </el-dropdown-item>
-            <el-dropdown-item command="create-folder">
-              <el-icon><FolderAdd /></el-icon> 新建文件夹
-            </el-dropdown-item>
-            <el-dropdown-item command="open-folder" divided>
-              <el-icon><FolderOpened /></el-icon> 打开存储目录
-            </el-dropdown-item>
-          </el-dropdown-menu>
-        </template>
-      </el-dropdown>
+        <el-dropdown trigger="click" placement="bottom-end" @command="handleCommand">
+          <el-button size="small" text>
+            <el-icon><Plus /></el-icon>
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="create-file">
+                <el-icon><DocumentAdd /></el-icon> 新建文件
+              </el-dropdown-item>
+              <el-dropdown-item command="create-folder">
+                <el-icon><FolderAdd /></el-icon> 新建文件夹
+              </el-dropdown-item>
+              <el-dropdown-item command="open-folder" divided>
+                <el-icon><FolderOpened /></el-icon> 打开存储目录
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+      </div>
     </div>
 
     <!-- 文件树 -->
@@ -73,7 +78,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, FolderAdd, DocumentAdd, FolderOpened, Edit, Delete } from '@element-plus/icons-vue'
+import { Plus, FolderAdd, DocumentAdd, FolderOpened, Edit, Delete, Fold } from '@element-plus/icons-vue'
 import { invoke } from '@tauri-apps/api/core'
 import * as noteClient from '@/utils/noteClient'
 import type { NoteItem } from '@/utils/noteClient'
@@ -81,6 +86,7 @@ import NoteTreeItem from './NoteTreeItem.vue'
 
 const emit = defineEmits<{
   'select': [item: NoteItem]
+  'collapse': []
 }>()
 
 const rootItems = ref<NoteItem[]>([])
@@ -285,6 +291,19 @@ onMounted(() => {
 .sidebar-title {
   font-weight: 600;
   font-size: 14px;
+  color: var(--accent-cyan);
+}
+
+.sidebar-actions {
+  display: flex;
+  align-items: center;
+}
+
+.sidebar-actions .collapse-btn {
+  padding: 4px;
+}
+
+.sidebar-actions .collapse-btn:hover {
   color: var(--accent-cyan);
 }
 
